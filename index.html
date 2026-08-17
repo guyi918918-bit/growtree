@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="theme-color" content="#34c759">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="成长小树">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <title>顾一的成长小树</title>
+    <link rel="stylesheet" href="styles.css?v=20250814">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <!-- 桌面端侧边栏 / 移动端抽屉 -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo">🌳</span>
+                <span class="logo-text">成长小树</span>
+                <button class="sidebar-close" id="sidebarClose">✕</button>
+            </div>
+            <nav class="sidebar-nav" id="sidebarNav"></nav>
+            <div class="sidebar-footer">
+                <div class="sync-status" id="syncStatus">
+                    <span class="sync-dot offline" id="syncDot"></span>
+                    <span class="sync-text" id="syncText">未连接云端</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 遮罩层 -->
+        <div id="overlay" class="overlay"></div>
+
+        <!-- 主内容区 -->
+        <main class="main">
+            <header class="topbar">
+                <button class="menu-btn" id="menuBtn">☰</button>
+                <div class="page-title" id="pageTitle">首页</div>
+                <div class="topbar-actions">
+                    <div class="cloud-status-badge" id="cloudStatusBadge">
+                        <span class="cloud-status-dot offline" id="cloudStatusDot"></span>
+                        <span id="cloudStatusText">未连接云端</span>
+                    </div>
+                    <button class="icon-btn" id="refreshBtn" title="立即从云端刷新">🔄</button>
+                    <button class="icon-btn" id="saveNowBtn" title="立即保存">💾</button>
+                    <button class="icon-btn" id="settingsBtn" title="设置">⚙️</button>
+                </div>
+            </header>
+
+            <div class="content" id="content">
+                <!-- 动态内容 -->
+            </div>
+            <div id="fatalError" style="display:none;padding:24px;text-align:center;color:var(--text)"></div>
+        </main>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>⚙️ 设置</h3>
+                <button class="modal-close" id="settingsClose">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>昵称</label>
+                    <input type="text" id="settingName" placeholder="怎么称呼你？">
+                </div>
+                <div class="form-group">
+                    <label>所在城市</label>
+                    <input type="text" id="settingCity" placeholder="例如：成都">
+                </div>
+                <div class="form-group">
+                    <label>积分兑换规则（自由设定）</label>
+                    <input type="text" id="settingExchangeRule" placeholder="例如：100 积分 = 1 次奶茶 / 攒够 500 分奖励自己一顿大餐">
+                    <div class="field-hint">系统内不再默认把积分折算成钱。这里写你自己的兑换规则，会显示在积分统计与规则说明里。</div>
+                </div>
+                <div class="settings-section">
+                    <div class="settings-section-title">☁️ 云端同步设置（Supabase）</div>
+                    <div class="cloud-settings-status" id="cloudSettingsStatus">
+                        <div class="cloud-status-line"><span class="status-label">当前状态：</span><span id="settingsCloudStatusText">未连接</span></div>
+                        <div class="cloud-status-line"><span class="status-label">同步空间：</span><span id="settingsCloudSpace">—</span></div>
+                        <div class="cloud-status-line"><span class="status-label">本设备：</span><span id="settingsCloudDevice">—</span></div>
+                        <div class="cloud-status-line"><span class="status-label">最后同步：</span><span id="settingsCloudTime">—</span></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Supabase 项目 URL</label>
+                        <input type="text" id="settingSupabaseUrl" placeholder="https://xxxx.supabase.co（不要带 /rest/）">
+                        <div class="field-hint">只填项目地址，不要复制 REST endpoint 后面的 /rest/</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Supabase Anon Key</label>
+                        <input type="text" id="settingSupabaseKey" placeholder="eyJ...（不是 sb_publishable_...）">
+                        <div class="field-hint">使用项目设置 → Project API → anon public 的 Key</div>
+                    </div>
+                    <div class="form-group">
+                        <label>同步空间 ID</label>
+                        <input type="text" id="settingSyncSpaceId" placeholder="不同设备需填写相同的 ID 才能互相同步（留空默认 main）">
+                    </div>
+                    <button class="btn btn-secondary" data-action="test-supabase" style="margin-bottom:8px">🔌 测试云端连接</button>
+                    <details class="sql-help">
+                        <summary>📋 首次使用？点此查看建表 SQL（必做）</summary>
+                        <p class="sql-tip">新建的 Supabase 项目里没有数据表，必须先建表并放行，否则会一直"连接失败"。<br>步骤：登录 Supabase → 左侧 <b>SQL Editor</b> → 新建查询 → 粘贴下方代码 → <b>Run</b> 执行一次即可。</p>
+                        <pre class="sql-code" id="setupSql">-- 1. 创建数据表（只需执行一次）
+create table if not exists growtree_data (
+  id text primary key,
+  payload jsonb not null,
+  updated_at text
+);
+
+-- 2. 开启行级安全并允许匿名读写（只有你的 Key 能访问）
+alter table growtree_data enable row level security;
+
+create policy "allow anon all" on growtree_data
+  for all to anon
+  using (true)
+  with check (true);
+
+-- 3. 变美情报局 · 灵感军火库表（按需执行）
+create table if not exists beauty_inspiration (
+  id uuid primary key default gen_random_uuid(),
+  url text not null,
+  title text,
+  cover_url text,
+  tags text[] default '{}',
+  note text,
+  created_at timestamp with time zone default now()
+);
+
+alter table beauty_inspiration enable row level security;
+
+create policy "allow anon all" on beauty_inspiration
+  for all to anon
+  using (true)
+  with check (true);</pre>
+                        <button class="btn btn-secondary" data-action="copy-sql" style="margin-top:8px">📋 复制 SQL</button>
+                    </details>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-section-title">🧩 模块管理（总设置）</div>
+                    <div class="field-hint">可修改板块名称 / 图标、调整顺序、显示或隐藏。点「保存」后全站生效；也可在此直接拖动排序与显隐。</div>
+                    <div id="moduleManager" class="module-manager"></div>
+                    <button class="btn btn-secondary" data-action="reset-modules" style="margin-top:8px">↺ 恢复默认板块</button>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-section-title">💽 云端空间占用（Supabase 免费版 500MB）</div>
+                    <div class="storage-meter" id="storageMeter">计算中...</div>
+                    <div class="storage-actions">
+                        <button class="btn btn-secondary" data-action="clean-cache">🧹 清理可重建缓存</button>
+                        <button class="btn btn-secondary" data-action="prune-old">✂️ 清理 1 年前旧数据</button>
+                    </div>
+                    <div class="field-hint">「今日宜美」天气和「今日热点」缓存可随时重新获取，不计入云端；灵感军火库单独存表且只存链接。系统会在主数据接近上限时自动清理 1 年前的旧记录，避免把免费额度撑满。</div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-section-title">💾 数据备份</div>
+                    <div class="backup-row">
+                        <button class="btn btn-secondary" data-action="export-data">📤 导出备份(JSON)</button>
+                        <button class="btn btn-secondary" data-action="import-data">📥 导入备份</button>
+                    </div>
+                    <input type="file" id="importFile" accept="application/json,.json" style="display:none">
+                    <div class="field-hint">导出可保存到手机/电脑，换设备或清缓存后导入即可恢复全部数据。</div>
+                </div>
+
+                <div class="settings-section settings-danger">
+                    <div class="settings-section-title">⚠️ 危险操作</div>
+                    <button class="btn btn-danger" data-action="clear-all-data" style="width:100%">🗑️ 清除所有本地数据</button>
+                    <div class="field-hint">调试阶段可用：清空后所有打卡、积分、心愿等记录都会重置，无法恢复。</div>
+                </div>
+
+                <div class="form-tip">
+                    数据会先保存在本地，配置 Supabase 后自动同步到云端。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="settingsCancel">取消</button>
+                <button class="btn btn-primary" id="settingsSave">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 书本评析弹窗 -->
+    <div id="bookReviewModal" class="modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="bookReviewTitle">📖 书本评析</h3>
+                <button class="modal-close" data-action="close-book-review">✕</button>
+            </div>
+            <div class="modal-body" id="bookReviewBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-action="close-book-review">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新手引导弹窗 -->
+    <div id="onboardModal" class="modal onboard-modal">
+        <div class="modal-card onboard-card">
+            <div class="onboard-hero">🌳 欢迎来到「成长小树」</div>
+            <div class="onboard-sub">每一天的小坚持，都会让小树长高一点。先花 1 分钟把它调成你自己的～</div>
+
+            <div class="onboard-step">
+                <div class="onboard-q">1️⃣ 怎么称呼你？</div>
+                <input type="text" id="onboardName" class="input" placeholder="例如：顾一" value="顾一">
+            </div>
+
+            <div class="onboard-step">
+                <div class="onboard-q">2️⃣ 想先培养哪些小习惯？（可多选，之后随时增减）</div>
+                <div class="onboard-habits" id="onboardHabits"></div>
+            </div>
+
+            <div class="onboard-step">
+                <div class="onboard-q">3️⃣ 每天喝够水，身体和皮肤都会感谢你 💧</div>
+                <div class="onboard-tip">可以在「认真打卡 → 板块 → 健康」里记录喝水，保持健康好习惯。</div>
+            </div>
+
+            <div class="onboard-tip">💡 打卡得积分，积分攒够就能兑换心愿好物——这就是让你坚持下去的小循环。</div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="onboardStartBtn">开始使用 🌱</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑打卡项弹窗（自定义，避免 prompt 在嵌入环境被屏蔽） -->
+    <div id="editCheckInModal" class="modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>✏️ 编辑打卡项</h3>
+                <button class="modal-close" data-action="close-edit-checkin">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>名称</label>
+                    <input type="text" id="editCheckInName" placeholder="打卡内容" maxlength="40">
+                </div>
+                <div class="form-group">
+                    <label>难度定级（🌸 越多越难，分数自动对应）</label>
+                    <div class="stars-pick edit-stars-pick" id="editCheckInStars">
+                        <span class="cstar" data-stars="1" title="1简单 · 1分">🌸</span>
+                        <span class="cstar" data-stars="2" title="2中等 · 3分">🌸</span>
+                        <span class="cstar" data-stars="3" title="3坚持 · 6分">🌸</span>
+                        <span class="cstar" data-stars="4" title="4挑战 · 10分">🌸</span>
+                        <span class="cstar" data-stars="5" title="5超越 · 15分">🌸</span>
+                    </div>
+                    <div class="flower-guide-tip" id="editCheckInGrade"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-action="close-edit-checkin">取消</button>
+                <button class="btn btn-primary" data-action="save-edit-checkin">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 玩家上线提示 -->
+    <div id="playerOnline" class="player-online">
+        <div class="player-online-card">
+            <div class="player-online-icon">🕹️</div>
+            <div class="player-online-text" id="playerOnlineText">玩家 顾一 已上线 🕹️</div>
+        </div>
+    </div>
+
+    <!-- 成就徽章弹窗（如：明日已解锁） -->
+    <div id="achievementBadge" class="achievement-badge">
+        <div class="achievement-badge-card">
+            <div class="achievement-badge-glow"></div>
+            <div class="achievement-badge-emoji" id="achievementBadgeEmoji">🏆</div>
+            <div class="achievement-badge-title" id="achievementBadgeTitle">Tomorrow Unlocked</div>
+            <div class="achievement-badge-sub" id="achievementBadgeSub">明日已解锁</div>
+        </div>
+    </div>
+
+    <!-- 变美情报局 · 灵感编辑/新增弹窗 -->
+    <div id="beautyInspModal" class="modal">
+        <div class="modal-card beauty-insp-modal-card">
+            <div class="modal-header">
+                <h3 id="beautyInspModalTitle">➕ 新增灵感</h3>
+                <button class="modal-close" data-action="beauty-insp-cancel">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>链接 <span style="font-weight:400;color:var(--text-secondary)">（小红书 / 抖音 / B站 / YouTube 等）</span></label>
+                    <div class="input-row">
+                        <input type="text" class="input" id="beautyInspUrl" placeholder="粘贴链接，如 https://www.xiaohongshu.com/...">
+                        <button class="btn btn-secondary" data-action="beauty-insp-parse">解析</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>标题</label>
+                    <input type="text" class="input" id="beautyInspTitle" placeholder="自动解析或手动填写">
+                </div>
+                <div class="form-group">
+                    <label>封面图 <span style="font-weight:400;color:var(--text-secondary)">（从本地上传，不会上传到 Storage）</span></label>
+                    <div class="beauty-cover-upload">
+                        <input type="file" class="beauty-cover-file" id="beautyInspFile" accept="image/*">
+                        <button class="btn btn-secondary" data-action="beauty-insp-pick-file">📷 选择图片</button>
+                        <button class="btn btn-link" data-action="beauty-insp-use-url">或粘贴图片链接</button>
+                    </div>
+                    <div class="beauty-cover-url-wrap" id="beautyCoverUrlWrap" style="display:none;">
+                        <div class="input-row beauty-cover-row">
+                            <input type="text" class="input" id="beautyInspCover" placeholder="粘贴图片链接，例如 https://.../cover.jpg" style="user-select:text;-webkit-user-select:text;">
+                            <button class="btn btn-secondary" data-action="beauty-insp-clear-cover">清空</button>
+                        </div>
+                    </div>
+                    <div class="beauty-insp-preview" id="beautyInspPreview"></div>
+                    <label class="beauty-insp-skip-cover">
+                        <input type="checkbox" id="beautyInspSkipCover">
+                        <span>暂时没封面，先保存（之后可在编辑里补）</span>
+                    </label>
+                    <div class="beauty-insp-tip">💡 建议上传清晰的妆容/穿搭图片；图片会以压缩后的 base64 形式保存在数据库中。</div>
+                </div>
+                <div class="form-group">
+                    <label>标签 <span style="font-weight:400;color:var(--text-secondary)">（用空格分隔，如：清透底妆 圆脸 晚宴妆 10min）</span></label>
+                    <input type="text" class="input" id="beautyInspTags" placeholder="#清透底妆 #适合圆脸 #晚宴妆 #耗时10min">
+                </div>
+                <div class="form-group">
+                    <label>备注</label>
+                    <textarea class="input" id="beautyInspNote" rows="2" placeholder="记录心得、适用场合或后续尝试计划"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-action="beauty-insp-cancel">取消</button>
+                <button class="btn btn-primary" data-action="beauty-insp-save">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示条 -->
+    <div id="toast" class="toast"></div>
+
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lunar-javascript/lunar.js"></script>
+    <script src="app.js?v=20250814"></script>
+    <script>
+        // 全局错误兜底：若初始化崩溃，把错误显示在页面上，而不是白屏
+        function showFatalError(msg, detail) {
+            const el = document.getElementById('fatalError');
+            if (!el) return;
+            el.style.display = 'block';
+            el.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:8px">😵 页面加载遇到问题</div>' +
+                '<div style="font-size:14px;opacity:.85;margin-bottom:12px">' + msg + '</div>' +
+                '<pre style="font-size:12px;background:rgba(0,0,0,.05);padding:10px;border-radius:8px;overflow:auto">' + (detail || '') + '</pre>' +
+                '<button onclick="location.reload(true)" style="margin-top:12px;padding:8px 16px;border:none;border-radius:8px;background:#34c759;color:#fff;font-size:14px">强制刷新</button>';
+        }
+        window.onerror = function (msg, url, line, col, err) {
+            showFatalError('运行错误：' + msg, '行号：' + line + ':' + col + '\n' + (err && err.stack ? err.stack : ''));
+        };
+        window.addEventListener('unhandledrejection', function (e) {
+            showFatalError('未处理的异步错误', e.reason && e.reason.stack ? e.reason.stack : String(e.reason));
+        });
+
+        // 注册 Service Worker：实现部署后自动静默更新，告别「删了重加」
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('./sw.js').catch(function (err) {
+                    console.warn('SW 注册失败', err);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
