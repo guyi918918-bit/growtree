@@ -4040,16 +4040,32 @@ function loadBeautyData() {
 // ---------- Tab 1: 今日宜美 ----------
 function renderBeautyToday() {
     const cache = state.data.apiCache ? state.data.apiCache['beautyWeather'] : null;
+    const noCity = !state.settings.city || !state.settings.city.trim();
     if (!cache) {
         return `
             <div class="card-header"><div class="card-title">🌤️ 看天穿衣 / 护肤</div></div>
-            <div class="empty-state"><span class="emoji">🌤️</span>正在定位并获取天气...</div>
+            <div class="empty-state"><span class="emoji">🌤️</span>${noCity ? '正在获取天气（未设置城市，将使用默认城市）...' : '正在定位并获取天气...'}</div>
         `;
     }
     if (cache.error) {
         return `
             <div class="card-header"><div class="card-title">🌤️ 看天穿衣 / 护肤</div></div>
-            <div class="empty-state"><span class="emoji">🌧️</span>${escapeHtml(cache.error)}<button class="btn btn-primary btn-sm" data-action="beauty-weather-refresh" style="margin-left:8px">重试</button></div>
+            <div class="empty-state" style="align-items:flex-start;text-align:left">
+                <div style="margin-bottom:10px"><span class="emoji">🌧️</span>${escapeHtml(cache.error)}</div>
+                ${noCity ? `
+                    <div style="font-size:13px;color:var(--text-secondary);background:var(--primary-light);padding:10px 12px;border-radius:10px;margin-bottom:10px;line-height:1.5">
+                        💡 看天穿衣需要先设置城市，否则拿不到准确的天气与穿搭建议。去设置里填写你的城市即可。
+                    </div>
+                    <button class="btn btn-primary btn-sm" data-action="open-settings">去设置填写城市</button>
+                    <button class="btn btn-secondary btn-sm" data-action="beauty-weather-refresh" style="margin-top:8px">重试（用默认城市）</button>
+                ` : `
+                    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">若持续失败，可到设置更换城市后重试。</div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary btn-sm" data-action="open-settings">更改城市</button>
+                        <button class="btn btn-secondary btn-sm" data-action="beauty-weather-refresh">重试</button>
+                    </div>
+                `}
+            </div>
         `;
     }
     const w = cache.data || {};
@@ -6654,7 +6670,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817g';
+        const APP_BUILD = '20260817h';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
