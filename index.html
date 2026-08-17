@@ -14,7 +14,7 @@
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="apple-touch-icon" href="apple-touch-icon.png">
     <title>顾一的成长小树</title>
-    <link rel="stylesheet" href="styles.css?v=20260817d">
+    <link rel="stylesheet" href="styles.css?v=20260817e">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
@@ -244,6 +244,11 @@ create policy "allow anon all" on beauty_inspiration
                     <input type="text" id="editCheckInName" placeholder="打卡内容" maxlength="40">
                 </div>
                 <div class="form-group">
+                    <label>所属分组</label>
+                    <select id="editCheckInCategory" class="input"></select>
+                    <div class="flower-guide-tip">仅调整分类展示，不影响历史积分和打卡记录</div>
+                </div>
+                <div class="form-group">
                     <label>难度定级（🌸 越多越难，分数自动对应）</label>
                     <div class="stars-pick edit-stars-pick" id="editCheckInStars">
                         <span class="cstar" data-stars="1" title="1简单 · 1分">🌸</span>
@@ -353,7 +358,7 @@ create policy "allow anon all" on beauty_inspiration
 
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/lunar-javascript/lunar.js"></script>
-    <script src="app.js?v=20260817d"></script>
+    <script src="app.js?v=20260817e"></script>
     <script>
         // 全局错误兜底：若初始化崩溃，把错误显示在页面上，而不是白屏
         function showFatalError(msg, detail) {

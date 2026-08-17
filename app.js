@@ -2163,6 +2163,13 @@ function editCheckIn(id) {
     const nameInput = document.getElementById('editCheckInName');
     if (nameInput) nameInput.value = ci.name || '';
     renderEditStars(ci.stars || 3);
+    // 生成分组下拉选项（按板块管理中的顺序）
+    const catSelect = document.getElementById('editCheckInCategory');
+    if (catSelect) {
+        const cats = getCategories();
+        const order = getCategoryOrder();
+        catSelect.innerHTML = order.map(k => `<option value="${k}" ${ci.module === k ? 'selected' : ''}>${escapeHtml(cats[k])}</option>`).join('');
+    }
     if (modal) modal.classList.add('show');
 }
 function renderEditStars(cur) {
@@ -2190,6 +2197,14 @@ function saveEditCheckIn() {
     const s = state._editStars || ci.stars || 3;
     ci.stars = s;
     ci.points = flowerScore(s); // 分数由花朵定级决定
+    // 调整分组：只改 module/category，不碰历史积分和打卡记录
+    const catSelect = document.getElementById('editCheckInCategory');
+    const newModule = catSelect ? catSelect.value : ci.module;
+    if (newModule && newModule !== ci.module) {
+        const cats = getCategories();
+        ci.module = newModule;
+        ci.category = cats[newModule] || ci.category;
+    }
     closeEditCheckIn();
     saveState();
     render();
@@ -3787,7 +3802,7 @@ function renderCheckInManage() {
                         <span class="cat-tag">${it.category}</span>
                         <span class="diff-tag">${flowerLevel(it.stars||3).slogan}</span>
                         <span class="pts-tag">${it.points}分</span>
-                        <button type="button" class="task-edit" data-action="edit-checkin" data-id="${it.id}" title="编辑名称/分数">✎</button>
+                        <button type="button" class="task-edit" data-action="edit-checkin" data-id="${it.id}" title="编辑名称/分组/分数">✎</button>
                     </div>
                 `).join('') : '<div class="empty-state"><span class="emoji">📝</span>还没有打卡项</div>'}
             </div>
@@ -6443,7 +6458,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817d';
+        const APP_BUILD = '20260817e';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
