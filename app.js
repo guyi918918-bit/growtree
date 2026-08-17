@@ -633,6 +633,54 @@ function toast(msg) {
     setTimeout(() => el.classList.remove('show'), 2200);
 }
 
+// 通用弹窗：替代 window.confirm / window.prompt，移动端（尤其 iOS Safari）稳定可用。
+// confirm 场景返回 Promise<boolean>；prompt 场景返回 Promise<string|null>。
+function uiModal(opts) {
+    return new Promise(resolve => {
+        const modal = document.getElementById('uiModal');
+        const titleEl = document.getElementById('uiModalTitle');
+        const msgEl = document.getElementById('uiModalMsg');
+        const inputEl = document.getElementById('uiModalInput');
+        const okBtn = document.getElementById('uiModalOk');
+        const cancelBtn = document.getElementById('uiModalCancel');
+        if (!modal || !okBtn || !cancelBtn) { resolve(opts.input ? null : false); return; }
+        titleEl.textContent = opts.title || '';
+        msgEl.textContent = opts.message || '';
+        if (opts.input) {
+            inputEl.style.display = '';
+            inputEl.value = opts.defaultValue != null ? String(opts.defaultValue) : '';
+            inputEl.placeholder = opts.placeholder || '';
+        } else {
+            inputEl.style.display = 'none';
+            inputEl.value = '';
+        }
+        okBtn.textContent = opts.okText || '确定';
+        cancelBtn.textContent = opts.cancelText || '取消';
+        okBtn.classList.toggle('btn-danger', !!opts.isDanger);
+        modal.style.display = 'flex';
+        if (opts.input) setTimeout(() => { inputEl.focus(); inputEl.select(); }, 50);
+        const cleanup = () => {
+            modal.style.display = 'none';
+            okBtn.onclick = null;
+            cancelBtn.onclick = null;
+            modal.onclick = null;
+            inputEl.onkeydown = null;
+        };
+        const onOk = () => {
+            const v = opts.input ? inputEl.value : true;
+            cleanup();
+            resolve(opts.input ? v : true);
+        };
+        const onCancel = () => { cleanup(); resolve(opts.input ? null : false); };
+        okBtn.onclick = onOk;
+        cancelBtn.onclick = onCancel;
+        modal.onclick = (e) => { if (e.target === modal) onCancel(); };
+        inputEl.onkeydown = (e) => { if (e.key === 'Enter') onOk(); if (e.key === 'Escape') onCancel(); };
+    });
+}
+function uiConfirm(message, opts = {}) { return uiModal({ title: opts.title, message, okText: opts.okText, cancelText: opts.cancelText, isDanger: opts.isDanger }); }
+function uiPrompt(message, defaultValue, opts = {}) { return uiModal({ title: opts.title, message, input: true, defaultValue, placeholder: opts.placeholder, okText: opts.okText }); }
+
 // 玩家上线提示：每次刷新进入页面弹出「玩家 [xx] 已上线 🕹️」
 function showPlayerOnline() {
     const el = document.getElementById('playerOnline');
@@ -1023,6 +1071,21 @@ async function syncFromCloud() {
                 const cloudModulesUpdatedAt = cloud.modulesUpdatedAt || 0;
                 // updatedAt 是云端行元数据，不并入本地 state.data
                 const { updatedAt, ...cloudPayload } = cloud;
+
+                // 【关键修复】拉取前先快照本地所有「按 id 的追加型数组」。
+                // 下方 state.data = {...state.data, ...cloudPayload} 会用云端整组替换嵌套数组，
+                // 若不在替换前保存本地引用，后续 mergeById 实际是在「云端 vs 云端」上合并，
+                // 本地新增的打卡流水/夸夸/喝水等记录会被静默丢弃（即"整数组覆盖"问题）。
+                const localById = {
+                    history: Array.isArray(state.data.points?.history) ? state.data.points.history : [],
+                    waterLogs: Array.isArray(state.data.waterLogs) ? state.data.waterLogs : [],
+                    praises: Array.isArray(state.data.praises) ? state.data.praises : [],
+                    wishes: Array.isArray(state.data.wishes) ? state.data.wishes : [],
+                    wishBin: Array.isArray(state.data.wishBin) ? state.data.wishBin : [],
+                    userQuotes: Array.isArray(state.data.userQuotes) ? state.data.userQuotes : [],
+                    praiseGroups: Array.isArray(state.data.praiseGroups) ? state.data.praiseGroups : []
+                };
+
                 state.data = { ...state.data, ...cloudPayload };
                 // 板块配置以「最后修改时间」为准：哪边更新就用哪边，实现跨设备同步
                 if (localModules && cloudModules) {
@@ -1042,11 +1105,15 @@ async function syncFromCloud() {
                 }
                 migrateData();
                 ensureDefaults();
-                // 流水/夸夸/心愿/金句属于「追加型」数据：以 id 取并集，避免刚产生的本地记录被云端旧快照覆盖
-                state.data.points.history = mergeById(state.data.points.history, cloud.points?.history);
-                state.data.praises = mergeById(state.data.praises, cloud.praises);
-                state.data.wishes = mergeById(state.data.wishes, cloud.wishes);
-                state.data.userQuotes = mergeById(state.data.userQuotes, cloud.userQuotes);
+                // 流水/夸夸/心愿/金句/分组/喝水/回收站：用「拉取前的本地数组」与云端取并集。
+                // 本地新产生的记录绝不会被云端旧快照整组覆盖（修复此前 mergeById 因被先替换而失效的 bug）。
+                state.data.points.history = mergeById(localById.history, cloud.points?.history);
+                state.data.waterLogs = mergeById(localById.waterLogs, cloud.waterLogs);
+                state.data.praises = mergeById(localById.praises, cloud.praises);
+                state.data.wishes = mergeById(localById.wishes, cloud.wishes);
+                state.data.wishBin = mergeById(localById.wishBin, cloud.wishBin);
+                state.data.userQuotes = mergeById(localById.userQuotes, cloud.userQuotes);
+                state.data.praiseGroups = mergeById(localById.praiseGroups, cloud.praiseGroups);
                 // 今日金句以云端较新的日期为准
                 if (cloud.dailyQuote && cloud.dailyQuote.date > (state.data.dailyQuote?.date || '')) {
                     state.data.dailyQuote = cloud.dailyQuote;
@@ -1060,7 +1127,13 @@ async function syncFromCloud() {
                 saveStateLocal();
                 const after = syncDataSnapshot(state.data);
                 if (before !== after) {
-                    render();
+                    if (isUserTyping()) {
+                        // 后台轮询拉到新数据时，若用户正在输入框打字，暂存待渲染标记，
+                        // 等其失焦再重绘，避免整页重建 DOM 导致光标/焦点丢失。
+                        state._deferredRender = true;
+                    } else {
+                        render();
+                    }
                     // 同步提示已收敛到顶部 cloudStatusBadge，不再弹全局 toast，避免干扰
                 }
             }
@@ -1167,6 +1240,15 @@ function formatSyncTime() {
     const d = new Date(t);
     if (isNaN(d.getTime())) return '';
     return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+// 判断用户是否正在输入框中打字（用于后台轮询重绘时避免丢焦点）
+function isUserTyping() {
+    const ae = document.activeElement;
+    if (!ae) return false;
+    const tag = ae.tagName;
+    return (tag === 'INPUT' || tag === 'TEXTAREA' || ae.isContentEditable)
+        && !ae.readOnly && !ae.disabled;
 }
 
 function updateSyncStatus(status) {
@@ -1295,8 +1377,9 @@ function importDataFile(file) {
 }
 
 // 清除所有应用数据（保留云端/个人设置，避免重新配置 Supabase）
-function clearAllData() {
-    if (!confirm('确定要清除所有应用数据吗？\n\n所有打卡、积分、心愿、喝水记录、夸夸记录等都会被清空，但云端配置（Supabase URL/Key/同步空间ID）会保留。')) return;
+async function clearAllData() {
+    const ok = await uiConfirm('确定要清除所有应用数据吗？\n\n所有打卡、积分、心愿、喝水记录、夸夸记录等都会被清空，但云端配置（Supabase URL/Key/同步空间ID）会保留。', { isDanger: true });
+    if (!ok) return;
     const preservedSettings = { ...state.settings };
     // 重置为初始数据结构，保留设置
     state.settings = preservedSettings;
@@ -2277,6 +2360,8 @@ function renderSidebar() {
 }
 
 function render() {
+    // 任何显式重绘都视为已"消费"掉后台轮询推迟的待渲染标记
+    state._deferredRender = false;
     // 当前模块若被隐藏/不存在，回退到第一个可见模块，避免空白页
     const visible = getModules();
     if (!visible.find(m => m.id === state.currentModule)) {
@@ -3527,7 +3612,7 @@ function renameCategory(mod, newName) {
     render();
 }
 
-function deleteCategory(mod) {
+async function deleteCategory(mod) {
     const cats = getCategories();
     if (!cats[mod]) return;
     const order = getCategoryOrder();
@@ -3537,7 +3622,8 @@ function deleteCategory(mod) {
         const fallback = DEFAULT_CATEGORY_ORDER[0] || 'basic';
         const target = order.find(k => k !== mod) || fallback;
         const targetName = cats[target] || getCategories()[fallback] || '其他';
-        if (!confirm(`板块「${cats[mod]}」下有 ${items.length} 个打卡项。点击「确定」把它们移到「${targetName}」，点击「取消」则连同习惯一起删除。`)) {
+        const ok = await uiConfirm(`板块「${cats[mod]}」下有 ${items.length} 个打卡项。点击「确定」把它们移到「${targetName}」，点击「取消」则连同习惯一起删除。`, { isDanger: true });
+        if (!ok) {
             // 删除习惯（进回收站）
             items.forEach(ci => {
                 ci.deletedAt = now();
@@ -4624,7 +4710,7 @@ async function saveBeautyInsp() {
 }
 
 async function deleteBeautyInsp(id) {
-    if (!confirm('确定删除这条灵感吗？')) return;
+    if (!await uiConfirm('确定删除这条灵感吗？', { isDanger: true })) return;
     if (!state.supabase) { toast('未连接云端'); return; }
     try {
         const { error } = await state.supabase.from('beauty_inspiration').delete().eq('id', id);
@@ -5436,8 +5522,9 @@ function initEvents() {
         }
 
         if (action === 'custom-water') {
-            const amount = prompt('输入喝水量（ml）：', '400');
-            if (amount) addWater(parseInt(amount) || 0);
+            uiPrompt('输入喝水量（ml）：', '400').then(amount => {
+                if (amount) addWater(parseInt(amount) || 0);
+            });
             return;
         }
 
@@ -5483,14 +5570,15 @@ function initEvents() {
         }
 
         if (action === 'edit-water-goal') {
-            const v = prompt('设置每日喝水目标（ml）：', state.data.waterGoal);
-            if (v && !isNaN(parseInt(v))) {
-                state.data.waterGoal = Math.max(100, parseInt(v));
-                syncWaterCheckIn();
-                saveState();
-                render();
-                toast('喝水目标已更新');
-            }
+            uiPrompt('设置每日喝水目标（ml）：', String(state.data.waterGoal)).then(v => {
+                if (v && !isNaN(parseInt(v))) {
+                    state.data.waterGoal = Math.max(100, parseInt(v));
+                    syncWaterCheckIn();
+                    saveState();
+                    render();
+                    toast('喝水目标已更新');
+                }
+            });
             return;
         }
 
@@ -5893,11 +5981,13 @@ function initEvents() {
         if (action === 'quote-edit') {
             const q = state.data.userQuotes.find(x => x.id === el.dataset.id);
             if (!q) return;
-            const newText = prompt('编辑金句：', q.text);
-            if (newText === null) return;
-            const newFrom = prompt('出处（可选）：', q.from || '');
-            if (newFrom === null) return;
-            updateQuote(q.id, newText, newFrom || '');
+            uiPrompt('编辑金句：', q.text).then(newText => {
+                if (newText === null) return;
+                uiPrompt('出处（可选）：', q.from || '').then(newFrom => {
+                    if (newFrom === null) return;
+                    updateQuote(q.id, newText, newFrom || '');
+                });
+            });
             return;
         }
         if (action === 'quote-delete') {
@@ -5921,8 +6011,9 @@ function initEvents() {
             return;
         }
         if (action === 'quote-reset-defaults') {
-            if (!confirm('确定要导入默认内置金句库吗？这会覆盖你当前的自定义金句库。')) return;
-            importDefaultQuotes();
+            uiConfirm('确定要导入默认内置金句库吗？这会覆盖你当前的自定义金句库。', { isDanger: true }).then(ok => {
+                if (ok) importDefaultQuotes();
+            });
             return;
         }
 
@@ -6291,6 +6382,16 @@ function init() {
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden && state.supabase) syncFromCloud();
     });
+
+    // 后台轮询因用户正在输入而推迟的重绘：在输入框失焦且焦点未转移到另一个输入框时补绘，
+    // 既不打断打字，也能保证数据最终刷新到界面。
+    document.addEventListener('focusout', (e) => {
+        if (!state._deferredRender) return;
+        const to = e.relatedTarget;
+        if (to && (to.tagName === 'INPUT' || to.tagName === 'TEXTAREA' || to.isContentEditable)) return;
+        state._deferredRender = false;
+        render();
+    }, true);
 
     // 记录本次访问时间（供下次"欢迎回来"使用）
     state.data.lastVisit = now();
