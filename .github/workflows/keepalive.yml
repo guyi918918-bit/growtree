@@ -1,0 +1,18 @@
+name: Keep Supabase Awake
+
+# 每天访问一次 Supabase，避免免费版连续 7 天无请求被自动暂停。
+on:
+  schedule:
+    - cron: '23 4 * * *'   # 每天 UTC 04:23（北京时间约 12:23）
+  workflow_dispatch:        # 也可在 Actions 页面手动点 Run workflow 立即触发
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase (growtree_data)
+        run: |
+          URL="https://orftrnvimqlzaimsssxz.supabase.co/rest/v1/growtree_data?select=id&limit=1"
+          KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9yZnRybnZpbXFsemFpbXNzc3h6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwOTYyMDIsImV4cCI6MjEwMTY3MjIwMn0.LseAVcMn_FVVjUE_rodB72_mnz3n60Lk7g1jubUS81Q"
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL" -H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+          echo "Supabase ping returned HTTP $CODE"
