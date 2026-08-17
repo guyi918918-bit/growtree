@@ -7,7 +7,7 @@ const MODULES = [
     { id: 'hot', name: '今日热点', icon: '🔥' },
     { id: 'study', name: '学习提升', icon: '📚' },
     { id: 'checkin', name: '认真打卡', icon: '✅' },
-    { id: 'treehole', name: '夸夸自己', icon: '💛' },
+    { id: 'treehole', name: '夸夸金句', icon: '💛' },
     { id: 'points', name: '积分系统', icon: '⭐' }
 ];
 
@@ -4784,12 +4784,12 @@ function renderTreeHole() {
     return `
         <div class="card">
             <div class="card-header">
-                <div class="card-title">💛 夸夸自己 & 每日金句</div>
-                <span style="font-size:12px;color:var(--text-secondary)">写夸夸、攒金句，每天给自己一点力量</span>
+                <div class="card-title">💛 夸夸金句</div>
+                <span style="font-size:12px;color:var(--text-secondary)">每天一句，看见自己的好</span>
             </div>
-            <div class="praise-sections">
-                <button class="section-btn ${section === 'praises' ? 'active' : ''}" data-action="praise-section" data-section="praises">✨ 夸夸自己</button>
-                <button class="section-btn ${section === 'quotes' ? 'active' : ''}" data-action="praise-section" data-section="quotes">💬 每日金句</button>
+            <div class="praise-segment">
+                <button class="seg-btn ${section === 'praises' ? 'active' : ''}" data-action="praise-section" data-section="praises">✨ 夸夸</button>
+                <button class="seg-btn ${section === 'quotes' ? 'active' : ''}" data-action="praise-section" data-section="quotes">💬 金句</button>
             </div>
             ${section === 'praises' ? `
             <div class="praise-rule">✨ 规则：写一句夸夸自己，即可获得一颗小星星。坚持记录，月底回顾会很有力量。</div>
@@ -4945,7 +4945,7 @@ function praiseTodayPanel() {
     return `
         ${todayPraises.length ? `<div class="praise-subtitle">今天已记录 ${todayPraises.length} 句夸夸</div>` : ''}
         ${todayPraises.length ? todayPraises.map(p => praiseCard(p)).join('') : `
-            <div class="empty-state"><span class="emoji">💛</span>今天还没有夸夸自己，写一条吧～</div>
+            <div class="empty-state"><span class="emoji">💛</span>今天还没有夸夸自己，写一条吧~</div>
         `}
     `;
 }
@@ -5077,7 +5077,7 @@ function praiseQuotesPanel() {
                 <button class="btn" data-action="quote-reset-defaults" style="background:var(--surface-2);color:var(--text-secondary)">恢复默认内置金句库</button>
             </div>
         ` : `
-            <div class="empty-state"><span class="emoji">💬</span>还没有自定义金句，添加一句吧～<br><span style="font-size:12px;color:var(--text-secondary)">空库时首页会自动使用内置金句</span></div>
+            <div class="empty-state"><span class="emoji">💬</span>金句库空空如也，快去收集灵感吧~<br><span style="font-size:12px;color:var(--text-secondary)">空库时首页会自动使用内置金句</span></div>
             <button class="btn" data-action="quote-reset-defaults" style="margin-top:8px;background:var(--surface-2);color:var(--text-secondary)">一键导入默认内置金句库</button>
         `}
     `;
