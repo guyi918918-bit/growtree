@@ -855,6 +855,7 @@ function migrateData() {
     state.data.dailyQuote = state.data.dailyQuote || null;
     state.data.praiseGroups = state.data.praiseGroups || [];
     state.data.quoteGroups = state.data.quoteGroups || [];
+    state.data.settings = state.data.settings || { theme: state.settings && state.settings.theme ? state.settings.theme : 'light' };
     ensureGameDefaults();
 }
 
@@ -6495,7 +6496,8 @@ function applyTheme() {
 }
 
 function toggleTheme() {
-    const cur = (state.data.settings && state.data.settings.theme) || 'light';
+    if (!state.data.settings) state.data.settings = {};
+    const cur = state.data.settings.theme || 'light';
     state.data.settings.theme = cur === 'dark' ? 'light' : 'dark';
     applyTheme();
     saveState();
@@ -6642,7 +6644,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817f';
+        const APP_BUILD = '20260817g';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
