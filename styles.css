@@ -2999,6 +2999,16 @@ select.input {
 .home-tree-sub { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
 .apple-cta { margin-top: 12px; }
 
+/* 暗夜模式：首页特殊卡片/小树适配 */
+[data-theme="dark"] .apple-hero,
+[data-theme="dark"] .home-hero { background: linear-gradient(160deg, #1a3c28, #0d1f16); }
+[data-theme="dark"] .tree-glow { fill: var(--primary-light); opacity: .25; }
+[data-theme="dark"] .tree-trunk { stroke: #6d5a50; }
+[data-theme="dark"] .tree-branch { stroke: #7d6a60; }
+[data-theme="dark"] .tree-leaf { fill: var(--surface-2); }
+[data-theme="dark"] .tree-leaf.filled { fill: var(--primary); }
+[data-theme="dark"] .tree-pct { color: var(--primary); background: rgba(0,0,0,.5); }
+
 .home-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .quick-btn {
     background: var(--surface); border: 1px solid rgba(0,0,0,.04); border-radius: 16px;
@@ -3007,6 +3017,8 @@ select.input {
 }
 .quick-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.08); }
 .quick-btn:active { transform: scale(.97); }
+[data-theme="dark"] .quick-btn { border-color: var(--border); }
+[data-theme="dark"] .quick-btn:hover { box-shadow: 0 6px 18px rgba(0,0,0,.35); }
 .quick-icon { font-size: 26px; }
 .quick-label { font-size: 13px; font-weight: 600; color: var(--text); }
 
@@ -3142,8 +3154,11 @@ select.input {
 .quote-card .quote-en { font-size: 13px; color: var(--text-secondary); margin-top: 8px; }
 .quote-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .quote-tag { font-size: 12px; font-weight: 600; color: var(--accent); background: rgba(255,159,10,0.12); padding: 3px 10px; border-radius: 999px; }
+[data-theme="dark"] .quote-tag { background: rgba(255,214,10,0.15); }
 .quote-refresh { font-size: 12px; color: var(--text-secondary); background: rgba(255,255,255,0.6); border: 1px solid rgba(0,0,0,0.08); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
 .quote-refresh:hover { background: rgba(255,255,255,0.9); color: var(--text); }
+[data-theme="dark"] .quote-refresh { background: rgba(255,255,255,0.1); border-color: var(--border); color: var(--text-secondary); }
+[data-theme="dark"] .quote-refresh:hover { background: rgba(255,255,255,0.18); color: var(--text); }
 .quote-from { font-size: 12px; color: var(--text-secondary); margin-top: 4px; font-style: italic; }
 .quote-group-tag { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--primary-dark); background: var(--primary-light); border-radius: 10px; padding: 2px 8px; }
 [data-theme="dark"] .quote-group-tag { color: var(--primary); background: var(--primary-light); }
@@ -3165,6 +3180,7 @@ select.input {
 .history-text strong { font-weight: 700; }
 .history-link-icon { font-size: 12px; opacity: .55; flex-shrink: 0; margin-top: 2px; }
 .history-holiday { margin-top: 12px; padding: 10px 12px; background: var(--primary-light); border-radius: var(--radius-sm); font-size: 14px; color: var(--primary-dark); font-weight: 600; }
+[data-theme="dark"] .history-holiday { color: var(--primary); }
 
 /* 升级规则 */
 .level-rule-list { display: flex; flex-direction: column; gap: 10px; }
