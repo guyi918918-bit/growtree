@@ -529,6 +529,16 @@ const ENGLISH_VIDEOS = [
     { title: 'BBC 6 Minute English', source: 'B站 / 每日英语听力', link: 'https://www.bilibili.com/video/BV1c7411K7Lp', desc: '6 分钟一个话题，词汇贴近生活，适合培养英语思维。' }
 ];
 
+// 每日口语一句：按日期轮换，避免每天都是同一句
+const ENGLISH_SENTENCES = [
+    { en: "How's it going?", zh: '最近怎么样？', ex: "A: Hey, how's it going? B: Pretty good, thanks! How about you?" },
+    { en: "I'm down for that.", zh: '我同意 / 我乐意', ex: "A: Wanna grab coffee later? B: Sure, I'm down for that." },
+    { en: "It's on me.", zh: '这顿我请 / 我来买单', ex: "A: Let's have dinner. B: Great, it's on me this time." },
+    { en: "No big deal.", zh: '没什么大不了的 / 别在意', ex: "A: Sorry I'm late. B: No big deal, we just started." },
+    { en: "That makes sense.", zh: '有道理 / 说得通', ex: "A: We should leave early to avoid traffic. B: That makes sense." },
+    { en: "I'll take a rain check.", zh: '改天吧（婉拒）', ex: "A: Join us tonight? B: I'll take a rain check, busy week." }
+];
+
 const FLUCTUATION_TIPS = [
     '体重上涨1斤不一定是胖了，可能是肌肉糖原储水。看趋势，不看单点。',
     '姨妈期前后水分波动2-3斤很正常，别被数字吓到。',
@@ -1017,12 +1027,19 @@ function reportSyncError(e) {
     syncFailCount++;
     console.error('云端同步失败', e);
     if (syncFailCount >= 2) {
+        const reason = analyzeSupabaseError(e);
+        state.lastCloudError = reason;
         updateSyncStatus('error');
-        state.lastCloudError = analyzeSupabaseError(e);
+        // 仅在「从正常切换到失败」时提示一次原因，避免每次轮询都弹，打扰用户
+        if (!state._cloudErrorToastShown) {
+            state._cloudErrorToastShown = true;
+            toast('☁️ 同步失败：' + reason);
+        }
     }
 }
 function reportSyncSuccess() {
     syncFailCount = 0;
+    state._cloudErrorToastShown = false;
 }
 
 // 按 id 合并两条记录数组：保留本地独有的记录，同时补充云端独有的记录，避免同步覆盖本地新产生的数据
@@ -1272,13 +1289,21 @@ function updateSyncStatus(status) {
             online: { cls: 'online', label: time ? `已同步 ${time}` : '已同步' },
             offline: { cls: 'offline', label: '未连接' },
             syncing: { cls: 'syncing', label: '同步中...' },
-            error: { cls: 'error', label: '同步失败' }
+            error: { cls: 'error', label: '同步失败 · 点此重试' }
         };
         const cfg = map2[status] || map2.offline;
         badgeDot.className = 'cloud-status-dot ' + cfg.cls;
         badgeText.textContent = cfg.label;
         if (badge) {
             badge.className = 'cloud-status-badge ' + status;
+            // 失败时在徽章上悬停展示具体原因，并支持点击重试（符合"少弹窗、可自操作"偏好）
+            if (status === 'error') {
+                badge.title = '同步失败：' + (state.lastCloudError || '未知原因') + '\n点击可立即重试';
+                badge.style.cursor = 'pointer';
+            } else {
+                badge.removeAttribute('title');
+                badge.style.cursor = '';
+            }
             // 同步完成时给徽章一个轻微高亮，让用户在无 toast 时也能感知
             if (status === 'online' && time) {
                 badge.classList.add('just-synced');
@@ -2848,7 +2873,7 @@ function homeOverviewBody(checkedDays, doubleToday, doubleDayNum) {
 
     return `
         <div class="card home-hero apple-hero">
-            <div class="hero-greet">正在载入今日关卡... 🎮</div>
+            <div class="hero-greet">${greet}，${name} 👋</div>
             <div class="hero-date">${dateStr}${escapeHtml(getLunarDate()) ? ' · ' + escapeHtml(getLunarDate()) : ''}</div>
             <div class="hero-line">${doubleToday ? '🔥 今天是双倍积分日，打卡积分翻倍，别错过～' : '完成今日主线，即可解锁明日地图 🔓'}</div>
         </div>
@@ -3834,6 +3859,18 @@ function closeBookReview() {
 function renderEnglish() {
     const idx = getDailyIndex(ENGLISH_VIDEOS);
     const video = ENGLISH_VIDEOS[idx];
+    // 口语句子每日轮换：取两条不重复的（首尾各取一半区间，确保不同天不同组合）
+    const oi = getDailyIndex(ENGLISH_SENTENCES);
+    const half = Math.floor(ENGLISH_SENTENCES.length / 2);
+    const s1 = ENGLISH_SENTENCES[oi];
+    const s2 = ENGLISH_SENTENCES[(oi + half) % ENGLISH_SENTENCES.length];
+    const oralHtml = [s1, s2].map(s => `
+        <div class="skill-card">
+            <div style="font-size:18px;font-weight:700;color:var(--primary);margin-bottom:10px">${s.en}</div>
+            <div style="font-size:14px;margin-bottom:8px"><strong>含义：</strong>${s.zh}</div>
+            <div style="font-size:13px;color:var(--text-secondary);background:#fff;padding:12px;border-radius:10px;border-left:3px solid var(--primary)">${s.ex}</div>
+        </div>
+    `).join('');
     return `
         <div class="card">
             <div class="card-header">
@@ -3852,17 +3889,8 @@ function renderEnglish() {
         </div>
 
         <div class="card">
-            <div class="card-header"><div class="card-title">🗣️ 每日口语一句</div></div>
-            <div class="skill-card">
-                <div style="font-size:18px;font-weight:700;color:var(--primary);margin-bottom:10px">How's it going?</div>
-                <div style="font-size:14px;margin-bottom:8px"><strong>含义：</strong>最近怎么样？</div>
-                <div style="font-size:13px;color:var(--text-secondary);background:#fff;padding:12px;border-radius:10px;border-left:3px solid var(--primary)">A: Hey, how's it going? B: Pretty good, thanks! How about you?</div>
-            </div>
-            <div class="skill-card">
-                <div style="font-size:18px;font-weight:700;color:var(--primary);margin-bottom:10px">I'm down for that.</div>
-                <div style="font-size:14px;margin-bottom:8px"><strong>含义：</strong>我同意 / 我乐意</div>
-                <div style="font-size:13px;color:var(--text-secondary);background:#fff;padding:12px;border-radius:10px;border-left:3px solid var(--primary)">A: Wanna grab coffee later? B: Sure, I'm down for that.</div>
-            </div>
+            <div class="card-header"><div class="card-title">🗣️ 每日口语一句</div><span style="font-size:12px;color:var(--text-secondary)">每天轮换 · 跟读 3 遍</span></div>
+            ${oralHtml}
             <div style="background:var(--primary-light);border-radius:var(--radius-sm);padding:14px;margin-top:14px;font-size:13px;color:var(--primary-dark);line-height:1.5">
                 <strong>练习建议：</strong>任选一句，对着镜子大声说 3 遍，再自己造一个句子。口语进步的关键是「开口」，不是「背完」。
             </div>
@@ -5298,6 +5326,13 @@ function initEvents() {
         if (!el) return;
         const action = el.dataset.action;
 
+        if (action === 'sync-retry') {
+            if (!state.supabase) { toast('尚未连接云端，请先在设置中配置同步'); return; }
+            updateSyncStatus('syncing');
+            syncFromCloud().finally(() => toast('已尝试重新同步'));
+            return;
+        }
+
         if (action === 'tab') {
             if (el.dataset.module) {
                 if (el.dataset.tab) {
@@ -5560,12 +5595,21 @@ function initEvents() {
         if (action === 'water-batch-delete') {
             const sel = state._waterSelected || new Set();
             if (!sel.size) { toast('请先选择要删除的喝水记录'); return; }
-            state.data.waterLogs = state.data.waterLogs.filter(x => !sel.has(x.id));
-            state._waterMode = null;
-            state._waterSelected = new Set();
-            syncWaterCheckIn();
-            saveState(); render();
-            toast(`已删除 ${sel.size} 条喝水记录`);
+            const count = sel.size;
+            const removed = state.data.waterLogs.filter(x => sel.has(String(x.id)));
+            uiConfirm(`确定要删除选中的 ${count} 条喝水记录吗？\n删除后可在下方提示中撤销。`, { isDanger: true }).then(ok => {
+                if (!ok) return;
+                state.data.waterLogs = state.data.waterLogs.filter(x => !sel.has(String(x.id)));
+                state._waterMode = null;
+                state._waterSelected = new Set();
+                syncWaterCheckIn();
+                saveState(); render();
+                toastUndo(`已删除 ${count} 条喝水记录`, () => {
+                    state.data.waterLogs = [...state.data.waterLogs, ...removed];
+                    syncWaterCheckIn();
+                    saveState(); render();
+                });
+            });
             return;
         }
 
@@ -6399,7 +6443,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817c';
+        const APP_BUILD = '20260817d';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
