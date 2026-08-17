@@ -856,6 +856,12 @@ function migrateData() {
     state.data.praiseGroups = state.data.praiseGroups || [];
     state.data.quoteGroups = state.data.quoteGroups || [];
     state.data.settings = state.data.settings || { theme: state.settings && state.settings.theme ? state.settings.theme : 'light' };
+    // 同步默认模块：以 MODULES 为基准刷新 name/icon/order，保留用户的 hidden 偏好
+    const existing = Array.isArray(state.data.modules) ? state.data.modules : [];
+    state.data.modules = MODULES.map(m => {
+        const prev = existing.find(x => x.id === m.id);
+        return { id: m.id, name: m.name, icon: m.icon, hidden: prev ? !!prev.hidden : false };
+    });
     ensureGameDefaults();
 }
 
