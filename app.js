@@ -4784,9 +4784,14 @@ function renderTreeHole() {
     return `
         <div class="card">
             <div class="card-header">
-                <div class="card-title">💛 夸夸自己</div>
-                <span style="font-size:12px;color:var(--text-secondary)">每天一句，看见自己的好</span>
+                <div class="card-title">💛 夸夸自己 & 每日金句</div>
+                <span style="font-size:12px;color:var(--text-secondary)">写夸夸、攒金句，每天给自己一点力量</span>
             </div>
+            <div class="praise-sections">
+                <button class="section-btn ${section === 'praises' ? 'active' : ''}" data-action="praise-section" data-section="praises">✨ 夸夸自己</button>
+                <button class="section-btn ${section === 'quotes' ? 'active' : ''}" data-action="praise-section" data-section="quotes">💬 每日金句</button>
+            </div>
+            ${section === 'praises' ? `
             <div class="praise-rule">✨ 规则：写一句夸夸自己，即可获得一颗小星星。坚持记录，月底回顾会很有力量。</div>
             <div class="praise-input-row">
                 <input type="text" class="input" id="praiseInput" placeholder="今天，我想夸夸自己：" maxlength="200">
@@ -4807,11 +4812,6 @@ function renderTreeHole() {
                 <button class="btn" data-action="praise-group-new-cancel">取消</button>
             </div>
             ` : ''}
-            <div class="praise-sections">
-                <button class="section-btn ${section === 'praises' ? 'active' : ''}" data-action="praise-section" data-section="praises">夸夸自己</button>
-                <button class="section-btn ${section === 'quotes' ? 'active' : ''}" data-action="praise-section" data-section="quotes">💬 金句库</button>
-            </div>
-            ${section === 'praises' ? `
             <div class="praise-tabs">${subTabs.map(t => `
                 <button class="tab-btn ${tab === t.id ? 'active' : ''}" data-action="praise-tab" data-tab="${t.id}">${t.icon} ${t.name}</button>
             `).join('')}</div>
