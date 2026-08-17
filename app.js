@@ -856,12 +856,16 @@ function migrateData() {
     state.data.praiseGroups = state.data.praiseGroups || [];
     state.data.quoteGroups = state.data.quoteGroups || [];
     state.data.settings = state.data.settings || { theme: state.settings && state.settings.theme ? state.settings.theme : 'light' };
-    // 同步默认模块：以 MODULES 为基准刷新 name/icon/order，保留用户的 hidden 偏好
-    const existing = Array.isArray(state.data.modules) ? state.data.modules : [];
-    state.data.modules = MODULES.map(m => {
-        const prev = existing.find(x => x.id === m.id);
-        return { id: m.id, name: m.name, icon: m.icon, hidden: prev ? !!prev.hidden : false };
-    });
+    // 同步默认模块：仅当检测到旧模块名（夸夸金句/夸夸自己）时，按 MODULES 重排并刷新名称，
+    // 否则保留用户/云端已同步的自定义顺序与隐藏状态，避免每次启动都强制覆盖。
+    const existingMods = Array.isArray(state.data.modules) ? state.data.modules : [];
+    const hasOldTreeholeName = existingMods.some(m => m.id === 'treehole' && (m.name === '夸夸金句' || m.name === '夸夸自己'));
+    if (hasOldTreeholeName) {
+        state.data.modules = MODULES.map(m => {
+            const prev = existingMods.find(x => x.id === m.id);
+            return { id: m.id, name: m.name, icon: m.icon, hidden: prev ? !!prev.hidden : false };
+        });
+    }
     ensureGameDefaults();
 }
 
