@@ -793,6 +793,7 @@ function migrateData() {
     state.data.checkInBin = state.data.checkInBin || [];
     state.data.userQuotes = state.data.userQuotes || [];
     state.data.dailyQuote = state.data.dailyQuote || null;
+    state.data.praiseGroups = state.data.praiseGroups || [];
     ensureGameDefaults();
 }
 
@@ -845,7 +846,8 @@ function ensureDefaults() {
     // 旧数据补全：每个打卡项默认 3 朵 🌸（坚持任务）；分数由花朵定级决定
     state.data.checkIns.forEach(c => {
         if (!c.stars) c.stars = 3;
-        c.points = flowerScore(c.stars); // 分数 = 难度定级对应的满分
+        // 自定义积分优先；否则按花朵定级兜底（避免覆盖用户在批量积分里的设置）
+        c.points = (c.customPoints != null) ? c.customPoints : flowerScore(c.stars);
     });
     // 保证默认分类存在（新用户或旧数据）
     if (!state.data.categories || !Object.keys(state.data.categories).length) {
@@ -1162,8 +1164,8 @@ function queueSync() {
 function formatSyncTime() {
     const t = state.data.lastSyncAt;
     if (!t) return '';
-    const d = new Date(t.replace(/-/g, '/'));
-    if (isNaN(d)) return '';
+    const d = new Date(t);
+    if (isNaN(d.getTime())) return '';
     return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
 
@@ -1623,7 +1625,6 @@ function recalcCourage() {
     const seasonStart = getSeasonStart(season.key, season.year);
     const todayD = today();
     const todayBaseCount = state.data.points.history.filter(h => h.type === 'base' && h.date === todayD).length;
-    console.log('[recalcCourage] season=', season.id, 'seasonStart=', seasonStart, 'today=', todayD, 'todayBaseCount=', todayBaseCount, 'courageStars=', g.courageStars, 'cap=', cap);
     const byDate = {};
     state.data.points.history.forEach(h => {
         if (h.type !== 'base') return;
@@ -1654,7 +1655,6 @@ function recalcCourage() {
     }
     g.courage = Math.max(0, Math.min(cap, total));
     g.allFourCourageDates = activeAllFourDates;
-    console.log('[recalcCourage] total=', total, 'courage=', g.courage, 'allFourDates=', activeAllFourDates.length);
 }
 
 // 每日习惯完成度奖励 + 星能 + 全勤成就，在每次「打卡/取消打卡」后调用
@@ -1713,7 +1713,7 @@ function gameOnCheckIn(date) {
 function awardWinStreak() {
     const g = state.data.game;
     const streak = getCurrentStreak();
-    if (streak < 3) { g.winAwarded = []; return; }
+    if (streak < 3) return;
     for (const m of [3, 7, 14, 30]) {
         const stars = WIN_STREAK_STARS[m];
         if (streak >= m && !g.winAwarded.includes(m)) {
@@ -2291,7 +2291,6 @@ function render() {
     // 首页/热点/学习/变美情报局等异步加载最新内容
     if (state.currentModule === 'home') loadHomeData();
     if (state.currentModule === 'hot') loadHotData();
-    if (state.currentModule === 'study') loadHomeData();
     if (state.currentModule === 'beauty') loadBeautyData();
 }
 
@@ -4653,17 +4652,21 @@ function renderTreeHole() {
         { id: 'today', name: '今日', icon: '✨' },
         { id: 'calendar', name: '日历', icon: '📅' },
         { id: 'weekly', name: '周记', icon: '📆' },
-        { id: 'monthly', name: '月记', icon: '🗓️' }
+        { id: 'monthly', name: '月记', icon: '🗓️' },
+        { id: 'groups', name: '分组', icon: '🏷️' }
     ];
     let panel = '';
     if (section === 'praises') {
         if (tab === 'today') panel = praiseTodayPanel();
         else if (tab === 'calendar') panel = praiseCalendarPanel();
         else if (tab === 'weekly') panel = praiseWeeklyPanel();
-        else panel = praiseMonthlyPanel();
+        else if (tab === 'monthly') panel = praiseMonthlyPanel();
+        else panel = praiseGroupsPanel();
     } else {
         panel = praiseQuotesPanel();
     }
+    const groups = state.data.praiseGroups || [];
+    const selGroup = state._praiseGroupSel || '';
     return `
         <div class="card">
             <div class="card-header">
@@ -4675,6 +4678,21 @@ function renderTreeHole() {
                 <input type="text" class="input" id="praiseInput" placeholder="今天，我想夸夸自己：" maxlength="200">
                 <button class="btn btn-primary" data-action="praise-send">记录</button>
             </div>
+            <div class="praise-group-row">
+                <span class="praise-group-label">分组</span>
+                <select id="praiseGroupSelect" class="input praise-group-select">
+                    <option value="">未分组</option>
+                    ${groups.map(g => `<option value="${g.id}" ${selGroup === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
+                </select>
+                <button class="btn praise-group-add-btn" data-action="praise-group-new" title="新建分组">＋</button>
+            </div>
+            ${state._praiseGroupAdding ? `
+            <div class="praise-group-new-wrap">
+                <input type="text" class="input" id="praiseGroupNewInput" placeholder="输入分组名" maxlength="20">
+                <button class="btn btn-primary" data-action="praise-group-new-confirm">确定</button>
+                <button class="btn" data-action="praise-group-new-cancel">取消</button>
+            </div>
+            ` : ''}
             <div class="praise-sections">
                 <button class="section-btn ${section === 'praises' ? 'active' : ''}" data-action="praise-section" data-section="praises">夸夸自己</button>
                 <button class="section-btn ${section === 'quotes' ? 'active' : ''}" data-action="praise-section" data-section="quotes">💬 金句库</button>
@@ -4683,17 +4701,109 @@ function renderTreeHole() {
             <div class="praise-tabs">${subTabs.map(t => `
                 <button class="tab-btn ${tab === t.id ? 'active' : ''}" data-action="praise-tab" data-tab="${t.id}">${t.icon} ${t.name}</button>
             `).join('')}</div>
+            ${tab !== 'groups' ? praiseGroupFilterBar() : ''}
             ` : ''}
             <div id="praisePanel">${panel}</div>
         </div>
     `;
 }
 
-function addPraise(text) {
+function praiseGroupFilterBar() {
+    const groups = state.data.praiseGroups || [];
+    const cur = state._praiseFilterGroup || '';
+    const chip = (val, label) => `<button class="pg-chip ${cur === val ? 'active' : ''}" data-action="praise-filter-group" data-group="${val}">${label}</button>`;
+    return `<div class="praise-group-filter">${chip('', '全部')}${chip('__none__', '未分组')}${groups.map(g => chip(g.id, escapeHtml(g.name))).join('')}</div>`;
+}
+
+function filterPraiseByGroup(arr) {
+    const g = state._praiseFilterGroup;
+    if (!g) return arr;
+    if (g === '__none__') return arr.filter(p => !p.groupId);
+    return arr.filter(p => p.groupId === g);
+}
+
+function praiseGroupsPanel() {
+    const groups = state.data.praiseGroups || [];
+    if (state._praiseGroupView) {
+        const g = groups.find(x => x.id === state._praiseGroupView);
+        const items = filterPraiseByGroup(state.data.praises.filter(p => p.groupId === state._praiseGroupView)).sort((a, b) => a.time < b.time ? 1 : -1);
+        return `
+            <div class="praise-subtitle">${escapeHtml(g ? g.name : '分组')} · 共 ${items.length} 句夸夸</div>
+            <button class="btn" data-action="praise-group-back" style="margin-bottom:10px">← 返回分组管理</button>
+            ${items.length ? items.map(p => praiseCard(p)).join('') : '<div class="empty-state"><span class="emoji">💛</span>这个分组还没有夸夸，去记录时选择它吧～</div>'}
+        `;
+    }
+    return `
+        <div class="praise-subtitle">给你的夸夸分类，比如「工作」「生活」「成长」，方便以后按主题回顾</div>
+        <button class="btn btn-primary" data-action="praise-group-new" style="margin-bottom:12px">＋ 新建分组</button>
+        ${groups.length ? `<div class="praise-group-list">${groups.map(g => {
+            const cnt = state.data.praises.filter(p => p.groupId === g.id).length;
+            const renaming = state._praiseGroupRenaming === g.id;
+            return `<div class="praise-group-item">
+                ${renaming ? `
+                    <input type="text" class="input praise-group-rename-input" id="praiseGroupRenameInput" value="${escapeHtml(g.name)}" maxlength="20">
+                    <span class="praise-group-ops">
+                        <button class="praise-del" data-action="praise-group-rename-confirm" data-id="${g.id}">确定</button>
+                        <button class="praise-del" data-action="praise-group-rename-cancel" data-id="${g.id}">取消</button>
+                    </span>
+                ` : `
+                    <button class="praise-group-name" data-action="praise-group-view" data-id="${g.id}">🏷️ ${escapeHtml(g.name)} <span class="praise-group-count">${cnt}</span></button>
+                    <span class="praise-group-ops">
+                        <button class="praise-del" data-action="praise-group-rename" data-id="${g.id}">重命名</button>
+                        <button class="praise-del" data-action="praise-group-delete" data-id="${g.id}">删除</button>
+                    </span>
+                `}
+            </div>`;
+        }).join('')}</div>` : '<div class="empty-state"><span class="emoji">🏷️</span>还没有分组，点上面新建一个吧～</div>'}
+    `;
+}
+
+function addPraiseGroup(name) {
+    name = (name || '').trim();
+    if (!name) { toast('请输入分组名'); return; }
+    const g = { id: uuid(), name };
+    state.data.praiseGroups.push(g);
+    state._praiseGroupAdding = false;
+    state._praiseGroupSel = g.id;
+    saveState();
+    render();
+    toast('已创建分组：' + name);
+}
+
+function renamePraiseGroup(id, name) {
+    const g = (state.data.praiseGroups || []).find(x => x.id === id);
+    if (!g) return;
+    name = (name || '').trim();
+    if (!name) { toast('分组名不能为空'); return; }
+    g.name = name;
+    state._praiseGroupRenaming = null;
+    saveState();
+    render();
+    toast('已重命名');
+}
+
+function deletePraiseGroup(id) {
+    const g = (state.data.praiseGroups || []).find(x => x.id === id);
+    if (!g) return;
+    state.data.praiseGroups = (state.data.praiseGroups || []).filter(x => x.id !== id);
+    // 该分组下的夸夸退回到「未分组」
+    state.data.praises.forEach(p => { if (p.groupId === id) p.groupId = null; });
+    if (state._praiseGroupView === id) state._praiseGroupView = null;
+    saveState();
+    render();
+    toastUndo('已删除分组「' + g.name + '」（组内夸夸移至未分组）', () => {
+        state.data.praiseGroups.push(g);
+        saveState();
+        render();
+    });
+}
+
+function addPraise(text, groupId) {
     if (!text || !text.trim()) return;
     state.data.praises.unshift({
         id: uuid(),
         text: text.trim(),
+        groupId: groupId || null,
         date: today(),
         time: now(),
         week: getWeekKey(today()),
@@ -4717,7 +4827,7 @@ function deletePraise(id) {
 }
 
 function praiseTodayPanel() {
-    const todayPraises = state.data.praises.filter(p => p.date === today()).sort((a, b) => a.time < b.time ? 1 : -1);
+    const todayPraises = filterPraiseByGroup(state.data.praises.filter(p => p.date === today())).sort((a, b) => a.time < b.time ? 1 : -1);
     return `
         ${todayPraises.length ? `<div class="praise-subtitle">今天已记录 ${todayPraises.length} 句夸夸</div>` : ''}
         ${todayPraises.length ? todayPraises.map(p => praiseCard(p)).join('') : `
@@ -4737,7 +4847,7 @@ function praiseCalendarPanel() {
     for (let i = 1; i <= daysInMonth; i++) days.push(i);
     const praisesByDate = {};
     state.data.praises.forEach(p => { praisesByDate[p.date] = (praisesByDate[p.date] || 0) + 1; });
-    const datePraises = state.data.praises.filter(p => p.date === selected).sort((a, b) => a.time < b.time ? 1 : -1);
+    const datePraises = filterPraiseByGroup(state.data.praises.filter(p => p.date === selected)).sort((a, b) => a.time < b.time ? 1 : -1);
     return `
         <div class="praise-subtitle">点击日期，查看那天的闪光点</div>
         <div class="praise-calendar">
@@ -4758,8 +4868,9 @@ function praiseCalendarPanel() {
 }
 
 function praiseWeeklyPanel() {
+    const all = filterPraiseByGroup(state.data.praises);
     const groups = {};
-    state.data.praises.forEach(p => {
+    all.forEach(p => {
         groups[p.week] = groups[p.week] || [];
         groups[p.week].push(p);
     });
@@ -4776,8 +4887,9 @@ function praiseWeeklyPanel() {
 }
 
 function praiseMonthlyPanel() {
+    const all = filterPraiseByGroup(state.data.praises);
     const groups = {};
-    state.data.praises.forEach(p => {
+    all.forEach(p => {
         groups[p.month] = groups[p.month] || [];
         groups[p.month].push(p);
     });
@@ -4794,9 +4906,12 @@ function praiseMonthlyPanel() {
 }
 
 function praiseCard(p, compact) {
+    const groups = state.data.praiseGroups || [];
+    const g = p.groupId ? groups.find(x => x.id === p.groupId) : null;
     return `
         <div class="praise-card">
             <div class="praise-text">${escapeHtml(p.text)}</div>
+            ${g ? `<div class="praise-card-group">🏷️ ${escapeHtml(g.name)}</div>` : ''}
             <div class="praise-meta">
                 <span>${compact ? formatDate(p.date) : formatTime(p.time)}</span>
                 <button class="praise-del" data-action="praise-delete" data-id="${p.id}">删除</button>
@@ -5132,7 +5247,7 @@ function initEvents() {
 
         if (action === 'open-link') {
             const url = el.dataset.link;
-            if (url && url !== '#') window.open(url, '_blank');
+            if (url && url !== '#') window.open(url, '_blank', 'noopener');
             return;
         }
 
@@ -5452,6 +5567,7 @@ function initEvents() {
             const ci = state.data.checkIns.find(x => x.id === id);
             if (ci && s >= 1 && s <= 5) {
                 ci.stars = s;
+                ci.customPoints = null; // 重新定级后按花朵分计算，放弃之前的自定义积分
                 ci.points = flowerScore(s); // 分数随定级同步
                 saveState();
                 render();
@@ -5615,7 +5731,7 @@ function initEvents() {
             if (!ids.length) { toast('请先勾选打卡项'); return; }
             const v = parseInt(document.getElementById('managePoints')?.value);
             if (isNaN(v) || v < 0) { toast('请输入有效的积分数'); return; }
-            state.data.checkIns.forEach(c => { if (ids.includes(c.id)) c.points = v; });
+            state.data.checkIns.forEach(c => { if (ids.includes(c.id)) { c.customPoints = v; c.points = v; } });
             saveState(); render();
             toast(`已将 ${ids.length} 个打卡项积分设为 ${v}`);
             return;
@@ -5666,21 +5782,18 @@ function initEvents() {
 
         if (action === 'hot-refresh') {
             const group = el.dataset.group;
-            if (group === 'beauty') {
-                state.data.hotCache['xiaohongshu'] = null;
-                state.data.hotCache['douyin'] = null;
-            } else {
-                const types = HOT_GROUPS[group] || HOT_GROUPS['mixed'];
-                types.forEach(t => state.data.hotCache[t] = null);
-                loadHotData();
-            }
+            const types = group === 'beauty' ? ['xiaohongshu', 'douyin'] : (HOT_GROUPS[group] || HOT_GROUPS['mixed']);
+            types.forEach(t => state.data.hotCache[t] = null);
+            loadHotData();
             toast('已刷新');
             return;
         }
 
         if (action === 'praise-send') {
             const input = document.getElementById('praiseInput');
-            if (input) { addPraise(input.value); input.value = ''; }
+            const sel = document.getElementById('praiseGroupSelect');
+            const gid = sel ? sel.value : '';
+            if (input) { addPraise(input.value, gid); input.value = ''; state._praiseGroupSel = gid; }
             return;
         }
 
@@ -5706,6 +5819,59 @@ function initEvents() {
 
         if (action === 'praise-delete') {
             deletePraise(el.dataset.id);
+            return;
+        }
+
+        // 夸夸分组管理事件
+        if (action === 'praise-group-new') {
+            state._praiseGroupAdding = true;
+            render();
+            setTimeout(() => { const i = document.getElementById('praiseGroupNewInput'); if (i) i.focus(); }, 50);
+            return;
+        }
+        if (action === 'praise-group-new-cancel') {
+            state._praiseGroupAdding = false;
+            render();
+            return;
+        }
+        if (action === 'praise-group-new-confirm') {
+            const inp = document.getElementById('praiseGroupNewInput');
+            addPraiseGroup(inp ? inp.value : '');
+            return;
+        }
+        if (action === 'praise-group-view') {
+            state._praiseGroupView = el.dataset.id;
+            render();
+            return;
+        }
+        if (action === 'praise-group-back') {
+            state._praiseGroupView = null;
+            render();
+            return;
+        }
+        if (action === 'praise-group-rename') {
+            state._praiseGroupRenaming = el.dataset.id;
+            render();
+            setTimeout(() => { const i = document.getElementById('praiseGroupRenameInput'); if (i) i.select(); }, 50);
+            return;
+        }
+        if (action === 'praise-group-rename-cancel') {
+            state._praiseGroupRenaming = null;
+            render();
+            return;
+        }
+        if (action === 'praise-group-rename-confirm') {
+            const inp = document.getElementById('praiseGroupRenameInput');
+            renamePraiseGroup(el.dataset.id, inp ? inp.value : '');
+            return;
+        }
+        if (action === 'praise-group-delete') {
+            deletePraiseGroup(el.dataset.id);
+            return;
+        }
+        if (action === 'praise-filter-group') {
+            state._praiseFilterGroup = el.dataset.group;
+            render();
             return;
         }
 
@@ -6132,7 +6298,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817a';
+        const APP_BUILD = '20260817b';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)

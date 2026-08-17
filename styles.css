@@ -3132,6 +3132,22 @@ select.input {
 .praise-subtitle { font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; }
 .praise-card { background: var(--bg); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 10px; }
 .praise-text { font-size: 15px; color: var(--text); line-height: 1.6; font-weight: 500; }
+.praise-card-group { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--primary-dark); background: var(--primary-light); border-radius: 10px; padding: 2px 8px; }
+.praise-group-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.praise-group-label { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
+.praise-group-select { flex: 1; min-width: 0; }
+.praise-group-add-btn { padding: 8px 12px; flex: 0 0 auto; }
+.praise-group-new-wrap { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
+.praise-group-filter { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; scrollbar-width: none; }
+.praise-group-filter::-webkit-scrollbar { display: none; }
+.pg-chip { flex: 0 0 auto; padding: 5px 12px; border: none; border-radius: 14px; background: var(--bg); color: var(--text-secondary); font-size: 12px; cursor: pointer; white-space: nowrap; }
+.pg-chip.active { background: var(--primary); color: #fff; }
+.praise-group-list { display: flex; flex-direction: column; gap: 8px; }
+.praise-group-item { display: flex; align-items: center; gap: 8px; background: var(--bg); border-radius: var(--radius-sm); padding: 10px 12px; }
+.praise-group-name { flex: 1; text-align: left; background: transparent; border: none; font-size: 14px; color: var(--text); cursor: pointer; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.praise-group-count { background: var(--primary-light); color: var(--primary-dark); border-radius: 10px; padding: 1px 8px; font-size: 11px; flex: 0 0 auto; }
+.praise-group-ops { display: flex; gap: 6px; flex: 0 0 auto; }
+.praise-group-rename-input { flex: 1; min-width: 0; }
 .praise-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
 .praise-del { background: transparent; border: none; color: var(--danger); font-size: 12px; cursor: pointer; }
 .praise-group { margin-bottom: 16px; }
