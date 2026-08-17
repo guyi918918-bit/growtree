@@ -7,8 +7,8 @@ const MODULES = [
     { id: 'hot', name: '今日热点', icon: '🔥' },
     { id: 'study', name: '学习提升', icon: '📚' },
     { id: 'checkin', name: '认真打卡', icon: '✅' },
-    { id: 'treehole', name: '夸夸金句', icon: '💛' },
-    { id: 'points', name: '积分系统', icon: '⭐' }
+    { id: 'points', name: '积分系统', icon: '⭐' },
+    { id: 'treehole', name: '与自己对话', icon: '💛' }
 ];
 
 // 模块列表可由用户在「设置 → 模块管理」中重命名 / 排序 / 隐藏，
@@ -564,7 +564,8 @@ const state = {
         supabaseUrl: '',
         supabaseKey: '',
         syncSpaceId: '',
-        exchangeRule: ''
+        exchangeRule: '',
+        theme: 'light'
     },
     data: {
         waterLogs: [],
@@ -576,6 +577,7 @@ const state = {
         wishBin: [],
         praises: [],
         userQuotes: [],
+        quoteGroups: [],
         dailyQuote: null,
         hotCache: {},
         apiCache: {},
@@ -852,6 +854,7 @@ function migrateData() {
     state.data.userQuotes = state.data.userQuotes || [];
     state.data.dailyQuote = state.data.dailyQuote || null;
     state.data.praiseGroups = state.data.praiseGroups || [];
+    state.data.quoteGroups = state.data.quoteGroups || [];
     ensureGameDefaults();
 }
 
@@ -1100,7 +1103,8 @@ async function syncFromCloud() {
                     wishes: Array.isArray(state.data.wishes) ? state.data.wishes : [],
                     wishBin: Array.isArray(state.data.wishBin) ? state.data.wishBin : [],
                     userQuotes: Array.isArray(state.data.userQuotes) ? state.data.userQuotes : [],
-                    praiseGroups: Array.isArray(state.data.praiseGroups) ? state.data.praiseGroups : []
+                    praiseGroups: Array.isArray(state.data.praiseGroups) ? state.data.praiseGroups : [],
+                    quoteGroups: Array.isArray(state.data.quoteGroups) ? state.data.quoteGroups : []
                 };
 
                 state.data = { ...state.data, ...cloudPayload };
@@ -1131,6 +1135,7 @@ async function syncFromCloud() {
                 state.data.wishBin = mergeById(localById.wishBin, cloud.wishBin);
                 state.data.userQuotes = mergeById(localById.userQuotes, cloud.userQuotes);
                 state.data.praiseGroups = mergeById(localById.praiseGroups, cloud.praiseGroups);
+                state.data.quoteGroups = mergeById(localById.quoteGroups, cloud.quoteGroups);
                 // 今日金句以云端较新的日期为准
                 if (cloud.dailyQuote && cloud.dailyQuote.date > (state.data.dailyQuote?.date || '')) {
                     state.data.dailyQuote = cloud.dailyQuote;
@@ -1418,6 +1423,7 @@ async function clearAllData() {
         wishBin: [],
         praises: [],
         userQuotes: [],
+        quoteGroups: [],
         dailyQuote: null,
         hotCache: {},
         apiCache: {},
@@ -4799,7 +4805,7 @@ function renderTreeHole() {
     return `
         <div class="card">
             <div class="card-header">
-                <div class="card-title">💛 夸夸金句</div>
+                <div class="card-title">💛 与自己对话</div>
                 <span style="font-size:12px;color:var(--text-secondary)">每天一句，看见自己的好</span>
             </div>
             <div class="praise-segment">
@@ -5050,10 +5056,28 @@ function praiseCard(p, compact) {
 }
 
 // 夸夸自己板块：金句库管理页
+function quoteGroupFilterBar() {
+    const groups = state.data.quoteGroups || [];
+    const cur = state._quoteFilterGroup || '';
+    const chip = (val, label) => `<button class="pg-chip ${cur === val ? 'active' : ''}" data-action="quote-filter-group" data-group="${val}">${label}</button>`;
+    return `<div class="praise-group-filter">${chip('', '全部')}${chip('__none__', '未分组')}${groups.map(g => chip(g.id, escapeHtml(g.name))).join('')}</div>`;
+}
+
+function filterQuoteByGroup(arr) {
+    const g = state._quoteFilterGroup;
+    if (!g) return arr;
+    if (g === '__none__') return arr.filter(q => !q.groupId);
+    return arr.filter(q => q.groupId === g);
+}
+
 function praiseQuotesPanel() {
-    const quotes = state.data.userQuotes || [];
+    const allQuotes = state.data.userQuotes || [];
+    const quotes = filterQuoteByGroup(allQuotes);
+    const groups = state.data.quoteGroups || [];
+    const selGroup = state._quoteSelGroup || '';
     const todayQ = state.data.dailyQuote || {};
     const isToday = todayQ.date === today();
+    const groupName = id => (groups.find(g => g.id === id) || {}).name || '未分组';
     return `
         <div class="praise-subtitle">在这里管理首页「今日金句」的句子库，每天会从库中随机抽取一句展示</div>
         ${isToday && todayQ.text ? `
@@ -5063,17 +5087,27 @@ function praiseQuotesPanel() {
                 ${todayQ.from ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">—— ${escapeHtml(todayQ.from)}</div>` : ''}
             </div>
         ` : ''}
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+            <button class="btn ${state._quoteManageOpen ? 'btn-primary' : ''}" data-action="quote-manage-toggle" style="font-size:13px">🏷️ 分组管理</button>
+        </div>
+        ${state._quoteManageOpen ? quoteGroupManagerHtml() : ''}
         <div class="quote-input-row" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
             <input type="text" class="input" id="quoteTextInput" placeholder="输入一句你喜欢的金句" maxlength="200" style="flex:1;min-width:200px">
             <input type="text" class="input" id="quoteFromInput" placeholder="出处（可选）" maxlength="50" style="width:120px">
+            <select id="quoteGroupSelect" class="input" style="width:120px">
+                <option value="">未分组</option>
+                ${groups.map(g => `<option value="${g.id}" ${selGroup === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
+            </select>
             <button class="btn btn-primary" data-action="quote-add">添加</button>
         </div>
+        ${allQuotes.length ? quoteGroupFilterBar() : ''}
         ${quotes.length ? `
             <div class="quote-list">
                 ${quotes.map((q, i) => `
                     <div class="praise-card quote-list-item" data-id="${q.id}">
                         <div class="praise-text">${escapeHtml(q.text)}</div>
                         ${q.from ? `<div class="quote-from">—— ${escapeHtml(q.from)}</div>` : ''}
+                        <div class="quote-group-tag">🏷️ ${escapeHtml(groupName(q.groupId))}</div>
                         <div class="praise-meta">
                             <span style="display:flex;gap:6px">
                                 <button class="praise-del" data-action="quote-up" data-id="${q.id}" ${i === 0 ? 'disabled' : ''}>▲</button>
@@ -5098,23 +5132,97 @@ function praiseQuotesPanel() {
     `;
 }
 
-function addQuote(text, from) {
+function quoteGroupManagerHtml() {
+    const groups = state.data.quoteGroups || [];
+    return `
+        <div class="praise-group-manage" style="background:var(--surface-2);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px">
+            ${state._quoteGroupAdding ? `
+                <div style="display:flex;gap:8px;margin-bottom:10px">
+                    <input type="text" class="input" id="quoteGroupNewInput" placeholder="输入分组名" maxlength="20" style="flex:1">
+                    <button class="btn btn-primary" data-action="quote-group-new-confirm">确定</button>
+                    <button class="btn" data-action="quote-group-new-cancel">取消</button>
+                </div>
+            ` : '<button class="btn" data-action="quote-group-new" style="margin-bottom:10px;font-size:13px">＋ 新建分组</button>'}
+            ${groups.length ? groups.map(g => {
+                const renaming = state._quoteGroupRenaming === g.id;
+                const cnt = (state.data.userQuotes || []).filter(q => q.groupId === g.id).length;
+                return `<div class="praise-group-item">
+                    ${renaming ? `
+                        <input type="text" class="input praise-group-rename-input" id="quoteGroupRenameInput" value="${escapeHtml(g.name)}" maxlength="20">
+                        <span class="praise-group-ops">
+                            <button class="praise-del" data-action="quote-group-rename-confirm" data-id="${g.id}">确定</button>
+                            <button class="praise-del" data-action="quote-group-rename-cancel" data-id="${g.id}">取消</button>
+                        </span>
+                    ` : `
+                        <span class="praise-group-name">🏷️ ${escapeHtml(g.name)} <span class="praise-group-count">${cnt}</span></span>
+                        <span class="praise-group-ops">
+                            <button class="praise-del" data-action="quote-group-rename" data-id="${g.id}">重命名</button>
+                            <button class="praise-del" data-action="quote-group-delete" data-id="${g.id}">删除</button>
+                        </span>
+                    `}
+                </div>`;
+            }).join('') : '<div style="font-size:13px;color:var(--text-secondary)">还没有分组，点上面新建一个吧～</div>'}
+        </div>
+    `;
+}
+
+function addQuote(text, from, groupId) {
     if (!text || !text.trim()) { toast('请输入金句内容'); return; }
-    state.data.userQuotes.push({ id: uuid(), text: text.trim(), from: from.trim(), createdAt: now() });
+    state.data.userQuotes.push({ id: uuid(), text: text.trim(), from: from.trim(), groupId: groupId || null, createdAt: now() });
     saveState();
     render();
     toast('金句已添加');
 }
 
-function updateQuote(id, text, from) {
+function updateQuote(id, text, from, groupId) {
     const q = state.data.userQuotes.find(x => x.id === id);
     if (!q) return;
     if (!text || !text.trim()) { toast('金句内容不能为空'); return; }
     q.text = text.trim();
     q.from = from.trim();
+    if (typeof groupId !== 'undefined') q.groupId = groupId || null;
     saveState();
     render();
     toast('金句已更新');
+}
+
+function addQuoteGroup(name) {
+    name = (name || '').trim();
+    if (!name) { toast('请输入分组名'); return; }
+    state.data.quoteGroups.push({ id: uuid(), name });
+    state._quoteGroupAdding = false;
+    state._quoteSelGroup = state.data.quoteGroups[state.data.quoteGroups.length - 1].id;
+    saveState();
+    render();
+    toast('已创建分组：' + name);
+}
+
+function renameQuoteGroup(id, name) {
+    const g = (state.data.quoteGroups || []).find(x => x.id === id);
+    if (!g) return;
+    name = (name || '').trim();
+    if (!name) { toast('分组名不能为空'); return; }
+    g.name = name;
+    state._quoteGroupRenaming = null;
+    saveState();
+    render();
+    toast('已重命名');
+}
+
+function deleteQuoteGroup(id) {
+    const g = (state.data.quoteGroups || []).find(x => x.id === id);
+    if (!g) return;
+    state.data.quoteGroups = (state.data.quoteGroups || []).filter(x => x.id !== id);
+    (state.data.userQuotes || []).forEach(q => { if (q.groupId === id) q.groupId = null; });
+    if (state._quoteFilterGroup === id) state._quoteFilterGroup = '';
+    if (state._quoteSelGroup === id) state._quoteSelGroup = '';
+    saveState();
+    render();
+    toastUndo('已删除分组「' + g.name + '」（组内金句移至未分组）', () => {
+        state.data.quoteGroups.push(g);
+        saveState();
+        render();
+    });
 }
 
 function deleteQuote(id) {
@@ -6026,8 +6134,9 @@ function initEvents() {
         if (action === 'quote-add') {
             const text = document.getElementById('quoteTextInput')?.value.trim();
             const from = document.getElementById('quoteFromInput')?.value.trim() || '';
+            const gid = document.getElementById('quoteGroupSelect')?.value || '';
             if (text) {
-                addQuote(text, from);
+                addQuote(text, from, gid);
                 const ti = document.getElementById('quoteTextInput');
                 const fi = document.getElementById('quoteFromInput');
                 if (ti) ti.value = '';
@@ -6042,10 +6151,68 @@ function initEvents() {
             if (!q) return;
             uiPrompt('编辑金句：', q.text).then(newText => {
                 if (newText === null) return;
-                uiPrompt('出处（可选）：', q.from || '').then(newFrom => {
+                    uiPrompt('出处（可选）：', q.from || '').then(newFrom => {
                     if (newFrom === null) return;
-                    updateQuote(q.id, newText, newFrom || '');
+                    const groups = state.data.quoteGroups || [];
+                    const curName = (groups.find(g => g.id === q.groupId) || {}).name || '';
+                    uiPrompt('所属分组（直接输入分组名；留空表示「未分组」；输入新名字会自动创建）', curName).then(newGroup => {
+                        if (newGroup === null) return;
+                        let gid = '';
+                        const nm = (newGroup || '').trim();
+                        if (nm) {
+                            const hit = groups.find(g => g.name === nm);
+                            if (hit) gid = hit.id;
+                            else { addQuoteGroup(nm); gid = (state.data.quoteGroups[state.data.quoteGroups.length - 1] || {}).id || ''; }
+                        }
+                        updateQuote(q.id, newText, newFrom || '', gid);
+                    });
                 });
+            });
+            return;
+        }
+        if (action === 'quote-filter-group') {
+            state._quoteFilterGroup = el.dataset.group;
+            render();
+            return;
+        }
+        if (action === 'quote-manage-toggle') {
+            state._quoteManageOpen = !state._quoteManageOpen;
+            render();
+            return;
+        }
+        if (action === 'quote-group-new') {
+            state._quoteGroupAdding = true;
+            render();
+            return;
+        }
+        if (action === 'quote-group-new-confirm') {
+            const v = document.getElementById('quoteGroupNewInput')?.value || '';
+            addQuoteGroup(v);
+            return;
+        }
+        if (action === 'quote-group-new-cancel') {
+            state._quoteGroupAdding = false;
+            render();
+            return;
+        }
+        if (action === 'quote-group-rename') {
+            state._quoteGroupRenaming = el.dataset.id;
+            render();
+            return;
+        }
+        if (action === 'quote-group-rename-confirm') {
+            const v = document.getElementById('quoteGroupRenameInput')?.value || '';
+            renameQuoteGroup(el.dataset.id, v);
+            return;
+        }
+        if (action === 'quote-group-rename-cancel') {
+            state._quoteGroupRenaming = null;
+            render();
+            return;
+        }
+        if (action === 'quote-group-delete') {
+            uiConfirm('删除该金句分组？组内金句会移到「未分组」。', { isDanger: true }).then(ok => {
+                if (ok) deleteQuoteGroup(el.dataset.id);
             });
             return;
         }
@@ -6320,6 +6487,21 @@ function finishOnboarding() {
 }
 
 // ==================== 初始化 ====================
+function applyTheme() {
+    const theme = (state.data.settings && state.data.settings.theme) || 'light';
+    document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+    const btn = document.getElementById('themeBtn');
+    if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+}
+
+function toggleTheme() {
+    const cur = (state.data.settings && state.data.settings.theme) || 'light';
+    state.data.settings.theme = cur === 'dark' ? 'light' : 'dark';
+    applyTheme();
+    saveState();
+    toast(state.data.settings.theme === 'dark' ? '已切换到夜间模式 🌙' : '已切换到日间模式 ☀️');
+}
+
 function init() {
     loadState();
     initGame();
@@ -6336,6 +6518,8 @@ function init() {
     document.getElementById('overlay').addEventListener('click', closeSidebar);
 
     document.getElementById('settingsBtn').addEventListener('click', openSettings);
+    document.getElementById('themeBtn').addEventListener('click', toggleTheme);
+    applyTheme();
     document.getElementById('settingsClose').addEventListener('click', closeSettings);
     document.getElementById('settingsCancel').addEventListener('click', closeSettings);
     document.getElementById('settingsSave').addEventListener('click', saveSettings);
@@ -6458,7 +6642,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817e';
+        const APP_BUILD = '20260817f';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
