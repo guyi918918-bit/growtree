@@ -2873,7 +2873,7 @@ function homeOverviewBody(checkedDays, doubleToday, doubleDayNum) {
 
     return `
         <div class="card home-hero apple-hero">
-            <div class="hero-greet">${greet}，${name} 👋</div>
+            <div class="hero-greet">正在载入今日关卡... 🎮</div>
             <div class="hero-date">${dateStr}${escapeHtml(getLunarDate()) ? ' · ' + escapeHtml(getLunarDate()) : ''}</div>
             <div class="hero-line">${doubleToday ? '🔥 今天是双倍积分日，打卡积分翻倍，别错过～' : '完成今日主线，即可解锁明日地图 🔓'}</div>
         </div>
