@@ -4647,20 +4647,23 @@ function filterBeautyInspirations() {
 // ==================== 树洞模块 ====================
 // ==================== 夸夸自己模块 ====================
 function renderTreeHole() {
+    const section = state._praiseSection || 'praises';
     const tab = state._praiseTab || 'today';
-    const tabs = [
+    const subTabs = [
         { id: 'today', name: '今日', icon: '✨' },
         { id: 'calendar', name: '日历', icon: '📅' },
-        { id: 'quotes', name: '金句库', icon: '💬' },
         { id: 'weekly', name: '周记', icon: '📆' },
         { id: 'monthly', name: '月记', icon: '🗓️' }
     ];
     let panel = '';
-    if (tab === 'today') panel = praiseTodayPanel();
-    else if (tab === 'calendar') panel = praiseCalendarPanel();
-    else if (tab === 'quotes') panel = praiseQuotesPanel();
-    else if (tab === 'weekly') panel = praiseWeeklyPanel();
-    else panel = praiseMonthlyPanel();
+    if (section === 'praises') {
+        if (tab === 'today') panel = praiseTodayPanel();
+        else if (tab === 'calendar') panel = praiseCalendarPanel();
+        else if (tab === 'weekly') panel = praiseWeeklyPanel();
+        else panel = praiseMonthlyPanel();
+    } else {
+        panel = praiseQuotesPanel();
+    }
     return `
         <div class="card">
             <div class="card-header">
@@ -4672,9 +4675,15 @@ function renderTreeHole() {
                 <input type="text" class="input" id="praiseInput" placeholder="今天，我想夸夸自己：" maxlength="200">
                 <button class="btn btn-primary" data-action="praise-send">记录</button>
             </div>
-            <div class="praise-tabs">${tabs.map(t => `
+            <div class="praise-sections">
+                <button class="section-btn ${section === 'praises' ? 'active' : ''}" data-action="praise-section" data-section="praises">夸夸自己</button>
+                <button class="section-btn ${section === 'quotes' ? 'active' : ''}" data-action="praise-section" data-section="quotes">💬 金句库</button>
+            </div>
+            ${section === 'praises' ? `
+            <div class="praise-tabs">${subTabs.map(t => `
                 <button class="tab-btn ${tab === t.id ? 'active' : ''}" data-action="praise-tab" data-tab="${t.id}">${t.icon} ${t.name}</button>
             `).join('')}</div>
+            ` : ''}
             <div id="praisePanel">${panel}</div>
         </div>
     `;
@@ -5675,6 +5684,12 @@ function initEvents() {
             return;
         }
 
+        if (action === 'praise-section') {
+            state._praiseSection = el.dataset.section;
+            render();
+            return;
+        }
+
         if (action === 'praise-tab') {
             state._praiseTab = el.dataset.tab;
             render();
@@ -5682,6 +5697,7 @@ function initEvents() {
         }
 
         if (action === 'praise-date') {
+            state._praiseSection = 'praises';
             state._praiseTab = 'calendar';
             state._praiseDate = el.dataset.date;
             render();
@@ -6113,6 +6129,24 @@ function init() {
     // 记录本次访问时间（供下次"欢迎回来"使用）
     state.data.lastVisit = now();
     saveState();
+
+    // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
+    (function autoUpdateCheck() {
+        const APP_BUILD = '20260817a';
+        const check = () => {
+            fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
+                .then(r => r.ok ? r.json() : null)
+                .then(d => {
+                    if (d && d.build && d.build !== APP_BUILD) {
+                        toast('🎉 发现新版本，正在更新…');
+                        setTimeout(() => location.reload(true), 800);
+                    }
+                })
+                .catch(() => {});
+        };
+        setTimeout(check, 5000);
+        setInterval(check, 90000);
+    })();
 
     // 每次刷新进入页面：弹出「玩家 [xx] 已上线 🕹️」
     showPlayerOnline();

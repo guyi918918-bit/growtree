@@ -3124,8 +3124,11 @@ select.input {
 .praise-rule { font-size: 12px; color: var(--primary-dark); background: var(--primary-light); padding: 6px 10px; border-radius: var(--radius-sm); margin-bottom: 8px; line-height: 1.4; }
 .praise-input-row { display: flex; gap: 10px; margin-bottom: 10px; }
 .praise-input-row .input { flex: 1; }
+.praise-sections { display: flex; gap: 10px; margin-bottom: 10px; }
+.section-btn { flex: 1; padding: 10px 8px; border: none; border-radius: 12px; background: var(--bg); color: var(--text-secondary); font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+.section-btn.active { background: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(107, 142, 94, 0.25); }
 .praise-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
-.praise-tabs .tab-btn { flex: 1; font-size: 13px; padding: 6px 6px; }
+.praise-tabs .tab-btn { flex: 1; font-size: 13px; padding: 6px 6px; background: transparent; }
 .praise-subtitle { font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; }
 .praise-card { background: var(--bg); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 10px; }
 .praise-text { font-size: 15px; color: var(--text); line-height: 1.6; font-weight: 500; }
