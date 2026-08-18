@@ -1,10 +1,11 @@
 // 顾一的成长小树 · Service Worker
-// 网络优先策略：每次打开都先请求最新文件，保证部署即生效；
-// 仅在断网时回退到本地缓存（PWA 离线可用）。
+// 强制网络优先策略：所有同源请求带 cache:'reload' 绕过 HTTP 缓存直连服务器，
+// 保证部署即生效、绝不回读旧缓存；仅在断网时回退到本地缓存（PWA 离线可用）。
+// 文件名带构建号哈希（app.20260818h.js），部署后旧引用必然 404 → 强制加载新文件。
 // 探测到新版本时自动激活并接管页面，无需用户手动删除重加。
 
-const CACHE = 'growtree-shell-v19';
-const SHELL = ['./', './index.html', './app.js', './styles.css', './manifest.json'];
+const CACHE = 'growtree-shell-v20';
+const SHELL = ['./', './index.html', './app.20260818h.js', './styles.20260818h.css', './manifest.json'];
 
 self.addEventListener('install', (event) => {
   // 跳过等待，立即激活新 SW
@@ -32,9 +33,11 @@ self.addEventListener('fetch', (event) => {
   // 第三方 API（Supabase / 天气 / 热榜）走浏览器默认网络，不拦截
   if (url.origin !== self.location.origin) return;
 
-  // 网络优先：拿到最新即返回并缓存副本；失败则回退缓存
+  // 关键改动：cache:'reload' 强制绕过浏览器 HTTP 缓存，每次直连服务器拉最新；
+  // 拿到最新即返回并缓存副本；网络失败才回退本地缓存（离线可用）。
+  const networkReq = new Request(req, { cache: 'reload' });
   event.respondWith(
-    fetch(req)
+    fetch(networkReq)
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
