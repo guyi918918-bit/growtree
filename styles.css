@@ -15,6 +15,11 @@
     --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04);
     --radius: 20px;
     --radius-sm: 14px;
+    --radius-md: 16px;
+    --progress: 0%;
+    --water: 0%;
+    --dx: 0px;
+    --dy: 0px;
     --badge-flash-start: #c8e6c9;
     --badge-flash-end: #e8f5e9;
 }
@@ -402,7 +407,7 @@ select.input {
 
 .input:focus {
     border-color: var(--primary);
-    background: #fff;
+    background: var(--surface);
 }
 
 .btn {
@@ -1000,7 +1005,7 @@ select.input {
 .memo-textarea:focus {
     outline: none;
     border-color: var(--primary);
-    background: #fff;
+    background: var(--surface);
 }
 
 /* 设置弹窗 */
@@ -1082,7 +1087,7 @@ select.input {
 .form-group input:focus {
     outline: none;
     border-color: var(--primary);
-    background: #fff;
+    background: var(--surface);
 }
 
 .field-hint {
@@ -1145,7 +1150,7 @@ select.input {
 .ui-modal-card {
     width: 100%;
     max-width: 340px;
-    background: var(--card);
+    background: var(--surface);
     border-radius: var(--radius);
     padding: 20px;
     box-shadow: 0 12px 40px rgba(0,0,0,.25);
@@ -1259,7 +1264,7 @@ select.input {
     left: 0;
     right: 0;
     z-index: 30;
-    background: #fff;
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     box-shadow: 0 8px 24px rgba(0,0,0,.12);
@@ -1900,7 +1905,7 @@ select.input {
     gap: 16px;
     margin-bottom: 14px;
     padding: 8px 12px;
-    background: var(--card);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     font-size: 13px;
@@ -2108,7 +2113,7 @@ select.input {
 
 .cloud-settings-status {
     padding: 12px;
-    background: var(--card);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     margin-bottom: 14px;
@@ -2648,7 +2653,7 @@ select.input {
 /* ===== 增强：撤销提示 / 引导 / 坚持激励 / 便捷 ===== */
 .toast-undo {
     margin-left: 10px;
-    background: #fff;
+    background: var(--surface);
     color: var(--primary-dark);
     border: none;
     border-radius: 20px;
@@ -3503,7 +3508,7 @@ select.input {
     padding: 16px;
     border: 1px dashed var(--border);
     border-radius: 10px;
-    background: var(--bg-secondary);
+    background: var(--surface-2);
     color: var(--text-secondary);
     font-size: 13px;
     text-align: center;
@@ -3546,7 +3551,7 @@ select.input {
     gap: 8px;
     margin-top: 10px;
     padding: 10px 12px;
-    background: var(--bg-secondary);
+    background: var(--surface-2);
     border-radius: 10px;
     font-size: 13px;
     color: var(--text-secondary);
@@ -3606,7 +3611,7 @@ select.input {
     line-height: 1.6;
 }
 .beauty-setup-desc code {
-    background: var(--bg-secondary);
+    background: var(--surface-2);
     padding: 2px 6px;
     border-radius: 4px;
     font-family: monospace;
@@ -3623,7 +3628,7 @@ select.input {
 }
 .beauty-setup-sql {
     text-align: left;
-    background: var(--bg-secondary);
+    background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 12px;
@@ -4121,4 +4126,39 @@ select.input {
     background: rgba(255, 69, 58, 0.14);
     color: #ff453a;
     border-color: rgba(255, 69, 58, 0.35);
+}
+
+/* ===== 暗夜模式：剩余硬编码浅色全面补丁 ===== */
+[data-theme="dark"] .quote-card,
+[data-theme="dark"] .guidance-card {
+    background: linear-gradient(135deg, #3d3420 0%, #2d2618 100%);
+}
+[data-theme="dark"] .guidance-text {
+    border-left-color: var(--accent);
+}
+[data-theme="dark"] .skill-example {
+    background: var(--surface-2);
+    color: var(--text);
+}
+[data-theme="dark"] .settings-section.settings-danger {
+    border-color: rgba(255, 69, 58, 0.35);
+    background: rgba(255, 69, 58, 0.10);
+}
+[data-theme="dark"] .cloud-settings-status.connected {
+    background: rgba(48, 209, 88, 0.12);
+    border-color: rgba(48, 209, 88, 0.35);
+}
+[data-theme="dark"] .double-banner.on {
+    background: linear-gradient(135deg, #3d2e18, #2d2110);
+    color: #ffd60a;
+}
+[data-theme="dark"] .welcome-back {
+    background: linear-gradient(135deg, #1c3326, #2d2618);
+}
+[data-theme="dark"] .toast-undo {
+    background: var(--surface-2);
+    color: var(--text);
+}
+[data-theme="dark"] .toast-undo:hover {
+    background: var(--surface);
 }

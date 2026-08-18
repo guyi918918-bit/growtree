@@ -3900,7 +3900,7 @@ function renderEnglish() {
         <div class="skill-card">
             <div style="font-size:18px;font-weight:700;color:var(--primary);margin-bottom:10px">${s.en}</div>
             <div style="font-size:14px;margin-bottom:8px"><strong>含义：</strong>${s.zh}</div>
-            <div style="font-size:13px;color:var(--text-secondary);background:#fff;padding:12px;border-radius:10px;border-left:3px solid var(--primary)">${s.ex}</div>
+            <div style="font-size:13px;color:var(--text-secondary);background:var(--surface-2);padding:12px;border-radius:10px;border-left:3px solid var(--primary)">${s.ex}</div>
         </div>
     `).join('');
     return `
@@ -6670,7 +6670,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817k';
+        const APP_BUILD = '20260817m';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
@@ -6699,7 +6699,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (el) {
             el.style.display = 'block';
             el.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:8px">😵 初始化失败</div>' +
-                '<pre style="font-size:12px;background:rgba(0,0,0,.05);padding:10px;border-radius:8px;overflow:auto">' + (err && err.stack ? err.stack : String(err)) + '</pre>' +
+                '<pre style="font-size:12px;background:var(--surface-2);color:var(--text);padding:10px;border-radius:8px;overflow:auto">' + (err && err.stack ? err.stack : String(err)) + '</pre>' +
                 '<button onclick="location.reload(true)" style="margin-top:12px;padding:8px 16px;border:none;border-radius:8px;background:#34c759;color:#fff;font-size:14px">强制刷新</button>';
         }
     }
