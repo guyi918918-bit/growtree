@@ -583,6 +583,7 @@ const state = {
         apiCache: {},
         memo: '',
         checkInBin: [],
+        purgedCheckInIds: [],
         dailyPlans: {},
         lastSyncAt: null,
         lastVisit: null,
@@ -915,6 +916,7 @@ function saveStateLocal() {
 }
 
 function ensureDefaults() {
+    state.data.purgedCheckInIds = state.data.purgedCheckInIds || [];
     // 旧数据补全：每个打卡项默认 3 朵 🌸（坚持任务）；分数由花朵定级决定
     state.data.checkIns.forEach(c => {
         if (!c.stars) c.stars = 3;
@@ -940,7 +942,8 @@ function ensureDefaults() {
                     points: item.points || 10,
                     stars: item.stars || 3,
                     order: i,
-                    createdAt: now()
+                    createdAt: now(),
+                    updatedAt: now()
                 });
             });
         }
@@ -1066,6 +1069,31 @@ function mergeById(localArr, cloudArr) {
     return Array.from(map.values());
 }
 
+// 打卡项「墓碑合并」：彻底解决跨设备删除被复活的问题。
+// 回收站(checkInBin)即软删除墓碑；purgedCheckInIds 即彻底删除墓碑。
+// 规则：同一 id 以 updatedAt 较新者为准；在回收站则记为删除；
+// 出现在 purgedCheckInIds 的 id 直接排除（双方都不再复活）。
+function mergeCheckIns(localActive, localBin, localPurged, cloudActive, cloudBin, cloudPurged) {
+    const byId = new Map();
+    const reg = (rec, deleted, ts) => {
+        if (!rec || !rec.id) return;
+        const entry = { rec, deleted, ts: ts || rec.updatedAt || 0 };
+        const cur = byId.get(rec.id);
+        if (!cur || entry.ts > cur.ts) byId.set(rec.id, entry);
+    };
+    (localActive || []).forEach(r => reg(r, false));
+    (localBin || []).forEach(r => reg(r, true));
+    (cloudActive || []).forEach(r => reg(r, false));
+    (cloudBin || []).forEach(r => reg(r, true));
+    const purged = new Set([...(localPurged || []), ...(cloudPurged || [])]);
+    const active = [], bin = [];
+    for (const e of byId.values()) {
+        if (purged.has(e.rec.id)) continue;          // 彻底删除：永不复活
+        if (e.deleted) bin.push(e.rec); else active.push(e.rec);
+    }
+    return { active, bin };
+}
+
 // 静默修正赛季字段：若本地 season 与实际月份不符，直接修正（不触发结算 toast）
 function ensureSeason() {
     const g = state.data.game;
@@ -1115,7 +1143,10 @@ async function syncFromCloud() {
                     wishBin: Array.isArray(state.data.wishBin) ? state.data.wishBin : [],
                     userQuotes: Array.isArray(state.data.userQuotes) ? state.data.userQuotes : [],
                     praiseGroups: Array.isArray(state.data.praiseGroups) ? state.data.praiseGroups : [],
-                    quoteGroups: Array.isArray(state.data.quoteGroups) ? state.data.quoteGroups : []
+                    quoteGroups: Array.isArray(state.data.quoteGroups) ? state.data.quoteGroups : [],
+                    checkIns: Array.isArray(state.data.checkIns) ? state.data.checkIns : [],
+                    checkInBin: Array.isArray(state.data.checkInBin) ? state.data.checkInBin : [],
+                    purgedCheckInIds: Array.isArray(state.data.purgedCheckInIds) ? state.data.purgedCheckInIds : []
                 };
 
                 state.data = { ...state.data, ...cloudPayload };
@@ -1147,6 +1178,14 @@ async function syncFromCloud() {
                 state.data.userQuotes = mergeById(localById.userQuotes, cloud.userQuotes);
                 state.data.praiseGroups = mergeById(localById.praiseGroups, cloud.praiseGroups);
                 state.data.quoteGroups = mergeById(localById.quoteGroups, cloud.quoteGroups);
+                // 打卡项 / 回收站：墓碑合并，删除(含彻底删除)跨设备传播，不会复活
+                const _mergedCI = mergeCheckIns(
+                    localById.checkIns, localById.checkInBin, localById.purgedCheckInIds,
+                    cloud.checkIns, cloud.checkInBin, cloud.purgedCheckInIds
+                );
+                state.data.checkIns = _mergedCI.active;
+                state.data.checkInBin = _mergedCI.bin;
+                state.data.purgedCheckInIds = Array.from(new Set([...(localById.purgedCheckInIds || []), ...(cloud.purgedCheckInIds || [])]));
                 // 今日金句以云端较新的日期为准
                 if (cloud.dailyQuote && cloud.dailyQuote.date > (state.data.dailyQuote?.date || '')) {
                     state.data.dailyQuote = cloud.dailyQuote;
@@ -1440,6 +1479,7 @@ async function clearAllData() {
         apiCache: {},
         memo: '',
         checkInBin: [],
+        purgedCheckInIds: [],
         dailyPlans: {},
         lastSyncAt: null,
         lastVisit: null,
@@ -1498,7 +1538,8 @@ function ensureWaterCheckIn() {
             stars: 2,
             points: flowerScore(2),
             order: state.data.checkIns.filter(c => c.module === 'other').length,
-            createdAt: now()
+            createdAt: now(),
+            updatedAt: now()
         };
         state.data.checkIns.push(target);
         saveState();
@@ -2117,7 +2158,8 @@ function addCheckIn(module, name, stars, categoryName) {
         stars: starsN,
         points: flowerScore(starsN), // 分数由花朵定级决定
         order: items.length,
-        createdAt: now()
+        createdAt: now(),
+        updatedAt: now()
     });
     saveState();
     render();
@@ -2127,6 +2169,7 @@ function addCheckIn(module, name, stars, categoryName) {
 function deleteCheckIn(id) {
     const ci = state.data.checkIns.find(x => x.id === id);
     if (!ci) return;
+    ci.updatedAt = now();
     ci.deletedAt = now();
     state.data.checkIns = state.data.checkIns.filter(x => x.id !== id);
     state.data.checkInBin.unshift(ci);
@@ -2143,9 +2186,11 @@ function deleteCheckIn(id) {
 function restoreCheckIn(id) {
     const ci = state.data.checkInBin.find(x => x.id === id);
     if (!ci) return;
+    ci.updatedAt = now();
     ci.deletedAt = null;
     state.data.checkIns.push(ci);
     state.data.checkInBin = state.data.checkInBin.filter(x => x.id !== id);
+    state.data.purgedCheckInIds = (state.data.purgedCheckInIds || []).filter(x => x !== id);
     saveState();
     render();
 }
@@ -2156,12 +2201,15 @@ function purgeCheckIn(id) {
     const related = state.data.points.history.filter(h => h.checkInId === id);
     state.data.checkInBin = state.data.checkInBin.filter(x => x.id !== id);
     state.data.points.history = state.data.points.history.filter(x => x.checkInId !== id);
+    state.data.purgedCheckInIds = state.data.purgedCheckInIds || [];
+    if (!state.data.purgedCheckInIds.includes(id)) state.data.purgedCheckInIds.push(id);
     recalcPoints();
     recalcCourage();
     saveState();
     render();
     toastUndo('🗑️ 打卡项已彻底删除', () => {
         state.data.checkInBin.unshift(ci);
+        state.data.purgedCheckInIds = (state.data.purgedCheckInIds || []).filter(x => x !== id);
         state.data.points.history.push(...related);
         recalcPoints();
         recalcCourage();
@@ -2214,6 +2262,7 @@ function saveEditCheckIn() {
     const s = state._editStars || ci.stars || 3;
     ci.stars = s;
     ci.points = flowerScore(s); // 分数由花朵定级决定
+    ci.updatedAt = now();
     // 调整分组：只改 module/category，不碰历史积分和打卡记录
     const catSelect = document.getElementById('editCheckInCategory');
     const newModule = catSelect ? catSelect.value : ci.module;
@@ -5987,6 +6036,7 @@ function initEvents() {
             if (!sel.size) { toast('请先选择要删除的打卡项'); return; }
             const ids = [...sel];
             const removed = state.data.checkIns.filter(x => ids.includes(x.id));
+            removed.forEach(ci => { ci.updatedAt = now(); });
             state.data.checkIns = state.data.checkIns.filter(x => !ids.includes(x.id));
             removed.forEach(ci => state.data.checkInBin.unshift(ci));
             state._checkinMode = null;
@@ -6006,6 +6056,7 @@ function initEvents() {
             const ids = [...document.querySelectorAll('.manage-check:checked')].map(c => c.value);
             if (!ids.length) { toast('请先勾选要删除的打卡项'); return; }
             const removed = state.data.checkIns.filter(x => ids.includes(x.id));
+            removed.forEach(ci => { ci.updatedAt = now(); });
             state.data.checkIns = state.data.checkIns.filter(x => !ids.includes(x.id));
             removed.forEach(ci => state.data.checkInBin.unshift(ci));
             recalcCourage();
@@ -6503,7 +6554,8 @@ function finishOnboarding() {
             name: s.it.name,
             points: s.it.points || 10,
             order: i,
-            createdAt: now()
+            createdAt: now(),
+            updatedAt: now()
         }));
     }
     getCategoryOrder().forEach(mod => {
@@ -6676,7 +6728,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817o';
+        const APP_BUILD = '20260817p';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
