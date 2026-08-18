@@ -2605,7 +2605,7 @@ function rankBigCard() {
     const peakLv = LEVELS.find(l => l.prefix === peakRankRaw.name) || {};
     const peakRank = { ...peakRankRaw, title: peakLv.title || '' };
     return `
-        <div class="card rank-big" style="background:linear-gradient(135deg, ${t.color}26, #ffffff 70%);border:1px solid ${t.color}55">
+        <div class="card rank-big" style="background:linear-gradient(135deg, ${t.color}26, var(--surface) 70%);border:1px solid ${t.color}55">
             <div class="rank-big-head">
                 <div class="rank-badge-lg" style="background:${t.color}">${t.icon}</div>
                 <div class="rank-big-text">
@@ -6670,7 +6670,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817i';
+        const APP_BUILD = '20260817j';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
