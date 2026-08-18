@@ -1,5 +1,8 @@
 // ==================== 顾一的成长小树 ====================
 
+// 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
+const APP_BUILD = '20260818f';
+
 const MODULES = [
     { id: 'home', name: '欢迎首页', icon: '🌳' },
     { id: 'water', name: '喝水管理', icon: '💧' },
@@ -6611,6 +6614,9 @@ function openSettings() {
     buildModuleManager();
     updateStorageMeter();
     refreshSettingsStatus();
+    // 设置弹窗内展示当前版本号，方便确认是否已更新到最新版
+    const verEl = document.getElementById('appVersionText');
+    if (verEl) verEl.textContent = APP_BUILD;
     document.getElementById('settingsModal').classList.add('show');
 }
 
@@ -6868,7 +6874,6 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260818e';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
