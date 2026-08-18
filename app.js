@@ -1147,7 +1147,7 @@ function ensureSeason() {
     }
 }
 
-async function syncFromCloud() {
+async function syncFromCloud(force = false) {
     if (!state.supabase) return;
     updateSyncStatus('syncing');
     try {
@@ -1157,7 +1157,7 @@ async function syncFromCloud() {
         if (data && data.payload) {
             const cloud = data.payload;
             const cloudUpdatedAt = cloud.updatedAt;
-            if (!state.data.lastSyncAt || (cloudUpdatedAt && cloudUpdatedAt > state.data.lastSyncAt)) {
+            if (force || !state.data.lastSyncAt || (cloudUpdatedAt && cloudUpdatedAt > state.data.lastSyncAt)) {
                 // 先记录合并前的有效数据快照，用于判断是否真的发生变化
                 const before = syncDataSnapshot(state.data);
                 // 先暂存本地的板块配置及其最后修改时间
@@ -1321,10 +1321,13 @@ function pruneOldData() {
     return removed;
 }
 
-async function syncToCloud() {
+async function syncToCloud(forcePull = false) {
     if (!state.supabase) return;
     updateSyncStatus('syncing');
     try {
+        // 【关键修复】上传前先把云端最新数据拉下来合并，避免本机旧整包覆盖其他设备的新删除/新记录。
+        // forcePull=true 时无视 lastSyncAt 时间戳，强制拉取最新版。
+        await syncFromCloud(forcePull);
         state.data.lastSyncAt = now();
         // 将本次同步时间戳落盘，确保下次拉取时「云端是否更新」的判断准确，
         // 避免因本地 lastSyncAt 永远为空而误把云端旧数据覆盖本地修改
@@ -1345,7 +1348,8 @@ async function syncToCloud() {
 function queueSync() {
     if (state.supabase) {
         clearTimeout(state.saveTimer);
-        state.saveTimer = setTimeout(syncToCloud, 2000);
+        // 自动同步也强制先拉取云端最新版合并后再上传，避免本机旧整包覆盖其他设备的新删除/新记录
+        state.saveTimer = setTimeout(() => syncToCloud(true), 2000);
     }
 }
 
@@ -3663,11 +3667,11 @@ function categoryItemsBody(mod) {
     `;
 }
 
-// 其他打卡项按花朵数（2~5）分组折叠
+// 其他打卡项按花朵数（1~5）分组折叠
 function otherCategoryBody(cats, mode) {
     const allItems = state.data.checkIns.filter(c => c.module === 'other').sort((a, b) => a.order - b.order);
     const sortActive = mode === 'sort';
-    const groups = [2, 3, 4, 5].map(n => ({
+    const groups = [1, 2, 3, 4, 5].map(n => ({
         stars: n,
         items: allItems.filter(c => c.stars === n),
         name: `${n} 朵花打卡项`
@@ -5665,7 +5669,7 @@ function initEvents() {
         if (action === 'sync-retry') {
             if (!state.supabase) { toast('尚未连接云端，请先在设置中配置同步'); return; }
             updateSyncStatus('syncing');
-            syncFromCloud().finally(() => toast('已尝试重新同步'));
+            syncToCloud(true).finally(() => toast('已尝试重新同步'));
             return;
         }
 
@@ -6799,8 +6803,13 @@ function init() {
     }
 
     document.getElementById('saveNowBtn').addEventListener('click', () => {
-        saveState();
-        toast('已保存到本地');
+        if (!state.supabase) { toast('未连接云端，请先在设置中配置同步'); return; }
+        const btn = document.getElementById('saveNowBtn');
+        btn.classList.add('spinning');
+        syncToCloud(true).finally(() => {
+            btn.classList.remove('spinning');
+            toast('已保存并上传到云端');
+        });
     });
 
     document.getElementById('refreshBtn').addEventListener('click', () => {
@@ -6810,7 +6819,7 @@ function init() {
         }
         const btn = document.getElementById('refreshBtn');
         btn.classList.add('spinning');
-        syncFromCloud().finally(() => {
+        syncFromCloud(true).finally(() => {
             btn.classList.remove('spinning');
             toast('已向云端检查最新数据');
         });
@@ -6858,7 +6867,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260818b';
+        const APP_BUILD = '20260818c';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
