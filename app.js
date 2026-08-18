@@ -1,7 +1,16 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20260818f';
+const APP_BUILD = '20260818g';
+
+// 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
+// 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
+function getManagePrefs() {
+    try { return JSON.parse(localStorage.getItem('gt_manage_prefs') || '{}'); } catch (e) { return {}; }
+}
+function setManagePrefs(prefs) {
+    try { localStorage.setItem('gt_manage_prefs', JSON.stringify(prefs || {})); } catch (e) {}
+}
 
 const MODULES = [
     { id: 'home', name: '欢迎首页', icon: '🌳' },
@@ -875,8 +884,7 @@ function migrateData() {
     state.data.quoteGroups = state.data.quoteGroups || [];
     state.data.purgedIds = state.data.purgedIds || [];
     state.data.settings = state.data.settings || { theme: state.settings && state.settings.theme ? state.settings.theme : 'light' };
-    state.data.settings.manageFilterCategory = state.data.settings.manageFilterCategory || '';
-    state.data.settings.manageSortPoints = state.data.settings.manageSortPoints || 'pointsAsc';
+    // manageFilterCategory / manageSortPoints 已迁出 settings（独立 localStorage，避免被云端覆盖），此处不再初始化
     // 同步默认模块：仅当检测到旧模块名（夸夸金句/夸夸自己）时，按 MODULES 重排并刷新名称，
     // 否则保留用户/云端已同步的自定义顺序与隐藏状态，避免每次启动都强制覆盖。
     const existingMods = Array.isArray(state.data.modules) ? state.data.modules : [];
@@ -3916,9 +3924,9 @@ function renderCheckInMore() {
 
 // 打卡管理：统一删除 + 批量调整积分 + 分类筛选 + 积分排序
 function renderCheckInManage() {
-    const settings = state.data.settings || {};
-    const filterCategory = settings.manageFilterCategory || '';
-    const sortMode = settings.manageSortPoints || 'pointsAsc';
+    const prefs = getManagePrefs();
+    const filterCategory = prefs.manageFilterCategory || '';
+    const sortMode = prefs.manageSortPoints || 'pointsAsc';
     const allCategories = Array.from(new Set(state.data.checkIns.map(c => c.category).filter(Boolean)));
     let items = state.data.checkIns.slice();
     if (filterCategory) {
@@ -6512,16 +6520,16 @@ function initEvents() {
         if (!el) return;
         const action = el.dataset.action;
         if (action === 'manage-filter-category') {
-            state.data.settings = state.data.settings || {};
-            state.data.settings.manageFilterCategory = el.value;
-            saveState();
+            const prefs = getManagePrefs();
+            prefs.manageFilterCategory = el.value;
+            setManagePrefs(prefs);
             render();
             return;
         }
         if (action === 'manage-sort-points') {
-            state.data.settings = state.data.settings || {};
-            state.data.settings.manageSortPoints = el.value;
-            saveState();
+            const prefs = getManagePrefs();
+            prefs.manageSortPoints = el.value;
+            setManagePrefs(prefs);
             render();
             return;
         }

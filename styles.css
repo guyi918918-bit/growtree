@@ -2852,7 +2852,8 @@ select.input {
 
 /* 其他打卡项按花朵分组 */
 .other-star-group { margin-top: 12px; }
-.other-star-group .card-header { justify-content: space-between; }
+.other-star-group .card-header { justify-content: space-between; min-height: 48px; }
+.other-star-group .card-title { color: var(--text); font-weight: 700; }
 
 /* 花朵定级标准：横向卡片排列 */
 .flower-levels-grid { display: flex; gap: 10px; flex-wrap: wrap; }
