@@ -3796,7 +3796,7 @@ function renderCheckInMore() {
 
 // 打卡管理：统一删除 + 批量调整积分
 function renderCheckInManage() {
-    const items = state.data.checkIns.slice().sort((a, b) => a.order - b.order);
+    const items = state.data.checkIns.slice().sort((a, b) => (a.points || 0) - (b.points || 0) || a.order - b.order);
     return `
         <div class="card">
             <div class="card-header">
@@ -6676,7 +6676,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817n';
+        const APP_BUILD = '20260817o';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
