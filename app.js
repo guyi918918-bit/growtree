@@ -657,22 +657,29 @@ function uiModal(opts) {
         const inputEl = document.getElementById('uiModalInput');
         const okBtn = document.getElementById('uiModalOk');
         const cancelBtn = document.getElementById('uiModalCancel');
-        if (!modal || !okBtn || !cancelBtn) { resolve(opts.input ? null : false); return; }
+        if (!modal || !okBtn || !cancelBtn) { resolve(opts.input || opts.getValue ? null : false); return; }
         titleEl.textContent = opts.title || '';
-        msgEl.textContent = opts.message || '';
-        if (opts.input) {
-            inputEl.style.display = '';
-            inputEl.value = opts.defaultValue != null ? String(opts.defaultValue) : '';
-            inputEl.placeholder = opts.placeholder || '';
-        } else {
+        if (opts.html) {
+            msgEl.innerHTML = opts.html;
             inputEl.style.display = 'none';
             inputEl.value = '';
+        } else {
+            msgEl.textContent = opts.message || '';
+            if (opts.input) {
+                inputEl.style.display = '';
+                inputEl.value = opts.defaultValue != null ? String(opts.defaultValue) : '';
+                inputEl.placeholder = opts.placeholder || '';
+            } else {
+                inputEl.style.display = 'none';
+                inputEl.value = '';
+            }
         }
         okBtn.textContent = opts.okText || '确定';
         cancelBtn.textContent = opts.cancelText || '取消';
         okBtn.classList.toggle('btn-danger', !!opts.isDanger);
         modal.style.display = 'flex';
         if (opts.input) setTimeout(() => { inputEl.focus(); inputEl.select(); }, 50);
+        if (opts.autoFocus) setTimeout(() => document.getElementById(opts.autoFocus)?.focus(), 50);
         const cleanup = () => {
             modal.style.display = 'none';
             okBtn.onclick = null;
@@ -681,11 +688,17 @@ function uiModal(opts) {
             inputEl.onkeydown = null;
         };
         const onOk = () => {
-            const v = opts.input ? inputEl.value : true;
+            let v;
+            if (opts.getValue) {
+                v = opts.getValue();
+                if (v === null) return; // 验证失败，不关闭弹窗
+            } else {
+                v = opts.input ? inputEl.value : true;
+            }
             cleanup();
-            resolve(opts.input ? v : true);
+            resolve(v);
         };
-        const onCancel = () => { cleanup(); resolve(opts.input ? null : false); };
+        const onCancel = () => { cleanup(); resolve(opts.input || opts.getValue ? null : false); };
         okBtn.onclick = onOk;
         cancelBtn.onclick = onCancel;
         modal.onclick = (e) => { if (e.target === modal) onCancel(); };
@@ -5253,7 +5266,7 @@ function praiseQuotesPanel() {
         ${state._quoteManageOpen ? quoteGroupManagerHtml() : ''}
         <div class="quote-input-row" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
             <input type="text" class="input" id="quoteTextInput" placeholder="输入一句你喜欢的金句" maxlength="200" style="flex:1;min-width:200px">
-            <input type="text" class="input" id="quoteFromInput" placeholder="出处（可选）" maxlength="50" style="width:120px">
+            <input type="text" class="input" id="quoteFromInput" placeholder="出处/详解（可选）" maxlength="50" style="width:120px">
             <select id="quoteGroupSelect" class="input" style="width:120px">
                 <option value="">未分组</option>
                 ${groups.map(g => `<option value="${g.id}" ${selGroup === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
@@ -5267,7 +5280,10 @@ function praiseQuotesPanel() {
                     <div class="praise-card quote-list-item" data-id="${q.id}">
                         <div class="praise-text">${escapeHtml(q.text)}</div>
                         ${q.from ? `<div class="quote-from">—— ${escapeHtml(q.from)}</div>` : ''}
-                        <div class="quote-group-tag">🏷️ ${escapeHtml(groupName(q.groupId))}</div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
+                            <span class="quote-group-tag">🏷️ ${escapeHtml(groupName(q.groupId))}</span>
+                            ${q.createdAt ? `<span class="quote-date-tag">📅 ${escapeHtml((q.createdAt || '').slice(0, 10))}</span>` : ''}
+                        </div>
                         <div class="praise-meta">
                             <span style="display:flex;gap:6px">
                                 <button class="praise-del" data-action="quote-up" data-id="${q.id}" ${i === 0 ? 'disabled' : ''}>▲</button>
@@ -5332,6 +5348,39 @@ function addQuote(text, from, groupId) {
     saveState();
     render();
     toast('金句已添加');
+}
+
+function editQuoteModal(q) {
+    const groups = state.data.quoteGroups || [];
+    const groupOptions = `<option value="">未分组</option>${groups.map(g => `<option value="${g.id}" ${g.id === q.groupId ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}`;
+    const html = `
+        <div class="quote-edit-form" style="display:flex;flex-direction:column;gap:10px;text-align:left">
+            <div>
+                <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">金句内容</label>
+                <textarea id="quoteEditText" class="input" rows="3" maxlength="200" style="width:100%;resize:vertical">${escapeHtml(q.text)}</textarea>
+            </div>
+            <div>
+                <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">出处/详解（可选）</label>
+                <input type="text" id="quoteEditFrom" class="input" value="${escapeHtml(q.from || '')}" maxlength="100" style="width:100%">
+            </div>
+            <div>
+                <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">所属分组</label>
+                <select id="quoteEditGroup" class="input" style="width:100%">${groupOptions}</select>
+            </div>
+        </div>
+    `;
+    return uiModal({
+        title: '编辑金句',
+        html,
+        autoFocus: 'quoteEditText',
+        getValue: () => {
+            const text = document.getElementById('quoteEditText')?.value.trim();
+            const from = document.getElementById('quoteEditFrom')?.value.trim() || '';
+            const groupId = document.getElementById('quoteEditGroup')?.value || '';
+            if (!text) { toast('金句内容不能为空'); return null; }
+            return { text, from, groupId };
+        }
+    });
 }
 
 function updateQuote(id, text, from, groupId) {
@@ -6315,24 +6364,9 @@ function initEvents() {
         if (action === 'quote-edit') {
             const q = state.data.userQuotes.find(x => x.id === el.dataset.id);
             if (!q) return;
-            uiPrompt('编辑金句：', q.text).then(newText => {
-                if (newText === null) return;
-                    uiPrompt('出处（可选）：', q.from || '').then(newFrom => {
-                    if (newFrom === null) return;
-                    const groups = state.data.quoteGroups || [];
-                    const curName = (groups.find(g => g.id === q.groupId) || {}).name || '';
-                    uiPrompt('所属分组（直接输入分组名；留空表示「未分组」；输入新名字会自动创建）', curName).then(newGroup => {
-                        if (newGroup === null) return;
-                        let gid = '';
-                        const nm = (newGroup || '').trim();
-                        if (nm) {
-                            const hit = groups.find(g => g.name === nm);
-                            if (hit) gid = hit.id;
-                            else { addQuoteGroup(nm); gid = (state.data.quoteGroups[state.data.quoteGroups.length - 1] || {}).id || ''; }
-                        }
-                        updateQuote(q.id, newText, newFrom || '', gid);
-                    });
-                });
+            editQuoteModal(q).then(result => {
+                if (!result) return;
+                updateQuote(q.id, result.text, result.from, result.groupId);
             });
             return;
         }
@@ -6824,7 +6858,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260818a';
+        const APP_BUILD = '20260818b';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)

@@ -3178,8 +3178,10 @@ select.input {
 [data-theme="dark"] .quote-refresh { background: rgba(255,255,255,0.1); border-color: var(--border); color: var(--text-secondary); }
 [data-theme="dark"] .quote-refresh:hover { background: rgba(255,255,255,0.18); color: var(--text); }
 .quote-from { font-size: 12px; color: var(--text-secondary); margin-top: 4px; font-style: italic; }
-.quote-group-tag { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--primary-dark); background: var(--primary-light); border-radius: 10px; padding: 2px 8px; }
+.quote-group-tag { display: inline-block; font-size: 12px; color: var(--primary-dark); background: var(--primary-light); border-radius: 10px; padding: 2px 8px; }
 [data-theme="dark"] .quote-group-tag { color: var(--primary); background: var(--primary-light); }
+.quote-date-tag { display: inline-block; font-size: 11px; color: var(--text-secondary); background: var(--surface-2); border-radius: 10px; padding: 2px 8px; }
+[data-theme="dark"] .quote-date-tag { background: var(--surface-2); color: var(--text-secondary); }
 .quote-list { display: flex; flex-direction: column; gap: 8px; }
 .quote-list-item .praise-meta { justify-content: space-between; margin-top: 8px; }
 .quote-list-item .praise-del:disabled { opacity: 0.3; cursor: not-allowed; }

@@ -3,7 +3,7 @@
 // 仅在断网时回退到本地缓存（PWA 离线可用）。
 // 探测到新版本时自动激活并接管页面，无需用户手动删除重加。
 
-const CACHE = 'growtree-shell-v13';
+const CACHE = 'growtree-shell-v14';
 const SHELL = ['./', './index.html', './app.js', './styles.css', './manifest.json'];
 
 self.addEventListener('install', (event) => {
