@@ -6488,8 +6488,23 @@ function initEvents() {
         if (cb) cb.checked = !cb.checked;
     });
 
-    // 输入事件委托
+    // 输入事件委托（input 不适合 select，select 在 change 里处理）
     document.getElementById('content').addEventListener('input', e => {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        const action = el.dataset.action;
+        if (action === 'reading-note' || action === 'memo') {
+            updateMemo(el.value);
+            if (el.value.trim()) awardContentBonus();
+        }
+    });
+
+    document.getElementById('content').addEventListener('change', e => {
+        if (e.target.id === 'manageSelectAll') {
+            const checked = e.target.checked;
+            document.querySelectorAll('.manage-check').forEach(c => c.checked = checked);
+            return;
+        }
         const el = e.target.closest('[data-action]');
         if (!el) return;
         const action = el.dataset.action;
@@ -6507,21 +6522,7 @@ function initEvents() {
             render();
             return;
         }
-        if (action === 'reading-note' || action === 'memo') {
-            updateMemo(el.value);
-            if (el.value.trim()) awardContentBonus();
-        }
-    });
-
-    document.getElementById('content').addEventListener('change', e => {
-        if (e.target.id === 'manageSelectAll') {
-            const checked = e.target.checked;
-            document.querySelectorAll('.manage-check').forEach(c => c.checked = checked);
-            return;
-        }
-        const el = e.target.closest('[data-action]');
-        if (!el) return;
-        if (el.dataset.action === 'upload-wish-image') {
+        if (action === 'upload-wish-image') {
             const id = el.dataset.id;
             const file = el.files[0];
             if (!file) return;
@@ -6867,7 +6868,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260818d';
+        const APP_BUILD = '20260818e';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
