@@ -584,6 +584,7 @@ const state = {
         memo: '',
         checkInBin: [],
         purgedCheckInIds: [],
+        purgedIds: [],
         dailyPlans: {},
         lastSyncAt: null,
         lastVisit: null,
@@ -856,7 +857,10 @@ function migrateData() {
     state.data.dailyQuote = state.data.dailyQuote || null;
     state.data.praiseGroups = state.data.praiseGroups || [];
     state.data.quoteGroups = state.data.quoteGroups || [];
+    state.data.purgedIds = state.data.purgedIds || [];
     state.data.settings = state.data.settings || { theme: state.settings && state.settings.theme ? state.settings.theme : 'light' };
+    state.data.settings.manageFilterCategory = state.data.settings.manageFilterCategory || '';
+    state.data.settings.manageSortPoints = state.data.settings.manageSortPoints || 'pointsAsc';
     // 同步默认模块：仅当检测到旧模块名（夸夸金句/夸夸自己）时，按 MODULES 重排并刷新名称，
     // 否则保留用户/云端已同步的自定义顺序与隐藏状态，避免每次启动都强制覆盖。
     const existingMods = Array.isArray(state.data.modules) ? state.data.modules : [];
@@ -1060,13 +1064,33 @@ function reportSyncSuccess() {
 }
 
 // 按 id 合并两条记录数组：保留本地独有的记录，同时补充云端独有的记录，避免同步覆盖本地新产生的数据
-function mergeById(localArr, cloudArr) {
+// 若传入 purgedIds，则这些 id 会被永久过滤（解决跨设备删除后被复活的问题）
+function mergeById(localArr, cloudArr, purgedIds) {
     const local = Array.isArray(localArr) ? localArr : [];
     const cloud = Array.isArray(cloudArr) ? cloudArr : [];
+    const purged = new Set(Array.isArray(purgedIds) ? purgedIds : []);
     const map = new Map();
-    local.forEach(x => { if (x && x.id) map.set(x.id, x); });
-    cloud.forEach(x => { if (x && x.id && !map.has(x.id)) map.set(x.id, x); });
+    local.forEach(x => { if (x && x.id && !purged.has(x.id)) map.set(x.id, x); });
+    cloud.forEach(x => { if (x && x.id && !purged.has(x.id) && !map.has(x.id)) map.set(x.id, x); });
     return Array.from(map.values());
+}
+
+// 跨设备删除同步：用一个统一的 purgedIds 数组记录所有被删除的条目 id。
+// 合并云端数据时会把这些 id 过滤掉，避免「这个设备删了，另一个设备同步后又回来」的紊乱。
+function ensurePurgedIds() {
+    if (!Array.isArray(state.data.purgedIds)) state.data.purgedIds = [];
+}
+function recordPurgedIds(...ids) {
+    ensurePurgedIds();
+    ids.forEach(id => { if (id && !state.data.purgedIds.includes(id)) state.data.purgedIds.unshift(id); });
+    trimPurgedIds();
+}
+function unrecordPurgedIds(...ids) {
+    ensurePurgedIds();
+    state.data.purgedIds = state.data.purgedIds.filter(id => !ids.includes(id));
+}
+function trimPurgedIds() {
+    if (state.data.purgedIds.length > 2000) state.data.purgedIds.length = 2000;
 }
 
 // 打卡项「墓碑合并」：彻底解决跨设备删除被复活的问题。
@@ -1146,7 +1170,8 @@ async function syncFromCloud() {
                     quoteGroups: Array.isArray(state.data.quoteGroups) ? state.data.quoteGroups : [],
                     checkIns: Array.isArray(state.data.checkIns) ? state.data.checkIns : [],
                     checkInBin: Array.isArray(state.data.checkInBin) ? state.data.checkInBin : [],
-                    purgedCheckInIds: Array.isArray(state.data.purgedCheckInIds) ? state.data.purgedCheckInIds : []
+                    purgedCheckInIds: Array.isArray(state.data.purgedCheckInIds) ? state.data.purgedCheckInIds : [],
+                    purgedIds: Array.isArray(state.data.purgedIds) ? state.data.purgedIds : []
                 };
 
                 state.data = { ...state.data, ...cloudPayload };
@@ -1170,14 +1195,19 @@ async function syncFromCloud() {
                 ensureDefaults();
                 // 流水/夸夸/心愿/金句/分组/喝水/回收站：用「拉取前的本地数组」与云端取并集。
                 // 本地新产生的记录绝不会被云端旧快照整组覆盖（修复此前 mergeById 因被先替换而失效的 bug）。
+                // 合并 purgedIds：删除标记取并集，确保跨设备删除不会被另一个设备的旧快照覆盖回来。
+                ensurePurgedIds();
+                state.data.purgedIds = Array.from(new Set([...(localById.purgedIds || []), ...(state.data.purgedIds || [])]));
+                trimPurgedIds();
+                const mergedPurgedIds = state.data.purgedIds;
                 state.data.points.history = mergeById(localById.history, cloud.points?.history);
-                state.data.waterLogs = mergeById(localById.waterLogs, cloud.waterLogs);
-                state.data.praises = mergeById(localById.praises, cloud.praises);
-                state.data.wishes = mergeById(localById.wishes, cloud.wishes);
-                state.data.wishBin = mergeById(localById.wishBin, cloud.wishBin);
-                state.data.userQuotes = mergeById(localById.userQuotes, cloud.userQuotes);
-                state.data.praiseGroups = mergeById(localById.praiseGroups, cloud.praiseGroups);
-                state.data.quoteGroups = mergeById(localById.quoteGroups, cloud.quoteGroups);
+                state.data.waterLogs = mergeById(localById.waterLogs, cloud.waterLogs, mergedPurgedIds);
+                state.data.praises = mergeById(localById.praises, cloud.praises, mergedPurgedIds);
+                state.data.wishes = mergeById(localById.wishes, cloud.wishes, mergedPurgedIds);
+                state.data.wishBin = mergeById(localById.wishBin, cloud.wishBin, mergedPurgedIds);
+                state.data.userQuotes = mergeById(localById.userQuotes, cloud.userQuotes, mergedPurgedIds);
+                state.data.praiseGroups = mergeById(localById.praiseGroups, cloud.praiseGroups, mergedPurgedIds);
+                state.data.quoteGroups = mergeById(localById.quoteGroups, cloud.quoteGroups, mergedPurgedIds);
                 // 打卡项 / 回收站：墓碑合并，删除(含彻底删除)跨设备传播，不会复活
                 const _mergedCI = mergeCheckIns(
                     localById.checkIns, localById.checkInBin, localById.purgedCheckInIds,
@@ -1480,6 +1510,7 @@ async function clearAllData() {
         memo: '',
         checkInBin: [],
         purgedCheckInIds: [],
+        purgedIds: [],
         dailyPlans: {},
         lastSyncAt: null,
         lastVisit: null,
@@ -1578,12 +1609,19 @@ function addWater(amount) {
 function deleteWater(id) {
     const log = state.data.waterLogs.find(x => x.id === id);
     if (!log) return;
+    recordPurgedIds(id);
     state.data.waterLogs = state.data.waterLogs.filter(x => x.id !== id);
     // 删除后同步「喝水 1500ml」打卡状态
     syncWaterCheckIn();
     saveState();
     render();
-    toast('已撤销该条喝水记录');
+    toastUndo('已撤销该条喝水记录', () => {
+        unrecordPurgedIds(id);
+        state.data.waterLogs.unshift(log);
+        syncWaterCheckIn();
+        saveState();
+        render();
+    });
 }
 
 
@@ -2379,6 +2417,7 @@ function addWish(name, points, image) {
 function deleteWish(id) {
     const wish = state.data.wishes.find(x => x.id === id);
     if (!wish) return;
+    recordPurgedIds(id);
     const wasExchanged = !!wish.exchanged;
     if (!wasExchanged) {
         // 未兑换移入回收站
@@ -2392,6 +2431,7 @@ function deleteWish(id) {
     render();
     if (wasExchanged) toast(`已退还 ${wish.points} 积分`);
     toastUndo(wasExchanged ? `🗑️ 已删除并退还 ${wish.points} 积分` : '🗑️ 心愿已移入回收站', () => {
+        unrecordPurgedIds(id);
         state.data.wishes.push(wish);
         state.data.wishBin = state.data.wishBin.filter(x => x.id !== id);
         recalcPoints();
@@ -2413,10 +2453,12 @@ function restoreWish(id) {
 function purgeWish(id) {
     const w = state.data.wishBin.find(x => x.id === id);
     if (!w) return;
+    recordPurgedIds(id);
     state.data.wishBin = state.data.wishBin.filter(x => x.id !== id);
     saveState();
     render();
     toastUndo('🗑️ 已彻底删除', () => {
+        unrecordPurgedIds(id);
         state.data.wishBin.unshift(w);
         saveState();
         render();
@@ -3182,7 +3224,16 @@ function pickDailyQuote(seedOffset = 0) {
     if (userQuotes.length) {
         const idx = (getDailyIndex(userQuotes) + seedOffset) % userQuotes.length;
         const u = userQuotes[idx];
-        return { text: u.text, from: u.from || '', category: '我的金句', icon: '💬', source: 'user', id: u.id };
+        const groups = state.data.quoteGroups || [];
+        const group = groups.find(g => g.id === u.groupId);
+        return {
+            text: u.text,
+            from: u.from || '',
+            category: group ? group.name : '我的金句',
+            icon: group ? (group.icon || '🏷️') : '💬',
+            source: 'user',
+            id: u.id
+        };
     }
     // 兜底：内置分类金句
     const catKey = getDailyQuoteCategory(seedOffset);
@@ -3843,14 +3894,37 @@ function renderCheckInMore() {
     `;
 }
 
-// 打卡管理：统一删除 + 批量调整积分
+// 打卡管理：统一删除 + 批量调整积分 + 分类筛选 + 积分排序
 function renderCheckInManage() {
-    const items = state.data.checkIns.slice().sort((a, b) => (a.points || 0) - (b.points || 0) || a.order - b.order);
+    const settings = state.data.settings || {};
+    const filterCategory = settings.manageFilterCategory || '';
+    const sortMode = settings.manageSortPoints || 'pointsAsc';
+    const allCategories = Array.from(new Set(state.data.checkIns.map(c => c.category).filter(Boolean)));
+    let items = state.data.checkIns.slice();
+    if (filterCategory) {
+        items = items.filter(it => it.category === filterCategory);
+    }
+    items.sort((a, b) => {
+        if (sortMode === 'pointsAsc') return (a.points || 0) - (b.points || 0) || a.order - b.order;
+        if (sortMode === 'pointsDesc') return (b.points || 0) - (a.points || 0) || a.order - b.order;
+        return a.order - b.order;
+    });
+    const categoryOptions = [['', '全部分类'], ...allCategories.map(c => [c, c])];
     return `
         <div class="card">
             <div class="card-header">
                 <div class="card-title">🛠️ 打卡项批量管理</div>
                 <span style="font-size:13px;color:var(--text-secondary)">${items.length} 项 · 勾选后可批量操作</span>
+            </div>
+            <div class="manage-filter-bar">
+                <select class="input manage-filter-select" data-action="manage-filter-category">
+                    ${categoryOptions.map(([val, label]) => `<option value="${escapeHtml(val)}" ${val === filterCategory ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+                </select>
+                <select class="input manage-filter-select" data-action="manage-sort-points">
+                    <option value="pointsAsc" ${sortMode === 'pointsAsc' ? 'selected' : ''}>积分由小到大</option>
+                    <option value="pointsDesc" ${sortMode === 'pointsDesc' ? 'selected' : ''}>积分由大到小</option>
+                    <option value="order" ${sortMode === 'order' ? 'selected' : ''}>按添加顺序</option>
+                </select>
             </div>
             <div class="manage-bar">
                 <label class="manage-select-all">
@@ -5002,13 +5076,15 @@ function renamePraiseGroup(id, name) {
 function deletePraiseGroup(id) {
     const g = (state.data.praiseGroups || []).find(x => x.id === id);
     if (!g) return;
+    recordPurgedIds(id);
     state.data.praiseGroups = (state.data.praiseGroups || []).filter(x => x.id !== id);
     // 该分组下的夸夸退回到「未分组」
     state.data.praises.forEach(p => { if (p.groupId === id) p.groupId = null; });
     if (state._praiseGroupView === id) state._praiseGroupView = null;
     saveState();
     render();
-    toastUndo('已删除分组「' + g.name + '」（组内夸夸移至未分组）', () => {
+    toastUndo('已删除分组「' + g.name + '』（组内夸夸移至未分组）', () => {
+        unrecordPurgedIds(id);
         state.data.praiseGroups.push(g);
         saveState();
         render();
@@ -5033,10 +5109,12 @@ function addPraise(text, groupId) {
 
 function deletePraise(id) {
     const p = state.data.praises.find(x => x.id === id);
+    if (p) recordPurgedIds(id);
     state.data.praises = state.data.praises.filter(x => x.id !== id);
     saveState();
     render();
     if (p) toastUndo('已删除这条夸夸', () => {
+        unrecordPurgedIds(id);
         state.data.praises.unshift(p);
         saveState();
         render();
@@ -5294,13 +5372,15 @@ function renameQuoteGroup(id, name) {
 function deleteQuoteGroup(id) {
     const g = (state.data.quoteGroups || []).find(x => x.id === id);
     if (!g) return;
+    recordPurgedIds(id);
     state.data.quoteGroups = (state.data.quoteGroups || []).filter(x => x.id !== id);
     (state.data.userQuotes || []).forEach(q => { if (q.groupId === id) q.groupId = null; });
     if (state._quoteFilterGroup === id) state._quoteFilterGroup = '';
     if (state._quoteSelGroup === id) state._quoteSelGroup = '';
     saveState();
     render();
-    toastUndo('已删除分组「' + g.name + '」（组内金句移至未分组）', () => {
+    toastUndo('已删除分组「' + g.name + '』（组内金句移至未分组）', () => {
+        unrecordPurgedIds(id);
         state.data.quoteGroups.push(g);
         saveState();
         render();
@@ -5309,6 +5389,7 @@ function deleteQuoteGroup(id) {
 
 function deleteQuote(id) {
     const q = state.data.userQuotes.find(x => x.id === id);
+    if (q) recordPurgedIds(id);
     state.data.userQuotes = state.data.userQuotes.filter(x => x.id !== id);
     // 如果删掉的是今日金句，清掉缓存让首页明天重新抽取
     if (state.data.dailyQuote && state.data.dailyQuote.id === id) {
@@ -5317,6 +5398,7 @@ function deleteQuote(id) {
     saveState();
     render();
     if (q) toastUndo('已删除这条金句', () => {
+        unrecordPurgedIds(id);
         state.data.userQuotes.unshift(q);
         saveState();
         render();
@@ -6373,6 +6455,20 @@ function initEvents() {
         const el = e.target.closest('[data-action]');
         if (!el) return;
         const action = el.dataset.action;
+        if (action === 'manage-filter-category') {
+            state.data.settings = state.data.settings || {};
+            state.data.settings.manageFilterCategory = el.value;
+            saveState();
+            render();
+            return;
+        }
+        if (action === 'manage-sort-points') {
+            state.data.settings = state.data.settings || {};
+            state.data.settings.manageSortPoints = el.value;
+            saveState();
+            render();
+            return;
+        }
         if (action === 'reading-note' || action === 'memo') {
             updateMemo(el.value);
             if (el.value.trim()) awardContentBonus();
@@ -6728,7 +6824,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817p';
+        const APP_BUILD = '20260818a';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)

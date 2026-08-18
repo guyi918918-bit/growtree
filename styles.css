@@ -3151,6 +3151,8 @@ select.input {
 
 /* 打卡管理（统一删除 / 批量改积分） */
 .manage-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+.manage-filter-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.manage-filter-select { flex: 1; min-width: 120px; max-width: 220px; font-size: 14px; padding: 8px 12px; }
 .manage-select-all { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); cursor: pointer; }
 .manage-select-all input { width: 18px; height: 18px; accent-color: var(--primary); }
 .manage-list { display: flex; flex-direction: column; gap: 10px; }
