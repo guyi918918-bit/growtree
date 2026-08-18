@@ -2724,7 +2724,8 @@ select.input {
 /* 打卡项改名按钮 */
 .task-edit {
     border: none; background: transparent; color: var(--text-secondary);
-    font-size: 15px; cursor: pointer; padding: 4px 6px; border-radius: 6px;
+    font-size: 15px; cursor: pointer; padding: 6px 8px; border-radius: 6px;
+    line-height: 1; flex-shrink: 0;
 }
 .task-edit:hover { background: var(--surface-2); color: var(--primary-dark); }
 
@@ -2740,12 +2741,12 @@ select.input {
 
 /* 打卡板块：子 tab */
 .sub-tab-card { padding: 10px; }
-.sub-tab-card .tab-btn { padding: 6px 14px; font-size: 13px; }
+.sub-tab-card .tab-btn { padding: 8px 16px; font-size: 13px; }
 
 /* 打卡项行 */
 .checkin-item-row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 14px 10px; border-bottom: 1px dashed var(--border);
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 16px 14px; border-bottom: 1px dashed var(--border);
 }
 .checkin-item-row:last-child { border-bottom: none; }
 .checkin-item-row.done { background: var(--primary-light); border-radius: 10px; }
@@ -2766,7 +2767,7 @@ select.input {
 
 /* 板块管理 */
 .category-manage-list { display: flex; flex-direction: column; gap: 8px; }
-.category-manage-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; background: var(--bg); border-radius: var(--radius-sm); }
+.category-manage-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: var(--bg); border-radius: var(--radius-sm); }
 .category-manage-name { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .category-name-input { flex: 1; min-width: 0; padding: 8px 10px; font-size: 14px; }
 .category-count { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
@@ -2774,9 +2775,9 @@ select.input {
 .category-manage-actions .btn { font-size: 12px; padding: 5px 10px; }
 .new-cat-mode .input { min-width: 0; }
 
-.checkin-row-info { flex: 1; }
-.checkin-row-name { font-size: 15px; font-weight: 500; }
-.checkin-row-meta { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+.checkin-row-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.checkin-row-name { font-size: 15px; font-weight: 500; line-height: 1.55; word-break: break-word; }
+.checkin-row-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .cat-tag { font-size: 11px; background: var(--surface-2); color: var(--text-secondary); padding: 2px 8px; border-radius: 10px; }
 .pts-tag { font-size: 11px; background: var(--primary-light); color: var(--primary-dark); padding: 2px 8px; border-radius: 10px; font-weight: 600; }
 .streak-tag { font-size: 11px; background: #fff0e6; color: #d46b08; padding: 2px 8px; border-radius: 10px; }
@@ -3083,10 +3084,10 @@ select.input {
     .date-picker-row .btn { flex: 1; }
 
     /* 打卡项：小屏信息堆叠 */
-    .checkin-item-row { align-items: flex-start; gap: 8px; padding: 12px 8px; }
+    .checkin-item-row { align-items: flex-start; gap: 10px; padding: 14px 10px; }
     .checkin-row-info { min-width: 0; }
     .checkin-row-name { font-size: 14px; word-break: break-word; }
-    .checkin-row-meta { gap: 4px; }
+    .checkin-row-meta { gap: 6px; }
     .checkin-checkbox { width: 30px; height: 30px; }
     .sort-btns { flex-direction: row; }
 
@@ -3136,26 +3137,30 @@ select.input {
     .history-text { font-size: 13px; word-break: break-word; }
 
     /* 管理列表 */
-    .manage-row { flex-wrap: wrap; gap: 6px; }
-    .manage-name { flex: 1 1 100%; }
+    .manage-row { padding: 12px; gap: 10px; }
+    .manage-name { font-size: 14px; }
+    .manage-tags { gap: 6px; }
 
     /* Tab 栏横向滚动 */
-    .tab-bar { gap: 2px; }
-    .tab-btn { padding: 8px 10px; font-size: 13px; min-width: 52px; }
+    .tab-bar { gap: 4px; }
+    .tab-btn { padding: 10px 12px; font-size: 13px; min-width: 56px; }
 
     /* 卡片内边距再收紧 */
-    .card { padding: 12px; }
+    .card { padding: 14px; }
 }
 
 /* 打卡管理（统一删除 / 批量改积分） */
-.manage-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
-.manage-select-all { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text); cursor: pointer; }
+.manage-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+.manage-select-all { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); cursor: pointer; }
 .manage-select-all input { width: 18px; height: 18px; accent-color: var(--primary); }
-.manage-list { display: flex; flex-direction: column; gap: 8px; }
-.manage-row { display: flex; align-items: center; gap: 10px; background: var(--bg); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px; cursor: pointer; }
-.manage-row input { width: 18px; height: 18px; accent-color: var(--primary); }
-.manage-name { flex: 1; }
-.manage-row .cat-tag, .manage-row .pts-tag { font-size: 12px; }
+.manage-list { display: flex; flex-direction: column; gap: 10px; }
+.manage-row { display: flex; align-items: flex-start; gap: 12px; background: var(--bg); border-radius: var(--radius-sm); padding: 14px; font-size: 14px; cursor: pointer; }
+.manage-row input { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; accent-color: var(--primary); }
+.manage-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.manage-name-line { display: flex; align-items: flex-start; gap: 10px; justify-content: space-between; }
+.manage-name { font-size: 15px; font-weight: 500; line-height: 1.55; word-break: break-word; flex: 1; }
+.manage-tags { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.manage-row .cat-tag, .manage-row .pts-tag, .manage-row .diff-tag { font-size: 12px; }
 
 .sort-btns { display: flex; flex-direction: column; gap: 2px; }
 .sort-btn { background: var(--surface-2); border: none; border-radius: 6px; font-size: 10px; color: var(--text-secondary); width: 22px; height: 14px; line-height: 1; cursor: pointer; }

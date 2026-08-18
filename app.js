@@ -3815,11 +3815,17 @@ function renderCheckInManage() {
                 ${items.length ? items.map(it => `
                     <div class="manage-row" data-id="${it.id}">
                         <input type="checkbox" class="manage-check" value="${it.id}">
-                        <span class="manage-name">${escapeHtml(it.name)}</span>
-                        <span class="cat-tag">${it.category}</span>
-                        <span class="diff-tag">${flowerLevel(it.stars||3).slogan}</span>
-                        <span class="pts-tag">${it.points}分</span>
-                        <button type="button" class="task-edit" data-action="edit-checkin" data-id="${it.id}" title="编辑名称/分组/分数">✎</button>
+                        <div class="manage-body">
+                            <div class="manage-name-line">
+                                <span class="manage-name">${escapeHtml(it.name)}</span>
+                                <button type="button" class="task-edit" data-action="edit-checkin" data-id="${it.id}" title="编辑名称/分组/分数">✎</button>
+                            </div>
+                            <div class="manage-tags">
+                                <span class="cat-tag">${it.category}</span>
+                                <span class="diff-tag">${flowerLevel(it.stars||3).slogan}</span>
+                                <span class="pts-tag">${it.points}分</span>
+                            </div>
+                        </div>
                     </div>
                 `).join('') : '<div class="empty-state"><span class="emoji">📝</span>还没有打卡项</div>'}
             </div>
@@ -6670,7 +6676,7 @@ function init() {
 
     // 自动检测新版本：部署后无需手动刷新，发现更新会自动重载
     (function autoUpdateCheck() {
-        const APP_BUILD = '20260817m';
+        const APP_BUILD = '20260817n';
         const check = () => {
             fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
