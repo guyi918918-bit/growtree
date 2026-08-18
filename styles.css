@@ -15,6 +15,8 @@
     --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04);
     --radius: 20px;
     --radius-sm: 14px;
+    --badge-flash-start: #c8e6c9;
+    --badge-flash-end: #e8f5e9;
 }
 
 /* ===== 暗夜模式 ===== */
@@ -33,6 +35,8 @@
     --danger: #ff453a;
     --success: #30d158;
     --shadow: 0 1px 3px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.4);
+    --badge-flash-start: rgba(48, 209, 88, 0.35);
+    --badge-flash-end: rgba(48, 209, 88, 0.14);
 }
 
 [data-theme="dark"] body { background: var(--bg); }
@@ -1965,8 +1969,8 @@ select.input {
     animation: badgeFlash .8s ease;
 }
 @keyframes badgeFlash {
-    0% { background: #c8e6c9; box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.25); }
-    100% { background: #e8f5e9; box-shadow: none; }
+    0% { background: var(--badge-flash-start); box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.25); }
+    100% { background: var(--badge-flash-end); box-shadow: none; }
 }
 
 .cloud-status-dot {
@@ -4091,4 +4095,30 @@ select.input {
 /* 通用浅色补丁 */
 [data-theme="dark"] .toast-undo {
     background: rgba(255,255,255,0.15);
+}
+
+/* 顶栏 / 同步徽章 */
+[data-theme="dark"] .topbar {
+    background: rgba(28, 28, 30, 0.85);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .cloud-status-badge {
+    background: rgba(48, 209, 88, 0.14);
+    color: #5be584;
+    border-color: rgba(48, 209, 88, 0.35);
+}
+[data-theme="dark"] .cloud-status-badge.offline {
+    background: rgba(120, 120, 128, 0.16);
+    color: #8e8e93;
+    border-color: rgba(120, 120, 128, 0.28);
+}
+[data-theme="dark"] .cloud-status-badge.syncing {
+    background: rgba(10, 132, 255, 0.14);
+    color: #64b5f6;
+    border-color: rgba(10, 132, 255, 0.35);
+}
+[data-theme="dark"] .cloud-status-badge.error {
+    background: rgba(255, 69, 58, 0.14);
+    color: #ff453a;
+    border-color: rgba(255, 69, 58, 0.35);
 }
