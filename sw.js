@@ -1,11 +1,11 @@
 // 顾一的成长小树 · Service Worker
 // 强制网络优先策略：所有同源请求带 cache:'reload' 绕过 HTTP 缓存直连服务器，
 // 保证部署即生效、绝不回读旧缓存；仅在断网时回退到本地缓存（PWA 离线可用）。
-// 文件名带构建号哈希（app.20260819b.js），部署后旧引用必然 404 → 强制加载新文件。
+// 文件名带构建号哈希（app.20260820a.js），部署后旧引用必然 404 → 强制加载新文件。
 // 探测到新版本时自动激活并接管页面，无需用户手动删除重加。
 
-const CACHE = 'growtree-shell-v24';
-const SHELL = ['./', './index.html', './app.20260819b.js', './styles.20260819b.css', './manifest.json'];
+const CACHE = 'growtree-shell-v25';
+const SHELL = ['./', './index.html', './app.20260820a.js', './styles.20260820a.css', './manifest.json'];
 
 self.addEventListener('install', (event) => {
   // 跳过等待，立即激活新 SW
