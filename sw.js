@@ -5,7 +5,7 @@
 // 探测到新版本时自动激活并接管页面，无需用户手动删除重加。
 
 const CACHE = 'growtree-shell-v33';
-const SHELL = ['./', './index.html', './app.20260820i.js', './styles.20260820i.css', './manifest.json'];
+const SHELL = ['./', './index.html', './app.20260820j.js', './styles.20260820j.css', './manifest.json'];
 
 self.addEventListener('install', (event) => {
   // 跳过等待，立即激活新 SW
