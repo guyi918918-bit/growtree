@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20260820w';
+const APP_BUILD = '20260820x';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -4644,7 +4644,7 @@ function render() {
     if (state.currentModule === 'home') loadHomeData();
     if (state.currentModule === 'hot') loadHotData();
     if (state.currentModule === 'beauty') loadBeautyData();
-    // 英语学习：任何 tab（首页/成就/历史/更多）都初始化交互（之前只看 egLessonOutput，导致「更多」tab 的设置按钮绑不上事件）
+    // 英语学习 → 英语游乐场：仅当该视图已渲染（含 #egLessonOutput）时才初始化交互
     if (state.currentModule === 'english') initEnglishPlayground();
     // 阅读板块交互初始化
     if (document.getElementById('readingSearchInput')) initReading();
@@ -6553,7 +6553,7 @@ function renderEnglish() {
                         <div class="eg-row">
                             <input type="text" id="egTranslateInput" placeholder="输入中文句子，如：我今天下班后要拿很多快递" />
                             <button class="eg-btn eg-btn-primary" id="egTranslateBtn">📖 逐句精讲</button>
-                            <button class="eg-btn eg-btn-outline eg-btn-sm" data-action="open-translate-settings" title="翻译设置（百度翻译 API）">⚙️</button>
+                            <button class="eg-btn eg-btn-outline eg-btn-sm" id="egOpenApiSettingsBtn" title="翻译设置（百度翻译 API）">⚙️</button>
                         </div>
                         <div class="eg-lesson-output" id="egLessonOutput">
                             <div class="eg-empty">💡 输入中文句子，点击「逐句精讲」获取完整语法分析</div>
@@ -6740,7 +6740,7 @@ function renderEnglish() {
             <section class="eg-card">
                 <div class="eg-card-title">🔑 翻译 API 设置</div>
                 <div class="eg-card-body">
-                    <div class="eg-text-muted" style="margin-bottom:10px;line-height:1.7;">联网翻译使用百度翻译 API（完全免费、国内直连、更准确地道）。填好 APP ID + 密钥并保存后，「逐句精讲」会优先走百度翻译，翻译质量大幅提升。</div>
+                    <div class="eg-text-muted" style="margin-bottom:10px;line-height:1.7;">联网翻译使用百度翻译 API（完全免费、国内直连、更准确地道）。填好 APP ID + 密钥并保存后，「逐句精讲」会优先走百度翻译，翻译质量大幅提升。还没开通？去 <a href="https://api.fanyi.baidu.com/" target="_blank" rel="noopener">百度翻译开放平台</a> 注册 → 实名认证 → 创建应用 → 勾选「通用文本翻译 API」即可获取 APP ID 和密钥。</div>
                     <input type="text" id="egBaiduAppid" class="input eg-api-input" placeholder="APP ID（一串数字）" autocomplete="off">
                     <input type="text" id="egBaiduKey" class="input eg-api-input" placeholder="密钥（一长串字母数字）" autocomplete="off">
                     <div class="eg-api-actions">
@@ -6769,17 +6769,15 @@ function initEnglishPlayground() {
                 document.querySelectorAll('.eg-panel').forEach(p => p.classList.toggle('active', p.id === 'egPanel-' + tabId));
                 state._egTab = tabId;
             }
-            if (!window._egTabsBound) {
-                window._egTabsBound = true;
+            (function setupTabs() {
                 const tabBar = document.querySelector('.eg-tab-bar');
-                if (tabBar) {
-                    tabBar.addEventListener('click', function(e) {
-                        const btn = e.target.closest('.tab-btn[data-eg-tab]');
-                        if (!btn) return;
-                        switchEgTab(btn.dataset.egTab);
-                    });
-                }
-            }
+                if (!tabBar) return;
+                tabBar.addEventListener('click', function(e) {
+                    const btn = e.target.closest('.tab-btn[data-eg-tab]');
+                    if (!btn) return;
+                    switchEgTab(btn.dataset.egTab);
+                });
+            })();
 
             // ============================================================
             // 0. 等级符号系统（航海→银河主题 · 满级999级）
@@ -6979,6 +6977,7 @@ function initEnglishPlayground() {
             const searchBtn = document.getElementById('egSearchBtn');
             const translateSearchBtn = document.getElementById('egTranslateSearchBtn');
 
+            if (searchInput && searchBtn && translateSearchBtn) {
             function addSearchHistory(query) {
                 let history = JSON.parse(localStorage.getItem('gt_eg_searchHistory')) || [];
                 history.unshift({ time: new Date().toISOString(), query: query });
@@ -7042,6 +7041,7 @@ function initEnglishPlayground() {
                     doSearch(this.dataset.q);
                 });
             });
+            }
 
             // ============================================================
             // 5. 抄写工坊
@@ -7050,6 +7050,10 @@ function initEnglishPlayground() {
             const translateBtn = document.getElementById('egTranslateBtn');
             const lessonOutput = document.getElementById('egLessonOutput');
             const copyCountEl = document.getElementById('egCopyCount');
+            const copyBtn = document.getElementById('egCopyBtn');
+            const resetCopyBtn = document.getElementById('egResetCopyBtn');
+
+            if (translateInput && translateBtn && lessonOutput && copyCountEl && copyBtn && resetCopyBtn) {
             let copyCount = parseInt(localStorage.getItem('gt_eg_engCopyCount')) || 0;
             let currentLesson = { zh: '', en: '', fullHtml: '' };
             copyCountEl.textContent = copyCount;
@@ -7203,31 +7207,6 @@ function initEnglishPlayground() {
                 return `https://fanyi-api.baidu.com/api/trans/vip/translate?q=${encodeURIComponent(q)}&from=zh&to=en&appid=${appid}&salt=${salt}&sign=${sign}`;
             }
 
-            // 百度 API 浏览器 CORS 拦截，必须走公共代理转发；自动尝试多个，任一成功即返回
-            async function fetchBaiduAPI(zh, appid, key) {
-                const baiduUrl = await buildBaiduTranslateURL(zh, appid, key);
-                const proxies = [
-                    async () => { const r = await fetchWithTimeout('https://corsproxy.io/?' + encodeURIComponent(baiduUrl)); return await r.json(); },
-                    async () => { const r = await fetchWithTimeout('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(baiduUrl)); return await r.json(); },
-                    async () => { const r = await fetchWithTimeout('https://api.allorigins.win/get?url=' + encodeURIComponent(baiduUrl)); const w = await r.json(); return w && w.contents ? JSON.parse(w.contents) : null; }
-                ];
-                for (const p of proxies) {
-                    try {
-                        const data = await p();
-                        if (data && data.trans_result && Array.isArray(data.trans_result) && data.trans_result.length) {
-                            const trans = data.trans_result.map(t => t.dst || '').join('');
-                            if (trans && !/[\u4e00-\u9fa5]/.test(trans)) return trans;
-                        }
-                    } catch (e) {}
-                }
-                return null;
-            }
-
-            // 简易 base64 编解码（防源码 + localStorage 明文泄露；非强加密，但能挡住 grep）
-            const _b64 = { e: s => btoa(unescape(encodeURIComponent(s))), d: s => { try { return decodeURIComponent(escape(atob(s))); } catch (e) { return ''; } } };
-            function encodeApiKey(s) { return _b64.e(s); }
-            function decodeApiKey(s) { return _b64.d(s); }
-
             async function fetchWithTimeout(url, options = {}) {
                             const controller = new AbortController();
                             const timer = setTimeout(() => controller.abort(), 8000);
@@ -7238,7 +7217,42 @@ function initEnglishPlayground() {
                             }
                         }
 
-                        // 多源翻译：Google 优先 → MyMemory → LibreTranslate；缓存命中即返回；全部失败抛错（不再 mockTranslate 中文兜底）
+                        // 百度翻译官方 API 不允许浏览器直接跨域访问，必须经公共 CORS 代理转发；自动尝试多个，任一成功即返回
+                        async function fetchBaiduAPI(zh, appid, key) {
+                            const salt = Date.now().toString();
+                            const sign = md5(appid + zh + salt + key);
+                            const baiduUrl = `https://fanyi-api.baidu.com/api/trans/vip/translate?q=${encodeURIComponent(zh)}&from=zh&to=en&appid=${appid}&salt=${salt}&sign=${sign}`;
+                            const proxies = [
+                                async () => { const r = await fetchWithTimeout('https://corsproxy.io/?' + encodeURIComponent(baiduUrl)); return await r.json(); },
+                                async () => { const r = await fetchWithTimeout('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(baiduUrl)); return await r.json(); },
+                                async () => { const r = await fetchWithTimeout('https://api.allorigins.win/get?url=' + encodeURIComponent(baiduUrl)); const w = await r.json(); return w && w.contents ? JSON.parse(w.contents) : null; }
+                            ];
+                            for (const p of proxies) {
+                                try {
+                                    const data = await p();
+                                    if (data && data.trans_result && Array.isArray(data.trans_result) && data.trans_result.length) {
+                                        const trans = data.trans_result.map(t => t.dst || '').join('');
+                                        if (trans && !/[\u4e00-\u9fa5]/.test(trans)) return trans;
+                                    }
+                                } catch (e) {}
+                            }
+                            return null;
+                        }
+
+                        // 简易 base64 编解码（防源码/ localStorage 明文泄露；非强加密，但可挡住直接 grep）
+                        const _b64 = { e: s => btoa(unescape(encodeURIComponent(s))), d: s => { try { return decodeURIComponent(escape(atob(s))); } catch (e) { return ''; } } };
+                        function encodeApiKey(s) { return _b64.e(s); }
+                        function decodeApiKey(s) { return _b64.d(s); }
+                        function getBaiduCreds() {
+                            // 优先读 base64 存储的新 key；同时兼容早期用户通过控制台写入的明文 key
+                            let appid = decodeApiKey(localStorage.getItem('gt_baidu_appid_b64') || '');
+                            let key = decodeApiKey(localStorage.getItem('gt_baidu_key_b64') || '');
+                            if (!appid) appid = localStorage.getItem('gt_baidu_appid') || '';
+                            if (!key) key = localStorage.getItem('gt_baidu_key') || '';
+                            return { appid, key };
+                        }
+
+                        // 多源翻译：百度（如已配置）→ MyMemory → Google → LibreTranslate；缓存命中即返回；全部失败抛错
                         async function translateWithAPI(zh) {
                             if (!zh || !zh.trim()) return '';
                             const cache = getTransCache();
@@ -7246,10 +7260,9 @@ function initEnglishPlayground() {
 
                             const sources = [
                                 async () => {
-                                    // 百度翻译 API（APP ID + 密钥从 localStorage 读取；密钥以 base64 编码存储防源码/grep 泄露；浏览器 CORS 走公共代理）
+                                    // 百度翻译 API（国内最稳定；需 APP ID+密钥，浏览器 CORS 走公共代理；完全免费，每月 200 万字符）
                                     try {
-                                        const appid = decodeApiKey(localStorage.getItem('gt_baidu_appid_b64') || '');
-                                        const key = decodeApiKey(localStorage.getItem('gt_baidu_key_b64') || '');
+                                        const { appid, key } = getBaiduCreds();
                                         if (appid && key) {
                                             const trans = await fetchBaiduAPI(zh, appid, key);
                                             if (trans) return trans;
@@ -8027,7 +8040,7 @@ function initEnglishPlayground() {
             translateBtn.addEventListener('click', runLesson);
             translateInput.addEventListener('keydown', e => { if (e.key === 'Enter') runLesson(); });
 
-            document.getElementById('egCopyBtn').addEventListener('click', function() {
+            copyBtn.addEventListener('click', function() {
                 if (!currentLesson.zh) {
                     runLesson();
                     setTimeout(() => {
@@ -8062,11 +8075,12 @@ function initEnglishPlayground() {
                 updateAchievements();
             });
 
-            document.getElementById('egResetCopyBtn').addEventListener('click', function() {
+            resetCopyBtn.addEventListener('click', function() {
                 copyCount = 0;
                 localStorage.setItem('gt_eg_engCopyCount', '0');
                 copyCountEl.textContent = '0';
             });
+            }
 
             // ============================================================
             // 6. 历史记录
@@ -8188,8 +8202,10 @@ function initEnglishPlayground() {
                 });
             });
 
-            document.getElementById('egHistoryFilter').addEventListener('input', renderHistory);
-            document.getElementById('egClearHistoryBtn').addEventListener('click', function() {
+            const historyFilter = document.getElementById('egHistoryFilter');
+            const clearHistoryBtn = document.getElementById('egClearHistoryBtn');
+            if (historyFilter) historyFilter.addEventListener('input', renderHistory);
+            if (clearHistoryBtn) clearHistoryBtn.addEventListener('click', function() {
                 if (confirm('确定要清空所有历史记录吗？')) {
                     localStorage.removeItem('gt_eg_searchHistory');
                     localStorage.removeItem('gt_eg_copyHistory');
@@ -8199,73 +8215,7 @@ function initEnglishPlayground() {
             renderHistory();
 
             // ============================================================
-            // 7. 翻译 API 设置（百度翻译：APP ID + 密钥，localStorage 保存）
-            // ============================================================
-            (function setupBaiduApiSettings() {
-                const appidEl = document.getElementById('egBaiduAppid');
-                const keyEl = document.getElementById('egBaiduKey');
-                const statusEl = document.getElementById('egApiStatus');
-                if (!appidEl || !keyEl) return;
-
-                // 预填：base64 解码显示明文（首次加载时清理旧明文 key）
-                try { localStorage.removeItem('gt_baidu_appid'); localStorage.removeItem('gt_baidu_key'); } catch (e) {}
-                appidEl.value = decodeApiKey(localStorage.getItem('gt_baidu_appid_b64') || '');
-                keyEl.value = decodeApiKey(localStorage.getItem('gt_baidu_key_b64') || '');
-
-                function showStatus(text, type) {
-                    if (!statusEl) return;
-                    statusEl.textContent = text;
-                    statusEl.className = 'eg-api-status' + (type ? ' eg-api-' + type : '');
-                }
-
-                const savedAppid = decodeApiKey(localStorage.getItem('gt_baidu_appid_b64') || '');
-                const savedKey = decodeApiKey(localStorage.getItem('gt_baidu_key_b64') || '');
-                if (savedAppid && savedKey) {
-                    showStatus('✅ 已配置百度翻译（APP ID: ' + savedAppid + '），逐句精讲将优先使用。', 'ok');
-                } else if (savedAppid) {
-                    showStatus('⚠️ 已填 APP ID，还差密钥。', 'warn');
-                } else if (savedKey) {
-                    showStatus('⚠️ 已填密钥，还差 APP ID（一串数字，在百度翻译控制台底部「申请信息」里）。', 'warn');
-                } else {
-                    showStatus('未配置：请填写 APP ID 和密钥后点「保存设置」。', '');
-                }
-
-                const saveBtn = document.getElementById('egSaveApiBtn');
-                if (saveBtn) saveBtn.addEventListener('click', function() {
-                    const appid = appidEl.value.trim();
-                    const key = keyEl.value.trim();
-                    if (!appid || !key) { showStatus('⚠️ APP ID 和密钥都要填写。', 'warn'); return; }
-                    localStorage.setItem('gt_baidu_appid_b64', encodeApiKey(appid));
-                    localStorage.setItem('gt_baidu_key_b64', encodeApiKey(key));
-                    showStatus('✅ 已保存！逐句精讲将立即使用百度翻译（密钥已 base64 编码存储）。', 'ok');
-                });
-
-                const testBtn = document.getElementById('egTestApiBtn');
-                if (testBtn) testBtn.addEventListener('click', async function() {
-                    const appid = appidEl.value.trim();
-                    const key = keyEl.value.trim();
-                    if (!appid || !key) { showStatus('⚠️ 请先填写 APP ID 和密钥。', 'warn'); return; }
-                    showStatus('⏳ 正在测试连接…');
-                    try {
-                        const url = await buildBaiduTranslateURL('今天天气很好', appid, key);
-                        const res = await fetchWithTimeout(url);
-                        const data = await res.json();
-                        if (data && data.trans_result && data.trans_result.length) {
-                            showStatus('✅ 连接成功！「今天天气很好」→ ' + data.trans_result[0].dst, 'ok');
-                        } else if (data && data.error_code) {
-                            const msg = { 54001: '签名错误（密钥复制错了或有多余空格）', 54003: '访问频率受限（稍后再试）', 54000: '必填参数为空', 52003: '未授权用户（APP ID 错误或服务未开通）', 58001: '语言方向不支持', 90107: '认证未通过或未生效' }[data.error_code] || data.error_msg;
-                            showStatus('❌ 测试失败（' + data.error_code + '）：' + msg, 'err');
-                        } else {
-                            showStatus('❌ 测试失败：未知响应', 'err');
-                        }
-                    } catch (e) {
-                        showStatus('❌ 网络错误：' + e.message, 'err');
-                    }
-                });
-            })();
-
-            // ============================================================
-            // 8. 成就系统（完全参照图片：无进度显示）
+            // 7. 成就系统（完全参照图片：无进度显示）
             // ============================================================
             function updateAchievements() {
                 const historical = getHistoricalMonths();
@@ -8332,6 +8282,8 @@ function initEnglishPlayground() {
             const taskBar = document.getElementById('egTaskBar');
             const refreshTaskBtn = document.getElementById('egRefreshTaskBtn');
             const completeTaskBtn = document.getElementById('egCompleteTaskBtn');
+
+            if (taskText && taskBar && refreshTaskBtn && completeTaskBtn) {
             const tasks = [
                 "用英文搜索一个你好奇的问题 🔍",
                 "用英语自言自语 1 分钟 🗣️",
@@ -8376,12 +8328,85 @@ function initEnglishPlayground() {
             refreshTaskBtn.addEventListener('click', pickRandomTask);
             completeTaskBtn.addEventListener('click', completeTask);
             pickRandomTask();
+            }
 
             // 彩蛋
             document.querySelector('.eg-logo h1').addEventListener('dblclick', () => {
                 updateScore(5);
                 alert('🎮 彩蛋！+5 正反馈！继续玩吧～');
             });
+
+            // ============================================================
+            // 9. 翻译 API 设置（百度翻译：APP ID + 密钥，localStorage base64 保存）
+            // ============================================================
+            (function setupBaiduApiSettings() {
+                const appidEl = document.getElementById('egBaiduAppid');
+                const keyEl = document.getElementById('egBaiduKey');
+                const statusEl = document.getElementById('egApiStatus');
+                const gearBtn = document.getElementById('egOpenApiSettingsBtn');
+                if (!appidEl || !keyEl) return;
+
+                // 读取已有配置（兼容明文旧 key，并迁移到 base64）
+                const { appid: savedAppid, key: savedKey } = getBaiduCreds();
+                if (savedAppid) appidEl.value = savedAppid;
+                if (savedKey) keyEl.value = savedKey;
+                if (savedAppid && savedKey) {
+                    localStorage.setItem('gt_baidu_appid_b64', encodeApiKey(savedAppid));
+                    localStorage.setItem('gt_baidu_key_b64', encodeApiKey(savedKey));
+                    try { localStorage.removeItem('gt_baidu_appid'); localStorage.removeItem('gt_baidu_key'); } catch (e) {}
+                }
+
+                function showStatus(text, type) {
+                    if (!statusEl) return;
+                    statusEl.textContent = text;
+                    statusEl.className = 'eg-api-status' + (type ? ' eg-api-' + type : '');
+                }
+
+                if (savedAppid && savedKey) {
+                    showStatus('✅ 已配置百度翻译（APP ID: ' + savedAppid + '），逐句精讲将优先使用。', 'ok');
+                } else if (savedAppid) {
+                    showStatus('⚠️ 已填 APP ID，还差密钥。', 'warn');
+                } else if (savedKey) {
+                    showStatus('⚠️ 已填密钥，还差 APP ID（在百度翻译控制台底部「申请信息」里）。', 'warn');
+                } else {
+                    showStatus('未配置：请填写 APP ID 和密钥后点「保存设置」。', '');
+                }
+
+                const saveBtn = document.getElementById('egSaveApiBtn');
+                if (saveBtn) saveBtn.addEventListener('click', function() {
+                    const appid = appidEl.value.trim();
+                    const key = keyEl.value.trim();
+                    if (!appid || !key) { showStatus('⚠️ APP ID 和密钥都要填写。', 'warn'); return; }
+                    localStorage.setItem('gt_baidu_appid_b64', encodeApiKey(appid));
+                    localStorage.setItem('gt_baidu_key_b64', encodeApiKey(key));
+                    try { localStorage.removeItem('gt_baidu_appid'); localStorage.removeItem('gt_baidu_key'); } catch (e) {}
+                    showStatus('✅ 已保存！逐句精讲将立即使用百度翻译（密钥已 base64 编码存储）。', 'ok');
+                });
+
+                const testBtn = document.getElementById('egTestApiBtn');
+                if (testBtn) testBtn.addEventListener('click', async function() {
+                    const appid = appidEl.value.trim();
+                    const key = keyEl.value.trim();
+                    if (!appid || !key) { showStatus('⚠️ 请先填写 APP ID 和密钥。', 'warn'); return; }
+                    showStatus('⏳ 正在测试连接…');
+                    try {
+                        const trans = await fetchBaiduAPI('今天天气很好', appid, key);
+                        if (trans) {
+                            showStatus('✅ 连接成功！「今天天气很好」→ ' + trans, 'ok');
+                        } else {
+                            showStatus('❌ 测试失败：百度返回空或代理不可用，请检查 APP ID/密钥。', 'err');
+                        }
+                    } catch (e) {
+                        showStatus('❌ 网络错误：' + (e && e.message ? e.message : '无法连接代理'), 'err');
+                    }
+                });
+
+                // 首页齿轮按钮：跳到「更多」tab 的 API 设置卡片
+                if (gearBtn) gearBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    switchEgTab('more');
+                });
+            })();
 
             console.log('🎮 英语游乐场 · 最终版已启动！');
             console.log('💡 成就墙已移除进度显示，完全参照图片格式。');
@@ -10034,19 +10059,6 @@ function initEvents() {
         if (menuEl && menuEl.style.display === 'block' && !e.target.closest('.checkin-module-select')) {
             menuEl.style.display = 'none';
         }
-        // ===== 英语游乐场三级 tab 切换（放在 data-action 校验之前：英语 tab 按钮无 data-action 属性，否则会被上面的 if(!el) return 拦截） =====
-        const egBtn = e.target.closest('.tab-btn[data-eg-tab]');
-        if (egBtn) {
-            const tabId = egBtn.dataset.egTab;
-            if (tabId) {
-                const tabBar = document.querySelector('.eg-tab-bar');
-                if (tabBar) tabBar.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === egBtn));
-                document.querySelectorAll('.eg-panel').forEach(p => p.classList.toggle('active', p.id === 'egPanel-' + tabId));
-                state._egTab = tabId;
-            }
-            return;
-        }
-
         const el = e.target.closest('[data-action]');
         if (!el) return;
         const action = el.dataset.action;
