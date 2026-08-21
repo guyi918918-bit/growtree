@@ -6861,7 +6861,99 @@ function engMd5(string) {
     return md5str(string);
 }
 
-// ---------- 6 列语法成分分析 ----------
+// ---------- 英文成分→中文翻译 词表 ----------
+const ENG_ZH_MAP = {
+    // 时间状语
+    'yesterday': '昨天', 'today': '今天', 'tomorrow': '明天',
+    'tonight': '今晚', 'now': '现在', 'soon': '不久', 'later': '之后',
+    'last week': '上周', 'next week': '下周', 'this week': '本周',
+    'last month': '上个月', 'next month': '下个月', 'this month': '本月',
+    'last year': '去年', 'next year': '明年', 'this year': '今年',
+    'last night': '昨晚', 'last morning': '昨天上午', 'last evening': '昨天晚上',
+    'next morning': '明天上午', 'next evening': '明天晚上',
+    'every morning': '每天早上', 'every evening': '每天晚上', 'every night': '每晚',
+    'in the morning': '在早上', 'in the afternoon': '在下午',
+    'in the evening': '在晚上', 'at night': '在夜里',
+    // 主语
+    'i': '我', 'you': '你', 'he': '他', 'she': '她', 'we': '我们', 'they': '他们',
+    'me': '我', 'him': '他', 'her': '她', 'us': '我们', 'them': '他们',
+    'my': '我的', 'your': '你的', 'his': '他的', 'our': '我们的', 'their': '他们的',
+    'good': '好的', 'best': '最好的', 'new': '新的', 'old': '旧的', 'delicious': '好吃的',
+    'my husband and i': '我和我老公', 'my wife and i': '我和我老婆',
+    'my friend and i': '我和我的朋友', 'my friends and i': '我和我的朋友们',
+    'my family and i': '我和我的家人',
+    'my husband': '我老公', 'my wife': '我老婆', 'my friend': '我的朋友',
+    'my friends': '我的朋友们', 'my family': '我的家人',
+    'my sister': '我姐姐', 'my brother': '我哥哥', 'my mom': '我妈妈',
+    'my dad': '我爸爸', 'my dog': '我的小狗', 'my puppy': '我的小狗',
+    'my good friend': '我的好朋友', 'my best friend': '我的最好的朋友',
+    // 谓语动词（含复合）
+    'want to have': '想请', 'want to eat': '想吃', 'want to see': '想看',
+    'want to go': '想去', 'want to': '想',
+    'went to eat': '去吃', 'went to have': '去吃', 'went to see': '去看',
+    'went to': '去', 'went mountain climbing': '去爬山',
+    'went': '去了', 'go': '去', 'goes': '去',
+    'want': '想', 'wanted': '想要', 'wants': '想',
+    'had': '吃了', 'ate': '吃了', 'eat': '吃', 'eats': '吃',
+    'have': '有', 'has': '有',
+    'like': '喜欢', 'likes': '喜欢', 'liked': '喜欢',
+    'love': '爱', 'loves': '爱', 'loved': '爱',
+    'enjoy': '享受', 'enjoyed': '享受',
+    'invite': '邀请', 'invited': '邀请', 'invites': '邀请',
+    'is reading': '正在读', 'drinks': '喝', 'drink': '喝',
+    'runs': '跑', 'run': '跑', 'ran': '跑了',
+    'stick': '坚持', 'sticks': '坚持', 'sticked': '坚持',
+    'listen': '听', 'listens': '听', 'listened': '听',
+    'look': '看', 'looks': '看', 'looked': '看',
+    'talk': '谈', 'talks': '谈', 'talked': '谈',
+    'think': '想', 'thinks': '想', 'thought': '想',
+    'learn': '学', 'learns': '学', 'learned': '学',
+    'study': '学习', 'studies': '学习', 'studied': '学习',
+    'read': '读', 'reads': '读',
+    'play': '玩', 'plays': '玩', 'played': '玩',
+    'see': '看见', 'saw': '看见了',
+    'watch': '看', 'watches': '看',
+    'mountain climbing': '爬山', 'went mountain climbing': '去爬山',
+    // 地点状语
+    'at my place': '在我家', 'at my home': '在我家', 'at home': '在家',
+    'at school': '在学校', 'at work': '在上班',
+    'in the park': '在公园', 'at the park': '在公园',
+    'in beijing': '在北京', 'in shanghai': '在上海',
+    'at the cafe': '在咖啡馆', 'at the cafe.': '在咖啡馆', 'at the café': '在咖啡馆',
+    // 方式状语 / 副词
+    'with a friend': '和朋友一起', 'with my friend': '和我的朋友',
+    'with my friends': '和我的朋友们',
+    'with my family': '和家人一起',
+    'by bus': '坐公交', 'by car': '坐车',
+    'slowly': '慢慢地', 'quickly': '快速地', 'carefully': '仔细地',
+    'always': '总是', 'usually': '通常', 'sometimes': '有时', 'often': '经常', 'never': '从不',
+    'together': '一起', 'easily': '容易地', 'well': '好',
+    'warmly': '热情地', 'happily': '开心地', 'politely': '礼貌地',
+    // 疑问副词
+    'how': '怎么', 'when': '什么时候', 'where': '哪里', 'why': '为什么',
+    // 补足语常见
+    'to english': '看英语', 'to music': '音乐',
+    'to lunch': '共进午餐', 'to have lunch': '共进午餐',
+    'to the book': '那本书', 'to her': '她',
+    'to the cafe': '去咖啡馆', 'to the café': '去咖啡馆',
+    // 宾语常见
+    'a delicious snack': '一个很好吃的零食',
+    'a delicious hot pot': '好吃的火锅',
+    'a bowl of noodles': '一碗面',
+    'a bowl of': '一碗',
+    'a book': '一本书', 'books': '书',
+    'coffee': '咖啡', 'tea': '茶', 'water': '水', 'milk': '牛奶',
+    'bowl of noodles': '一碗面',
+    'bowl of rice': '一碗饭',
+    'bowl of soup': '一碗汤',
+    'a glass of water': '一杯水',
+    'a cup of tea': '一杯茶',
+    'a cup of coffee': '一杯咖啡',
+    'noodles': '面',
+    'rice': '饭',
+    'soup': '汤'
+};
+
 function engTranslateToChinese(phrase) {
     let lower = String(phrase || '').toLowerCase().trim();
     if (!lower || lower === '—') return '—';
@@ -6911,20 +7003,28 @@ function engGenerateOutput(zh, en) {
         const zhS = zhSentences[i] || zhSentences[zhSentences.length - 1] || '';
         const enS = enSentences[i] || enSentences[enSentences.length - 1] || '';
         const pEn = engParseSentenceEN(enS);
+        // 中文行：优先把英文成分翻译成中文（保证与英文行同列对齐）；个别词翻不出时回退中文解析器
         const pZh = engParseSentenceZH(zhS);
+        const zhOf = (enVal, zhVal) => {
+            if (!enVal || enVal === '—') return '—';
+            const t = engTranslateToChinese(enVal);
+            if (t && t !== enVal && !/[a-zA-Z]{3,}/.test(t)) return t;
+            // 翻译不理想时用中文解析结果
+            return zhVal && zhVal !== '—' ? zhVal : (t || '—');
+        };
         if (n > 1) {
             html += `<div class="eng-sub-line">分句 ${i + 1}/${n}（${escapeHtml(enS)} / ${escapeHtml(zhS)}）</div>`;
         }
         html += `<div class="eng-table-wrap"><table><thead><tr>`;
         for (const h of heads) html += `<th>${h}</th>`;
         html += `</tr></thead><tbody>`;
-        // 英文行（按解析结果填）
+        // 英文行（按英文解析结果填）
         html += `<tr>`;
         for (const k of cols) html += `<td>${cell(pEn[k])}</td>`;
         html += `</tr>`;
-        // 中文行（按中文解析结果填，不是把英文翻成中文）
+        // 中文行（与英文行同列对齐）
         html += `<tr>`;
-        for (const k of cols) html += `<td>${zhCell(pZh[k])}</td>`;
+        for (const k of cols) html += `<td>${zhCell(zhOf(pEn[k], pZh[k]))}</td>`;
         html += `</tr>`;
         html += `</tbody></table></div>`;
     }
@@ -6946,25 +7046,211 @@ function engParseSentenceEN(en) {
     const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
     let s = String(en || '').replace(/[.!?;,]+$/, '').trim();
     if (!s) return result;
+
+    // 优先用 Compromise 词性标注（CDN 引入，window.nlp 可用时）
+    if (typeof window !== 'undefined' && window.nlp && typeof window.nlp === 'function') {
+        try {
+            return engParseSentenceENNlp(s);
+        } catch (e) { /* 回退正则 */ }
+    }
+    return engParseSentenceENRegex(s);
+}
+
+// ===== Compromise 词性标注版 =====
+function engParseSentenceENNlp(s) {
+    const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
+    const doc = window.nlp(s);
+    const words = [];
+    try {
+        doc.json()[0].terms.forEach(t => {
+            words.push({ text: t.text, tags: new Set(t.tags || []), post: t.post || '' });
+        });
+    } catch (e) { return engParseSentenceENRegex(s); }
+    if (words.length === 0) return result;
+
+    const isVerb = w => w.tags.has('Verb') || w.tags.has('Infinitive') || w.tags.has('Gerund') || w.tags.has('PastTense');
+    const isAdverb = w => w.tags.has('Adverb');
+    const isPreposition = w => w.tags.has('Preposition');
+    const isNoun = w => w.tags.has('Noun') || w.tags.has('Pronoun') || w.tags.has('ProperNoun') || w.tags.has('Singular') || w.tags.has('Plural');
+    const isAdj = w => w.tags.has('Adjective');
+    const isDet = w => w.tags.has('Determiner');
+    const isQuestion = w => w.tags.has('QuestionWord');
+    const isConj = w => w.tags.has('Conjunction');
+    const used = new Array(words.length).fill(false);
+    const joinW = idxs => idxs.map(i => words[i].text).join(' ').replace(/[,.!?;:]+$/, '');
+
+    // 时间词表（compromise 有时把 tonight 标为 Noun，这里补充）
+    const TIME_WORDS = new Set(['today','yesterday','tomorrow','tonight','now','soon','later','morning','afternoon','evening','night','week','month','year','weekend']);
+    const TIME_PREFIX = new Set(['this','next','last','every']);
+
+    // 1) 时间状语：扫描 "this/next/last/every + timeword" 或独立时间词
+    for (let i = 0; i < words.length; i++) {
+        if (used[i]) continue;
+        const w = words[i].text.toLowerCase().replace(/[,.!?;:]+$/, '');
+        if (TIME_PREFIX.has(w) && i + 1 < words.length && TIME_WORDS.has(words[i+1].text.toLowerCase())) {
+            result.advTime = (w + ' ' + words[i+1].text).replace(/[,.!?;:]+$/, '');
+            used[i] = true; used[i+1] = true;
+            break;
+        }
+    }
+    if (result.advTime === '—') {
+        for (let i = 0; i < words.length; i++) {
+            if (used[i]) continue;
+            const w = words[i].text.toLowerCase().replace(/[,.!?;:]+$/, '');
+            if (['today','yesterday','tomorrow','tonight','now','soon','later'].indexOf(w) >= 0) {
+                result.advTime = words[i].text.replace(/[,.!?;:]+$/, '');
+                used[i] = true;
+                break;
+            }
+        }
+    }
+
+    // 2) 方式状语：Adverb 标签
+    for (let i = 0; i < words.length; i++) {
+        if (used[i]) continue;
+        if (isAdverb(words[i])) {
+            result.advManner = words[i].text.replace(/[,.!?;:]+$/, '');
+            used[i] = true;
+            break;
+        }
+    }
+
+    // 3) 地点状语：Preposition + 后面名词（at/in/on）
+    for (let i = 0; i < words.length; i++) {
+        if (used[i]) continue;
+        if (isPreposition(words[i]) && ['at','in','on'].indexOf(words[i].text.toLowerCase()) >= 0) {
+            const place = [];
+            for (let j = i; j < words.length && place.length < 4; j++) {
+                if (used[j]) break;
+                place.push(words[j].text.replace(/[,.!?;:]+$/, ''));
+                if (j + 1 < words.length && !isNoun(words[j+1]) && !isDet(words[j+1])) break;
+            }
+            if (place.length >= 2) {
+                result.advPlace = place.join(' ');
+                for (let j = i; j < i + place.length; j++) used[j] = true;
+                break;
+            }
+        }
+    }
+
+    // 4) 补足语：to + 名词 或 to + 动词不定式（非 want/plan 等复合动词结构时）
+    const compMainVerbs = ['want','wants','wanted','plan','plans','planned','decide','decided','hope','hopes','go','goes','going'];
+    for (let i = 0; i < words.length - 1; i++) {
+        if (used[i]) continue;
+        const w = words[i].text.toLowerCase();
+        // 前一个词是复合动词核心（want to eat 的 want），跳过
+        const prev = i > 0 ? words[i-1].text.toLowerCase() : '';
+        if (compMainVerbs.indexOf(prev) >= 0) continue;
+        if (w === 'to' && i + 1 < words.length) {
+            const tail = [];
+            for (let j = i; j < words.length && tail.length < 3; j++) {
+                if (used[j]) break;
+                tail.push(words[j].text.replace(/[,.!?;:]+$/, ''));
+                if (j + 1 < words.length && (words[j+1].tags.has('Preposition') || ['at','in','on'].indexOf(words[j+1].text.toLowerCase()) >= 0)) break;
+            }
+            if (tail.length >= 2) {
+                result.complement = tail.join(' ');
+                for (let j = i; j < i + tail.length; j++) used[j] = true;
+                break;
+            }
+        }
+    }
+
+    // 5) 主语：从第一个未被占用的词开始（时间/方式/地点已被抽走）
+    let subStart = 0;
+    while (subStart < words.length && used[subStart]) subStart++;
+    let subEnd = 0;
+    // 代词主语
+    if (subStart < words.length && !used[subStart] && (words[subStart].tags.has('Pronoun') || ['i','you','he','she','we','they'].indexOf(words[subStart].text.toLowerCase()) >= 0)) {
+        subEnd = subStart + 1;
+    }
+    if (subEnd === 0) {
+        // my/your/his/her/our/their/the/a/an + (adj)* + 名词
+        for (let len = 5; len >= 2; len--) {
+            if (subStart + len > words.length) continue;
+            let ok = true;
+            for (let j = subStart; j < subStart + len; j++) if (used[j]) { ok = false; break; }
+            if (!ok) continue;
+            const first = words[subStart].text.toLowerCase();
+            if (['my','your','his','her','our','their','the','a','an'].indexOf(first) < 0) continue;
+            // 最后一个是名词
+            if (!isNoun(words[subStart + len - 1])) continue;
+            subEnd = subStart + len;
+            // 定语：第一个词到倒数第二个（如 "my good" 是 friend 的定语）
+            if (len >= 3) {
+                const modWords = [];
+                for (let j = subStart; j < subStart + len - 1; j++) modWords.push(words[j].text.replace(/[,.!?;:]+$/, ''));
+                if (modWords.length >= 2) result.modifier = modWords.join(' ');
+                else if (modWords.length === 1 && ['my','your','his','her','our','their'].indexOf(modWords[0].toLowerCase()) >= 0) result.modifier = modWords[0];
+            }
+            break;
+        }
+    }
+    if (subEnd === 0 && subStart < words.length && !used[subStart]) {
+        const w0 = words[subStart].text.toLowerCase();
+        // QuestionWord（How/When/Where/Why）不作主语
+        if (!words[subStart].tags.has('QuestionWord') && ['i','you','he','she','we','they','it','this','that'].indexOf(w0) >= 0) subEnd = subStart + 1;
+    }
+    if (subEnd > 0) {
+        result.subject = words.slice(subStart, subEnd).map(w => w.text).join(' ');
+        for (let j = subStart; j < subEnd; j++) used[j] = true;
+    }
+
+    // 6) 谓语动词：第一个 Verb 标签（含复合 want to eat / is reading）
+    let startVerb = 0;
+    for (let i = 0; i < words.length; i++) { if (!used[i]) { startVerb = i; break; } }
+    if (startVerb < words.length) {
+        // 复合动词：want to eat / going to / is reading
+        let verbEnd = startVerb;
+        const v1 = words[startVerb].text.toLowerCase();
+        if (['want','wants','wanted','plan','plans','planned','decide','decided','hope','hopes','go','goes','going','is','am','are','was','were','has','have','had','do','does','did'].indexOf(v1) >= 0) {
+            // want to V / going to V / is Ving
+            if (startVerb + 1 < words.length && words[startVerb+1].text.toLowerCase() === 'to' && !used[startVerb+1]) {
+                if (startVerb + 2 < words.length && isVerb(words[startVerb+2])) {
+                    verbEnd = startVerb + 2;
+                } else {
+                    verbEnd = startVerb + 1;
+                }
+            } else if (startVerb + 1 < words.length && isVerb(words[startVerb+1]) && (['is','am','are','was','were'].indexOf(v1) >= 0)) {
+                verbEnd = startVerb + 1;
+            }
+        } else if (isVerb(words[startVerb])) {
+            verbEnd = startVerb;
+        }
+        // 兜底：取动词标签
+        if (verbEnd === startVerb && isVerb(words[startVerb])) verbEnd = startVerb;
+        result.verb = words.slice(startVerb, verbEnd + 1).map(w => w.text).join(' ');
+        for (let j = startVerb; j <= verbEnd; j++) used[j] = true;
+    }
+
+    // 7) 剩余为宾语
+    const objIdxs = [];
+    for (let i = 0; i < words.length; i++) if (!used[i]) objIdxs.push(i);
+    if (objIdxs.length > 0) result.object = joinW(objIdxs);
+
+    return result;
+}
+
+// ===== 正则版（无 Compromise 时兜底）=====
+function engParseSentenceENRegex(s) {
+    const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
     const words = s.split(/\s+/).filter(Boolean);
     if (words.length === 0) return result;
     const used = new Array(words.length).fill(false);
 
-    // 0) 识别复合动词 (want to eat / plan to go 等)：只标记 to+动词部分，不标记 want 本身
-    const compVerbs = ['want','wanted','wants','planned','planning','plans','decided','deciding','decided','hoped','hopes','planned','decided','chose','refused','needed','tried'];
+    // 0) 识别复合动词 to 占用
+    const compVerbs = ['want','wanted','wants','planned','planning','plans','decided','hoped','hopes','chose','refused','needed','tried'];
     const verbsLike = ['go','eat','have','drink','see','do','play','visit','study','read','take','make','come','run','walk','give','buy','find','get'];
     for (let i = 0; i < words.length - 2; i++) {
         if (used[i+1] || used[i+2]) continue;
         const first = words[i].toLowerCase();
         if (compVerbs.indexOf(first) >= 0 && words[i+1] && words[i+1].toLowerCase() === 'to') {
             used[i+1] = true;
-            if (words[i+2] && verbsLike.indexOf(words[i+2].toLowerCase()) >= 0) {
-                used[i+2] = true;
-            }
+            if (words[i+2] && verbsLike.indexOf(words[i+2].toLowerCase()) >= 0) used[i+2] = true;
         }
     }
 
-    // 1) 补足语：to/for/about + 物体（最多 2 词；遇介词/状语词停止）
+    // 1) 补足语
     const findComplement = () => {
         for (let i = 0; i < words.length - 1; i++) {
             if (used[i]) continue;
@@ -6992,7 +7278,7 @@ function engParseSentenceEN(en) {
     const comp = findComplement();
     if (comp) result.complement = comp;
 
-    // 2) 方式状语：纯副词 或 with/by 短语
+    // 2) 方式状语
     const mannerAdverbs = ['slowly','quickly','carefully','well','hard','fast','often','usually','always','never','sometimes','together','warmly','gently','happily','politely','quietly','eagerly','how','when','where','why'];
     for (let i = 0; i < words.length; i++) {
         if (used[i]) continue;
@@ -7018,7 +7304,7 @@ function engParseSentenceEN(en) {
         }
     }
 
-    // 3) 地点状语：at/in/on + 名词
+    // 3) 地点
     for (let len = 4; len >= 2; len--) {
         for (let i = 0; i <= words.length - len; i++) {
             if (used[i]) continue;
@@ -7032,7 +7318,7 @@ function engParseSentenceEN(en) {
         if (result.advPlace !== '—') break;
     }
 
-    // 4) 时间状语
+    // 4) 时间
     for (let len = 3; len >= 1; len--) {
         for (let i = 0; i <= words.length - len; i++) {
             if (used[i]) continue;
@@ -7049,7 +7335,7 @@ function engParseSentenceEN(en) {
         if (result.advTime !== '—') break;
     }
 
-    // 5) 主语（跨过已被时间/方式/地点/补足占用的词）
+    // 5) 主语
     let subStart = 0;
     while (subStart < words.length && used[subStart]) subStart++;
     let subEnd = 0;
@@ -7087,7 +7373,7 @@ function engParseSentenceEN(en) {
         for (let j = subStart; j < subEnd; j++) used[j] = true;
     }
 
-    // 6) 谓语动词
+    // 6) 谓语
     let startVerb = 0;
     for (let i = 0; i < words.length; i++) { if (!used[i]) { startVerb = i; break; } }
     if (startVerb < words.length) {
@@ -7109,12 +7395,14 @@ function engParseSentenceEN(en) {
         for (let j = startVerb; j < startVerb + verbLen; j++) used[j] = true;
     }
 
-    // 7) 剩余作为宾语
+    // 7) 宾语
     const objWords = words.filter((_, i) => !used[i]);
     if (objWords.length > 0) result.object = objWords.join(' ');
 
     return result;
 }
+
+
 // ===== 中文句解析器（基于模式匹配）=====
 function engParseSentenceZH(zh) {
     const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
@@ -7139,17 +7427,17 @@ function engParseSentenceZH(zh) {
         }
     }
 
-    // 2) 地点状语：在 + 名词（1-5 字）
-    const placeMatch = s.match(/(在[\u4e00-\u9fa5]{1,5}(?:里|上|下|内|中|外)?)/);
+    // 2) 地点状语：在 + 名词（1-3 字，遇到"地/的"停止）
+    const placeMatch = s.match(/在[\u4e00-\u9fa5]{1,3}(?=[地的是了很就都]|$)/);
     if (placeMatch) {
         result.advPlace = placeMatch[0];
         s = s.replace(placeMatch[0], '').trim();
     }
 
-    // 3) 方式状语：副词+地（1-5字）
-    const mannerMatch = s.match(/([\u4e00-\u9fa5]{1,5}地)/);
+    // 3) 方式状语：副词+地（"X地"，取最后匹配避免吃名词）
+    const mannerMatch = s.match(/([\u4e00-\u9fa5]{1,4}地)/);
     if (mannerMatch) {
-        result.advManner = mannerMatch[0];
+        result.advManner = mannerMatch[1];
         s = s.replace(mannerMatch[0], '').trim();
     }
 
@@ -7182,7 +7470,7 @@ function engParseSentenceZH(zh) {
     }
 
     // 5) 谓语动词（已知动词列表 + 兜底取1-2字）
-    const knownVerbs = ['邀请','请','吃','喝','看','听','学','做','去','来','走','跑','玩','买','卖','给','拿','说','写','读','想','要','是','在','有','会','能','可以','想','喜欢','讨厌','帮助','认识','告诉','回答','问','叫','认识','欢迎','感谢','希望','打算','计划','准备','开始','结束','喜欢','想要'];
+    const knownVerbs = ['邀请','请','吃','喝','看','听','学','做','去','来','走','跑','玩','买','卖','给','拿','说','写','读','想','要','是','在','有','会','能','可以','喜欢','讨厌','帮助','认识','告诉','回答','问','叫','欢迎','感谢','希望','打算','计划','准备','开始','结束','想要','共进'];
     let verbMatched = false;
     for (const v of knownVerbs) {
         if (s.startsWith(v)) {
