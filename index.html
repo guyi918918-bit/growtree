@@ -14,7 +14,7 @@
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="apple-touch-icon" href="apple-touch-icon.png">
     <title>顾一的成长小树</title>
-    <link rel="stylesheet" href="styles.20260820q.css">
+    <link rel="stylesheet" href="styles.20260820r.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
@@ -205,6 +205,46 @@ create policy "allow anon all" on beauty_inspiration
         </div>
     </div>
 
+    <!-- 翻译设置弹窗（百度翻译 API 配置） -->
+    <div id="translateSettingsModal" class="modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>⚙️ 翻译设置（百度翻译 API）</h3>
+                <button class="modal-close" data-action="close-translate-settings">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="ts-status" id="tsStatus">未检测到配置</div>
+                <div class="ts-form">
+                    <label class="ts-label">APP ID</label>
+                    <input type="text" id="tsAppId" class="input" placeholder="粘贴你的百度翻译 appid" autocomplete="off">
+                    <label class="ts-label">密钥（Secret Key）</label>
+                    <input type="password" id="tsKey" class="input" placeholder="粘贴你的百度翻译密钥" autocomplete="off">
+                    <div class="ts-actions">
+                        <button class="btn btn-primary" data-action="save-translate-settings">💾 保存</button>
+                        <button class="btn btn-secondary" data-action="test-translate">🧪 测试翻译</button>
+                        <button class="btn btn-secondary" data-action="clear-translate-settings">🗑️ 清除配置</button>
+                    </div>
+                    <div class="ts-test-result" id="tsTestResult"></div>
+                </div>
+                <div class="ts-guide">
+                    <div class="ts-guide-title">📖 免费开通教程（3 分钟）</div>
+                    <ol class="ts-steps">
+                        <li>打开 <b>百度翻译开放平台</b>：<a href="https://api.fanyi.baidu.com/" target="_blank" rel="noopener">api.fanyi.baidu.com</a></li>
+                        <li>点击右上角「注册」，注册并登录百度账号（用手机号即可）。</li>
+                        <li>进入「管理控制台」→ 完成<b>实名认证</b>（免费，几分钟通过）。</li>
+                        <li>在控制台点「创建应用」→ 应用名称随意（如"成长小树"）→ 勾选服务「通用文本翻译 API」→ 提交。</li>
+                        <li>创建成功后，在「管理控制台 → 开发者信息」页面会显示 <b>APP ID</b> 和 <b>密钥</b>，把它们粘贴到上方输入框保存即可。</li>
+                    </ol>
+                    <div class="ts-tip">✅ 免费额度：每月 <b>200 万字符</b>，个人使用绰绰有余，超出才收费（0.002元/字，几乎不会触发）。</div>
+                    <div class="ts-tip">💡 配置完成后，回到「英语学习 → 逐句精讲」，翻译会自动优先使用百度（国内直连、无需 VPN），质量远好于 MyMemory。密钥只保存在你本机浏览器里。</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-action="close-translate-settings">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 新手引导弹窗 -->
     <div id="onboardModal" class="modal onboard-modal">
         <div class="modal-card onboard-card">
@@ -360,7 +400,7 @@ create policy "allow anon all" on beauty_inspiration
 
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/lunar-javascript/lunar.js"></script>
-    <script src="app.20260820q.js"></script>
+    <script src="app.20260820r.js"></script>
     <script>
         // 全局错误兜底：若初始化崩溃，把错误显示在页面上，而不是白屏
         function showFatalError(msg, detail) {
