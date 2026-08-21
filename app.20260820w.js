@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20260820v';
+const APP_BUILD = '20260820w';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -10034,6 +10034,19 @@ function initEvents() {
         if (menuEl && menuEl.style.display === 'block' && !e.target.closest('.checkin-module-select')) {
             menuEl.style.display = 'none';
         }
+        // ===== 英语游乐场三级 tab 切换（放在 data-action 校验之前：英语 tab 按钮无 data-action 属性，否则会被上面的 if(!el) return 拦截） =====
+        const egBtn = e.target.closest('.tab-btn[data-eg-tab]');
+        if (egBtn) {
+            const tabId = egBtn.dataset.egTab;
+            if (tabId) {
+                const tabBar = document.querySelector('.eg-tab-bar');
+                if (tabBar) tabBar.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === egBtn));
+                document.querySelectorAll('.eg-panel').forEach(p => p.classList.toggle('active', p.id === 'egPanel-' + tabId));
+                state._egTab = tabId;
+            }
+            return;
+        }
+
         const el = e.target.closest('[data-action]');
         if (!el) return;
         const action = el.dataset.action;
@@ -10060,18 +10073,6 @@ function initEvents() {
                 }
                 render();
                 closeSidebar();
-            }
-            return;
-        }
-        // ===== 英语游乐场内三级 tab 切换（全局委托，不依赖 initEnglishPlayground 内部 IIFE） =====
-        const egBtn = e.target.closest('.tab-btn[data-eg-tab]');
-        if (egBtn) {
-            const tabId = egBtn.dataset.egTab;
-            if (tabId) {
-                const tabBar = document.querySelector('.eg-tab-bar');
-                if (tabBar) tabBar.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === egBtn));
-                document.querySelectorAll('.eg-panel').forEach(p => p.classList.toggle('active', p.id === 'egPanel-' + tabId));
-                state._egTab = tabId;
             }
             return;
         }
