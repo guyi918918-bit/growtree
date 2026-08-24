@@ -4392,6 +4392,11 @@ select.input {
     text-align: center;
     vertical-align: middle;
 }
+/* 未进入「管理行」时，彻底收起操作列（含表头空列），避免右侧出现空白列 */
+.eng-delete-hidden .eng-del-cell,
+.eng-delete-hidden th:last-child {
+    display: none;
+}
 .eng-label-input,
 .eng-cell-input {
     width: 100%;

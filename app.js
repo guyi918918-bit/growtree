@@ -7688,6 +7688,8 @@ function engRestoreTable(state) {
 function engRebuildTableWithRows(rowCount) {
     const zh = engCurrentLesson.zh || '';
     const old = engSerializeTable();
+    const oldTable = document.getElementById('engManualTable');
+    const wasDeleteVisible = !!(oldTable && oldTable.classList.contains('eng-delete-visible'));
     // 保留旧内容到新尺寸
     const newRows = [];
     const newLabels = [];
@@ -7716,6 +7718,17 @@ function engRebuildTableWithRows(rowCount) {
     if (old && old.en) {
         const enSentence = document.getElementById('engUserEnglishSentence');
         if (enSentence) enSentence.textContent = old.en;
+    }
+    // 保留原来的「管理行」显隐状态，避免增删行后删除按钮突然消失
+    if (wasDeleteVisible) {
+        table.classList.remove('eng-delete-hidden');
+        table.classList.add('eng-delete-visible');
+        const btn = document.querySelector('[data-action="eng-toggle-delete-mode"]');
+        if (btn) {
+            btn.textContent = '✅ 完成';
+            btn.classList.add('eng-btn-danger');
+            btn.classList.remove('eng-btn-outline');
+        }
     }
     engCurrentLesson.fullHtml = output.innerHTML;
 }
