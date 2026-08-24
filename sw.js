@@ -4,8 +4,8 @@
 // 文件名带构建号哈希（app.20260820a.js），部署后旧引用必然 404 → 强制加载新文件。
 // 探测到新版本时自动激活并接管页面，无需用户手动删除重加。
 
-const CACHE = 'growtree-shell-v78';
-const SHELL = ['./', './index.html', './app.20260824l.js', './styles.20260824l.css', './repair.html', './manifest.json'];
+const CACHE = 'growtree-shell-v79';
+const SHELL = ['./', './index.html', './app.20260824m.js', './styles.20260824m.css', './repair.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {
   // 跳过等待，立即激活新 SW
