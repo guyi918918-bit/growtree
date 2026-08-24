@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>成长小树 · 数据修复</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: #f5f6fa;
+            color: #2d3436;
+            line-height: 1.6;
+            padding: 20px;
+            margin: 0;
+        }
+        .wrap {
+            max-width: 720px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+        }
+        h1 { font-size: 22px; margin: 0 0 8px; }
+        .subtitle { color: #636e72; font-size: 14px; margin-bottom: 20px; }
+        .alert {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .alert strong { color: #856404; }
+        .section { margin-bottom: 22px; }
+        .section-title {
+            font-weight: 600;
+            font-size: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .stat {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 14px;
+            text-align: center;
+        }
+        .stat .num {
+            font-size: 24px;
+            font-weight: 700;
+            color: #6c5ce7;
+        }
+        .stat .label {
+            font-size: 12px;
+            color: #636e72;
+            margin-top: 4px;
+        }
+        label {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        input[type="number"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #dfe6e9;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .hint {
+            font-size: 12px;
+            color: #b2bec3;
+            margin-top: 4px;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .btn-primary { background: #6c5ce7; color: #fff; }
+        .btn-primary:hover { background: #5b4cc4; }
+        .btn-secondary { background: #dfe6e9; color: #2d3436; }
+        .btn-secondary:hover { background: #b2bec3; }
+        .actions { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+        .log {
+            background: #2d3436;
+            color: #dfe6e9;
+            border-radius: 10px;
+            padding: 14px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            min-height: 80px;
+            max-height: 300px;
+            overflow: auto;
+        }
+        .done { color: #00b894; }
+        .warn { color: #fdcb6e; }
+        .err { color: #ff7675; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <h1>🛠️ 成长小树 · 数据修复</h1>
+        <div class="subtitle">清理重复成就奖励、异常积分，恢复真实段位与打卡分数。</div>
+
+        <div class="alert">
+            <strong>重要：</strong>本工具只修改当前浏览器 localStorage 中的数据，不会上传到服务器。
+            修复前建议先点击「导出备份」保存一份 JSON，以防万一。
+        </div>
+
+        <div class="section">
+            <div class="section-title">📊 当前数据概览</div>
+            <div class="stats" id="statsBox">
+                <div class="stat"><div class="num" id="sEarned">--</div><div class="label">累计积分</div></div>
+                <div class="stat"><div class="num" id="sRankStars">--</div><div class="label">当前星数</div></div>
+                <div class="stat"><div class="num" id="sAchvCount">--</div><div class="label">成就记录数</div></div>
+                <div class="stat"><div class="num" id="sHistoryCount">--</div><div class="label">总流水条数</div></div>
+            </div>
+            <div class="log" id="logBox">等待读取数据…</div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">🎯 修复目标</div>
+            <label for="targetStars">修复后目标星数（请填写你污染前的大概段位星数）：</label>
+            <input type="number" id="targetStars" value="0" min="0" max="1000">
+            <div class="hint">青铜 I 萌芽新手 = 0 星；倔强青铜 II = 4 星；倔强青铜 III = 8 星。如果不确定，建议先填 0。</div>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-secondary" onclick="exportBackup()">💾 导出备份</button>
+            <button class="btn btn-primary" onclick="runRepair()">🧹 执行修复</button>
+        </div>
+    </div>
+
+    <script>
+        const LS_KEY = 'growtree_state';
+        const ACHV_TYPES = new Set(['achv']);
+        let raw = null;
+
+        function log(msg, cls = '') {
+            const box = document.getElementById('logBox');
+            const line = document.createElement('div');
+            line.className = cls;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            box.appendChild(line);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function readState() {
+            try {
+                raw = localStorage.getItem(LS_KEY);
+                if (!raw) { log('未找到本地数据，无需修复。', 'err'); return null; }
+                return JSON.parse(raw);
+            } catch (e) {
+                log('读取数据失败：' + e.message, 'err');
+                return null;
+            }
+        }
+
+        function renderStats(st) {
+            const data = st.data || {};
+            const game = data.game || {};
+            const pts = data.points || { earned: 0, used: 0, history: [] };
+            document.getElementById('sEarned').textContent = (pts.earned || 0).toLocaleString();
+            document.getElementById('sRankStars').textContent = (game.rankStars || 0).toLocaleString();
+            const achvCount = (pts.history || []).filter(h => ACHV_TYPES.has(h.type)).length;
+            document.getElementById('sAchvCount').textContent = achvCount;
+            document.getElementById('sHistoryCount').textContent = (pts.history || []).length;
+        }
+
+        function init() {
+            const st = readState();
+            if (!st) return;
+            renderStats(st);
+            log('数据读取成功。');
+
+            // 自动估算重复成就
+            const pts = st.data.points || { history: [] };
+            const dupMap = {};
+            let dupTotal = 0;
+            for (const h of pts.history) {
+                if (!ACHV_TYPES.has(h.type)) continue;
+                const key = h.reason || h.type;
+                dupMap[key] = (dupMap[key] || 0) + 1;
+            }
+            for (const [k, c] of Object.entries(dupMap)) {
+                if (c > 1) {
+                    dupTotal += c - 1;
+                    log(`发现重复成就奖励：${k} × ${c} 条`, 'warn');
+                }
+            }
+            if (dupTotal) log(`预计可清理 ${dupTotal} 条重复成就记录。`, 'warn');
+            else log('未发现重复成就奖励。');
+        }
+
+        function exportBackup() {
+            if (!raw) { log('没有数据可导出。', 'err'); return; }
+            const blob = new Blob([raw], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `growtree_backup_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            log('备份已导出，请妥善保存。', 'done');
+        }
+
+        function runRepair() {
+            const st = readState();
+            if (!st) return;
+
+            log('开始修复…');
+            const data = st.data;
+            const pts = data.points || { earned: 0, used: 0, history: [] };
+            const game = data.game || {};
+
+            // 1. 按 reason 去重，只保留最早的一条成就奖励
+            const seen = new Set();
+            const beforeLen = pts.history.length;
+            pts.history = pts.history.filter(h => {
+                if (!ACHV_TYPES.has(h.type)) return true;
+                const key = h.reason || h.type;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+            const removed = beforeLen - pts.history.length;
+            if (removed) log(`已清理 ${removed} 条重复成就奖励记录。`, 'done');
+            else log('没有重复成就奖励需要清理。');
+
+            // 2. 删除明显异常的单条记录（单个 base 记录 > 500 分视为异常）
+            const beforeLen2 = pts.history.length;
+            pts.history = pts.history.filter(h => {
+                if (h.type === 'base' && (h.points || 0) > 500) return false;
+                if (h.type === 'streak' && (h.points || 0) > 500) return false;
+                return true;
+            });
+            const removed2 = beforeLen2 - pts.history.length;
+            if (removed2) log(`已清理 ${removed2} 条异常高分记录。`, 'done');
+
+            // 3. 重新计算 earned
+            const earned = pts.history.reduce((s, h) => s + (h.points || 0), 0);
+            pts.earned = earned;
+            log(`重新计算累计积分：${earned}`);
+
+            // 4. 计算真实星数
+            const earnedStars = Math.floor(earned / 100);
+            log(`按真实积分对应星数：${earnedStars} 星。`);
+
+            // 5. 使用用户输入的目标星数（默认不超过真实星数，防止再次飞升）
+            let target = parseInt(document.getElementById('targetStars').value, 10);
+            if (isNaN(target) || target < 0) target = 0;
+            if (target > earnedStars) {
+                log(`目标星数 ${target} 超过真实星数 ${earnedStars}，已限制为 ${earnedStars}。`, 'warn');
+                target = earnedStars;
+            }
+            game.rankStars = target;
+            game.accountedEarnedStars = target;
+            log(`段位已校准为：${target} 星。`, 'done');
+
+            // 6. 重置成就与称号状态，让下次主程序按真实状态重新发放（且只发一次）
+            game.achievements = {};
+            game.titles = game.titles || [];
+            log('已重置成就解锁状态，下次启动会按真实进度重新判定一次。', 'done');
+
+            // 7. 修正赛季峰值（如果高于当前星数）
+            if (game.season && typeof game.season.peakStars === 'number' && game.season.peakStars > target) {
+                game.season.peakStars = target;
+                game.season.peakKey = null;
+                log('已修正本赛季最高段位记录。', 'done');
+            }
+            if (game.season && typeof game.season.startStars === 'number' && game.season.startStars > target) {
+                game.season.startStars = target;
+                log('已修正本赛季起点段位记录。', 'done');
+            }
+
+            // 8. 写回 localStorage
+            try {
+                localStorage.setItem(LS_KEY, JSON.stringify(st));
+                log('修复数据已写回本地存储。', 'done');
+                log('请刷新成长小树页面查看效果。', 'done');
+                renderStats(st);
+            } catch (e) {
+                log('保存失败：' + e.message, 'err');
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
