@@ -4473,3 +4473,88 @@ select.input {
 [data-theme="dark"] .eng-label-input::placeholder { color: rgba(255,255,255,0.35); }
 [data-theme="dark"] #engUserEnglishSentence { border-bottom-color: rgba(162,155,254,0.6); color: #f5f2ff; }
 [data-theme="dark"] #engUserEnglishSentence:empty::before { color: rgba(255,255,255,0.35); }
+
+/* ===== 20260824g：抄写工坊行管理菜单 + AI 链接 ===== */
+.eng-ai-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0 4px;
+    padding: 6px 10px;
+    background: rgba(108,92,231,0.05);
+    border-radius: 12px;
+    font-size: 13px;
+}
+.eng-ai-label { color: #6c5ce7; font-weight: 500; }
+.eng-ai-links .eng-btn-ghost { color: #6c5ce7; padding: 4px 10px; font-size: 12px; }
+.eng-ai-links .eng-btn-ghost:hover { background: rgba(108,92,231,0.10); }
+
+.eng-edit-cell-last { position: relative; padding-right: 32px; }
+.eng-row-actions {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.eng-row-edit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: #a29bfe;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.eng-row-edit:hover { background: rgba(108,92,231,0.10); color: #6c5ce7; }
+.eng-row-edit svg { display: block; }
+
+.eng-row-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 20;
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 110px;
+    padding: 5px;
+    background: var(--surface, #fff);
+    border: 1px solid rgba(108,92,231,0.15);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.10);
+}
+.eng-row-editing .eng-row-menu { display: flex; }
+.eng-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #2d3436;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+    font-family: inherit;
+}
+.eng-menu-item:hover { background: rgba(108,92,231,0.08); color: #6c5ce7; }
+.eng-menu-item[data-action="eng-row-delete"]:hover { background: rgba(255,77,79,0.10); color: #ff4d4f; }
+
+[data-theme="dark"] .eng-ai-links { background: rgba(125,109,255,0.10); }
+[data-theme="dark"] .eng-ai-label { color: #a29bfe; }
+[data-theme="dark"] .eng-ai-links .eng-btn-ghost { color: #a29bfe; }
+[data-theme="dark"] .eng-ai-links .eng-btn-ghost:hover { background: rgba(125,109,255,0.15); }
+[data-theme="dark"] .eng-row-menu { background: var(--surface, #1c1c1e); border-color: rgba(125,109,255,0.25); }
+[data-theme="dark"] .eng-menu-item { color: #f5f2ff; }
+[data-theme="dark"] .eng-menu-item:hover { background: rgba(125,109,255,0.15); color: #a29bfe; }
+[data-theme="dark"] .eng-menu-item[data-action="eng-row-delete"]:hover { background: rgba(255,69,58,0.15); color: #ff453a; }
