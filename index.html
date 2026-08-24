@@ -14,7 +14,7 @@
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="apple-touch-icon" href="apple-touch-icon.png">
     <title>顾一的成长小树</title>
-    <link rel="stylesheet" href="styles.20260824h.css">
+    <link rel="stylesheet" href="styles.20260824i.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
@@ -172,6 +172,22 @@ create policy "allow anon all" on beauty_inspiration
                     </div>
                     <input type="file" id="importFile" accept="application/json,.json" style="display:none">
                     <div class="field-hint">导出可保存到手机/电脑，换设备或清缓存后导入即可恢复全部数据。</div>
+                </div>
+
+                <div class="settings-section settings-danger">
+                    <div class="settings-section-title">🎯 积分/段位校准</div>
+                    <div class="field-hint">如果积分、段位、赛季最高、成就等数据被异常污染，可在此输入正确积分一键重置。会同步调整段位、赛季最高/起点、成就、称号、星能、连胜，并自动冻结成就防止再次污染。</div>
+                    <div class="form-group" style="margin-top:10px;">
+                        <label>目标累计积分</label>
+                        <input type="number" id="settingTargetPoints" placeholder="例如：460" min="0" max="999999" value="460">
+                        <div class="field-hint">460 积分 = 4 星 = 倔强青铜Ⅱ。积分会重置为指定值，段位按「积分 ÷ 100」向下取整自动换算。</div>
+                    </div>
+                    <div class="backup-row" style="margin-top:10px;">
+                        <button class="btn btn-secondary" data-action="export-points-backup">💾 导出备份</button>
+                        <button class="btn btn-danger" data-action="reset-points">🎯 执行校准</button>
+                    </div>
+                    <div id="pointsResetStatus" class="field-hint" style="margin-top:8px;color:var(--text-secondary);">当前累计积分：<span id="settingCurrentPoints">—</span>，当前段位：<span id="settingCurrentRank">—</span></div>
+                    <button class="btn btn-secondary" data-action="unfreeze-achievements" id="settingUnfreezeAchv" style="margin-top:8px;display:none;width:100%">🔓 解冻成就（重置后想恢复自动判定再点）</button>
                 </div>
 
                 <div class="settings-section settings-danger">
@@ -362,7 +378,7 @@ create policy "allow anon all" on beauty_inspiration
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/lunar-javascript/lunar.js"></script>
     <script src="https://unpkg.com/compromise@14.16.0/builds/compromise.js"></script>
-    <script src="app.20260824h.js"></script>
+    <script src="app.20260824i.js"></script>
     <script>
         // 全局错误兜底：若初始化崩溃，把错误显示在页面上，而不是白屏
         function showFatalError(msg, detail) {
