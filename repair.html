@@ -115,6 +115,16 @@
         .warn { color: #fdcb6e; }
         .err { color: #ff7675; }
         .hidden { display: none; }
+        .mode-switch { display: flex; flex-direction: column; gap: 10px; }
+        .mode-label {
+            display: flex; align-items: flex-start; gap: 10px;
+            background: #f8f9fa; border-radius: 10px; padding: 12px 14px;
+            cursor: pointer; font-size: 14px;
+        }
+        .mode-label input { margin-top: 2px; }
+        .mode-label span { flex: 1; line-height: 1.5; }
+        .alert-info { background: #e8f4fd; border-color: #74b9ff; }
+        .alert-info strong { color: #0984e3; }
     </style>
 </head>
 <body>
@@ -139,15 +149,41 @@
         </div>
 
         <div class="section">
-            <div class="section-title">🎯 修复目标</div>
+            <div class="section-title">🎯 修复模式</div>
+            <div class="mode-switch">
+                <label class="mode-label">
+                    <input type="radio" name="repairMode" value="smart" checked onchange="onModeChange()">
+                    <span><b>智能清理</b>：只删除重复/异常流水，按现有流水重新计算积分和段位。</span>
+                </label>
+                <label class="mode-label">
+                    <input type="radio" name="repairMode" value="full" onchange="onModeChange()">
+                    <span><b>完全重置</b>：把积分、段位、赛季、成就全部重置为指定数值（推荐）。</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="section" id="smartTargetSection">
+            <div class="section-title">⭐ 目标星数</div>
             <label for="targetStars">修复后目标星数（请填写你污染前的大概段位星数）：</label>
             <input type="number" id="targetStars" value="0" min="0" max="1000">
             <div class="hint">青铜 I 萌芽新手 = 0 星；倔强青铜 II = 4 星；倔强青铜 III = 8 星。如果不确定，建议先填 0。</div>
         </div>
 
+        <div class="section hidden" id="fullResetSection">
+            <div class="section-title">🔧 完全重置到指定积分</div>
+            <label for="targetPoints">修复后目标累计积分：</label>
+            <input type="number" id="targetPoints" value="460" min="0" max="999999">
+            <div class="hint">系统会按「1 星 = 100 积分」自动换算段位。460 积分 = 4 星 = 倔强青铜 II。</div>
+            <div class="alert alert-info" style="margin-top:12px;">
+                <strong>会重置的项目：</strong>累计积分、积分流水、已使用积分、当前段位、赛季最高/起点、所有成就、称号、星能、连胜。<br>
+                <strong>不会重置的项目：</strong>打卡项设置、打卡历史、心愿单、备忘录等日常数据。
+            </div>
+        </div>
+
         <div class="actions">
             <button class="btn btn-secondary" onclick="exportBackup()">💾 导出备份</button>
             <button class="btn btn-primary" onclick="runRepair()">🧹 执行修复</button>
+            <button class="btn btn-secondary" onclick="unfreezeAchievements()" id="unfreezeBtn" style="display:none;">🔓 解冻成就</button>
         </div>
     </div>
 
@@ -187,11 +223,35 @@
             document.getElementById('sHistoryCount').textContent = (pts.history || []).length;
         }
 
+        function onModeChange() {
+            const mode = document.querySelector('input[name="repairMode"]:checked').value;
+            document.getElementById('smartTargetSection').classList.toggle('hidden', mode !== 'smart');
+            document.getElementById('fullResetSection').classList.toggle('hidden', mode !== 'full');
+        }
+
+        function unfreezeAchievements() {
+            const st = readState();
+            if (!st) return;
+            const game = st.data.game || {};
+            if (game._achievementsFrozen) {
+                delete game._achievementsFrozen;
+                localStorage.setItem(LS_KEY, JSON.stringify(st));
+                log('成就已解冻，下次启动主程序会恢复正常判定。', 'done');
+                document.getElementById('unfreezeBtn').style.display = 'none';
+            } else {
+                log('当前成就并未被冻结。');
+            }
+        }
+
         function init() {
             const st = readState();
             if (!st) return;
             renderStats(st);
             log('数据读取成功。');
+            if (st.data.game && st.data.game._achievementsFrozen) {
+                document.getElementById('unfreezeBtn').style.display = 'inline-flex';
+                log('检测到成就已被冻结（防止批量解锁）。如需恢复可在下方点击「解冻成就」。', 'warn');
+            }
 
             // 自动估算重复成就
             const pts = st.data.points || { history: [] };
@@ -224,81 +284,154 @@
             log('备份已导出，请妥善保存。', 'done');
         }
 
+        function today() {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        function resetToPoints(st, targetPoints) {
+            const data = st.data;
+            const pts = data.points || { earned: 0, used: 0, history: [] };
+            const game = data.game || {};
+            const targetStars = Math.floor(targetPoints / 100);
+
+            // 1. 清空并重建积分流水
+            pts.history = [];
+            if (targetPoints > 0) {
+                pts.history.push({
+                    type: 'base',
+                    points: targetPoints,
+                    date: today(),
+                    reason: '数据修复重置',
+                    time: new Date().toISOString()
+                });
+            }
+            pts.earned = targetPoints;
+            pts.used = 0;
+            log(`累计积分已重置为：${targetPoints}`, 'done');
+
+            // 2. 重置段位
+            game.rankStars = targetStars;
+            game.accountedEarnedStars = targetStars;
+            game._pointsCalibrated = true;
+            log(`段位已重置为：${targetStars} 星（${targetPoints} 积分）`, 'done');
+
+            // 3. 重置赛季记录
+            if (!game.season) {
+                const cur = new Date();
+                const m = cur.getMonth() + 1;
+                let key = 'summer', name = '夏赛季';
+                if ([3,4,5].includes(m)) { key = 'spring'; name = '春赛季'; }
+                else if ([6,7,8].includes(m)) { key = 'summer'; name = '夏赛季'; }
+                else if ([9,10,11].includes(m)) { key = 'autumn'; name = '秋赛季'; }
+                else { key = 'winter'; name = '冬赛季'; }
+                game.season = { id: `${cur.getFullYear()}-${key}`, key, name, year: cur.getFullYear() };
+            }
+            game.season.startStars = targetStars;
+            game.season.peakStars = targetStars;
+            game.season.peakKey = null;
+            log('本赛季起点/最高段位已同步重置。', 'done');
+
+            // 4. 重置成就、称号、星能、连胜
+            game.achievements = {};
+            game.titles = [];
+            game._achievementsFrozen = true;
+            game.courage = 0;
+            game.courageStars = 0;
+            game.allFourCourageDates = [];
+            if (typeof game.winStreak === 'number') game.winStreak = 0;
+            log('成就、称号、星能、连胜已重置，并自动冻结成就防止再次污染。', 'done');
+
+            return st;
+        }
+
         function runRepair() {
             const st = readState();
             if (!st) return;
 
-            log('开始修复…');
+            const mode = document.querySelector('input[name="repairMode"]:checked').value;
             const data = st.data;
             const pts = data.points || { earned: 0, used: 0, history: [] };
             const game = data.game || {};
 
-            // 1. 按 reason 去重，只保留最早的一条成就奖励
-            const seen = new Set();
-            const beforeLen = pts.history.length;
-            pts.history = pts.history.filter(h => {
-                if (!ACHV_TYPES.has(h.type)) return true;
-                const key = h.reason || h.type;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            });
-            const removed = beforeLen - pts.history.length;
-            if (removed) log(`已清理 ${removed} 条重复成就奖励记录。`, 'done');
-            else log('没有重复成就奖励需要清理。');
+            if (mode === 'full') {
+                let targetPoints = parseInt(document.getElementById('targetPoints').value, 10);
+                if (isNaN(targetPoints) || targetPoints < 0) targetPoints = 0;
+                log(`开始完全重置到 ${targetPoints} 积分…`);
+                resetToPoints(st, targetPoints);
+            } else {
+                log('开始智能清理…');
 
-            // 2. 删除明显异常的单条记录（单个 base 记录 > 500 分视为异常）
-            const beforeLen2 = pts.history.length;
-            pts.history = pts.history.filter(h => {
-                if (h.type === 'base' && (h.points || 0) > 500) return false;
-                if (h.type === 'streak' && (h.points || 0) > 500) return false;
-                return true;
-            });
-            const removed2 = beforeLen2 - pts.history.length;
-            if (removed2) log(`已清理 ${removed2} 条异常高分记录。`, 'done');
+                // 1. 按 reason 去重，只保留最早的一条成就奖励
+                const seen = new Set();
+                const beforeLen = pts.history.length;
+                pts.history = pts.history.filter(h => {
+                    if (!ACHV_TYPES.has(h.type)) return true;
+                    const key = h.reason || h.type;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+                const removed = beforeLen - pts.history.length;
+                if (removed) log(`已清理 ${removed} 条重复成就奖励记录。`, 'done');
+                else log('没有重复成就奖励需要清理。');
 
-            // 3. 重新计算 earned
-            const earned = pts.history.reduce((s, h) => s + (h.points || 0), 0);
-            pts.earned = earned;
-            log(`重新计算累计积分：${earned}`);
+                // 2. 删除明显异常的单条记录（单个 base 记录 > 500 分视为异常）
+                const beforeLen2 = pts.history.length;
+                pts.history = pts.history.filter(h => {
+                    if (h.type === 'base' && (h.points || 0) > 500) return false;
+                    if (h.type === 'streak' && (h.points || 0) > 500) return false;
+                    return true;
+                });
+                const removed2 = beforeLen2 - pts.history.length;
+                if (removed2) log(`已清理 ${removed2} 条异常高分记录。`, 'done');
 
-            // 4. 计算真实星数
-            const earnedStars = Math.floor(earned / 100);
-            log(`按真实积分对应星数：${earnedStars} 星。`);
+                // 3. 重新计算 earned
+                const earned = pts.history.reduce((s, h) => s + (h.points || 0), 0);
+                pts.earned = earned;
+                log(`重新计算累计积分：${earned}`);
 
-            // 5. 使用用户输入的目标星数（默认不超过真实星数，防止再次飞升）
-            let target = parseInt(document.getElementById('targetStars').value, 10);
-            if (isNaN(target) || target < 0) target = 0;
-            if (target > earnedStars) {
-                log(`目标星数 ${target} 超过真实星数 ${earnedStars}，已限制为 ${earnedStars}。`, 'warn');
-                target = earnedStars;
+                // 4. 计算真实星数
+                const earnedStars = Math.floor(earned / 100);
+                log(`按真实积分对应星数：${earnedStars} 星。`);
+
+                // 5. 使用用户输入的目标星数（默认不超过真实星数，防止再次飞升）
+                let target = parseInt(document.getElementById('targetStars').value, 10);
+                if (isNaN(target) || target < 0) target = 0;
+                if (target > earnedStars) {
+                    log(`目标星数 ${target} 超过真实星数 ${earnedStars}，已限制为 ${earnedStars}。`, 'warn');
+                    target = earnedStars;
+                }
+                game.rankStars = target;
+                game.accountedEarnedStars = target;
+                log(`段位已校准为：${target} 星。`, 'done');
+
+                // 6. 重置成就与称号状态，让下次主程序按真实状态重新发放（且只发一次）
+                game.achievements = {};
+                game.titles = game.titles || [];
+                log('已重置成就解锁状态，下次启动会按真实进度重新判定一次。', 'done');
+
+                // 7. 修正赛季峰值（如果高于当前星数）
+                if (game.season && typeof game.season.peakStars === 'number' && game.season.peakStars > target) {
+                    game.season.peakStars = target;
+                    game.season.peakKey = null;
+                    log('已修正本赛季最高段位记录。', 'done');
+                }
+                if (game.season && typeof game.season.startStars === 'number' && game.season.startStars > target) {
+                    game.season.startStars = target;
+                    log('已修正本赛季起点段位记录。', 'done');
+                }
             }
-            game.rankStars = target;
-            game.accountedEarnedStars = target;
-            log(`段位已校准为：${target} 星。`, 'done');
 
-            // 6. 重置成就与称号状态，让下次主程序按真实状态重新发放（且只发一次）
-            game.achievements = {};
-            game.titles = game.titles || [];
-            log('已重置成就解锁状态，下次启动会按真实进度重新判定一次。', 'done');
-
-            // 7. 修正赛季峰值（如果高于当前星数）
-            if (game.season && typeof game.season.peakStars === 'number' && game.season.peakStars > target) {
-                game.season.peakStars = target;
-                game.season.peakKey = null;
-                log('已修正本赛季最高段位记录。', 'done');
-            }
-            if (game.season && typeof game.season.startStars === 'number' && game.season.startStars > target) {
-                game.season.startStars = target;
-                log('已修正本赛季起点段位记录。', 'done');
-            }
-
-            // 8. 写回 localStorage
+            // 写回 localStorage
             try {
                 localStorage.setItem(LS_KEY, JSON.stringify(st));
                 log('修复数据已写回本地存储。', 'done');
                 log('请刷新成长小树页面查看效果。', 'done');
                 renderStats(st);
+                if (game._achievementsFrozen) {
+                    document.getElementById('unfreezeBtn').style.display = 'inline-flex';
+                }
             } catch (e) {
                 log('保存失败：' + e.message, 'err');
             }
