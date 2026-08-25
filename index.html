@@ -14,7 +14,7 @@
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="apple-touch-icon" href="apple-touch-icon.png">
     <title>顾一的成长小树</title>
-    <link rel="stylesheet" href="styles.20260824w.css">
+    <link rel="stylesheet" href="styles.20260824x.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
@@ -187,6 +187,8 @@ create policy "allow anon all" on beauty_inspiration
                         <button class="btn btn-danger" data-action="reset-points">🎯 执行校准</button>
                     </div>
                     <div id="pointsResetStatus" class="field-hint" style="margin-top:8px;color:var(--text-secondary);">当前累计积分：<span id="settingCurrentPoints">—</span>，当前段位：<span id="settingCurrentRank">—</span></div>
+                    <button class="btn btn-danger" data-action="clear-points-rank" style="margin-top:12px;width:100%">🗑️ 积分/段位全部清零</button>
+                    <div class="field-hint" style="margin-top:4px;color:var(--danger);">彻底删除所有积分流水、段位、赛季、成就等记录，本地与云端同步归零，从零开始。</div>
                     <button class="btn btn-secondary" data-action="unfreeze-achievements" id="settingUnfreezeAchv" style="margin-top:8px;display:none;width:100%">🔓 解冻成就（重置后想恢复自动判定再点）</button>
                 </div>
 
@@ -379,7 +381,7 @@ create policy "allow anon all" on beauty_inspiration
     <script src="https://cdn.jsdelivr.net/npm/lunar-javascript/lunar.js"></script>
     <script src="https://unpkg.com/compromise@14.16.0/builds/compromise.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.20260824w.js"></script>
+    <script src="app.20260824x.js"></script>
     <script>
         // 全局错误兜底：若初始化崩溃，把错误显示在页面上，而不是白屏
         function showFatalError(msg, detail) {
