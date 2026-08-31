@@ -122,7 +122,7 @@ main{padding:10px}
 /* 紧凑日历 */
 #calHead{display:flex;align-items:center;justify-content:space-between;font-weight:700;margin:2px 0 6px}
 #calHead .nav{background:var(--light);border-radius:7px;padding:4px 10px;font-size:13px;cursor:pointer}
-#calGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+#calGrid,#fatCalGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
 .calCell{min-height:38px;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;background:#f2f5f3;border:1px solid transparent;padding:1px}
 .calCell .dnum{font-weight:600;line-height:1}
 .calCell .dots{display:flex;gap:1px;margin-top:2px}
@@ -1019,16 +1019,52 @@ function renderCalendar(){
       showDayDetail(ds);
     };
   }
-  // 左右滑动切换月份（内容不变，仅增加手势）
-  try{
-    var __grid=$('#calGrid');var __sx=null;
-    __grid.addEventListener('touchstart',function(e){__sx=e.touches?e.touches[0].clientX:null;},{passive:true});
-    __grid.addEventListener('touchend',function(e){
-      if(__sx===null)return;
-      var dx=(e.changedTouches?e.changedTouches[0].clientX:__sx)-__sx;__sx=null;
-      if(Math.abs(dx)>48){ if(dx<0){var nx=$('#calNext');if(nx)nx.click();}else{var pv=$('#calPrev');if(pv)pv.click();} }
-    },{passive:true});
-  }catch(e){}
+  bindCalSwipe($('#calGrid'),$('#calPrev'),$('#calNext'));
+}
+function bindCalSwipe(el,prevBtn,nextBtn){
+  if(!el)return;
+  var sx=null,sy=null,tracking=false;
+  el.addEventListener('touchstart',function(e){
+    var t=e.touches?e.touches[0]:null;
+    if(!t)return;
+    sx=t.clientX;sy=t.clientY;tracking=true;
+  },{passive:true});
+  el.addEventListener('touchmove',function(e){
+    if(!tracking||sx===null||sy===null)return;
+    var t=e.touches?e.touches[0]:null;
+    if(!t)return;
+    var dx=t.clientX-sx,dy=t.clientY-sy;
+    // 水平主导时阻止默认滚动，避免页面跟随
+    if(Math.abs(dx)>Math.abs(dy) && Math.abs(dx)>10){
+      try{e.preventDefault();}catch(err){}
+    }
+  },{passive:false});
+  el.addEventListener('touchend',function(e){
+    if(!tracking||sx===null)return;
+    tracking=false;
+    var t=e.changedTouches?e.changedTouches[0]:null;
+    if(!t)return;
+    var dx=t.clientX-sx;
+    var dy=t.clientY-sy;
+    sx=null;sy=null;
+    // 水平滑动超过 48px 且比垂直方向多才算
+    if(Math.abs(dx)>48 && Math.abs(dx)>Math.abs(dy)){
+      if(dx<0){if(nextBtn)nextBtn.click();}
+      else{if(prevBtn)prevBtn.click();}
+    }
+  },{passive:true});
+  // 桌面鼠标也支持拖拽
+  el.addEventListener('mousedown',function(e){sx=e.clientX;sy=e.clientY;tracking=true;});
+  el.addEventListener('mousemove',function(e){if(tracking && Math.abs(e.clientX-sx)>10){try{e.preventDefault();}catch(err){}}});
+  el.addEventListener('mouseup',function(e){
+    if(!tracking||sx===null)return;tracking=false;
+    var dx=e.clientX-sx,sy2=e.clientY-sy;
+    if(Math.abs(dx)>48 && Math.abs(dx)>Math.abs(sy2)){
+      if(dx<0){if(nextBtn)nextBtn.click();}else{if(prevBtn)prevBtn.click();}
+    }
+    sx=null;sy=null;
+  });
+  el.addEventListener('mouseleave',function(){tracking=false;sx=null;sy=null;});
 }
 function showDayDetail(ds){
   var meals=Store.get('meals',{});
@@ -1850,40 +1886,128 @@ function getWeightLog(){return Store.get('weightLog',[])}
 function sortedLog(){return getWeightLog().slice().sort(function(a,b){return a.date<b.date?-1:1})}
 function latestWeight(){var l=sortedLog();return l.length?l[l.length-1].weight:0}
 
-/* ============ 减脂足迹：阶段目标（阶段性打卡）============ */
-function fatStageCheckinCount(idx){
+/* ============ 减脂足迹：阶段目标（体重目标链）============ */
+function getFatStages(){
   var stages=Store.get('fatStages',[]);
-  var stage=stages[idx]; if(!stage)return 0;
-  var next=stages[idx+1];
-  var start=stage.startDate||'0000-00-00';
-  var end=(next&&next.startDate)?next.startDate:'9999-99-99';
-  var ck=Store.get('fatCheckins',{});
-  var c=0;
-  for(var d in ck){if(ck.hasOwnProperty(d)&&d>=start&&d<end)c++}
-  return c;
+  var p=getProfile();
+  var start=parseFloat(p.startWeight)||0;
+  var finalTarget=parseFloat(p.targetWeight)||0;
+  var changed=false;
+  for(var i=0;i<stages.length;i++){
+    var s=stages[i];
+    // 兼容旧版：旧版用 target 表示天数，没有 targetWeight
+    if((s.target && !s.targetWeight) || s.targetWeight===undefined){
+      if(start && finalTarget){
+        var range=Math.abs(start-finalTarget);
+        var per=range/Math.max(1,stages.length);
+        var isLose=start>finalTarget;
+        var dir=isLose?-1:1;
+        s.targetWeight=Math.round((start+dir*per*(i+1))*10)/10;
+        s.startWeight=(i===0?start:stages[i-1].targetWeight);
+      }else{
+        s.targetWeight=parseFloat(s.target)||0;
+        s.startWeight=start;
+      }
+      changed=true;
+    }
+    if(s.startWeight===undefined){
+      s.startWeight=(i===0?start:stages[i-1].targetWeight);
+      changed=true;
+    }
+  }
+  if(changed)Store.set('fatStages',stages);
+  return stages;
+}
+function checkFatStageAdvance(){
+  var stages=getFatStages();
+  var cur=Store.get('fatCurStage',0);
+  var p=getProfile();
+  var start=parseFloat(p.startWeight)||0;
+  var finalTarget=parseFloat(p.targetWeight)||0;
+  var curW=latestWeight()||start;
+  if(!start||!finalTarget||!stages.length)return;
+  var isLose=start>finalTarget;
+  var advanced=false;
+  while(cur<stages.length){
+    var s=stages[cur];
+    var tw=parseFloat(s.targetWeight);
+    if(isLose?(curW<=tw):(curW>=tw)){
+      s.done=true;s.doneDate=todayStr();
+      cur++;
+      advanced=true;
+    }else break;
+  }
+  if(advanced){
+    Store.set('fatStages',stages);
+    Store.set('fatCurStage',cur);
+    if(cur>=stages.length)toast('🎉 所有阶段目标达成！');
+    else toast('🏁 阶段目标达成，自动进入下一阶段');
+  }
+}
+function fatStageProgress(stage,curW){
+  // 返回 0-100 的该阶段进度
+  var start=parseFloat(stage.startWeight)||0;
+  var target=parseFloat(stage.targetWeight)||0;
+  if(!start||!target||start===target)return 0;
+  var isLose=start>target;
+  var total=Math.abs(start-target);
+  var done=isLose?(start-curW):(curW-start);
+  return Math.max(0,Math.min(100,Math.round(done/total*100)));
+}
+function fatFinalProgress(start,finalTarget,curW){
+  if(!start||!finalTarget||start===finalTarget)return 0;
+  var isLose=start>finalTarget;
+  var total=Math.abs(start-finalTarget);
+  var done=isLose?(start-curW):(curW-start);
+  return Math.max(0,Math.min(100,Math.round(done/total*100)));
 }
 function renderStage(){
-  var stages=Store.get('fatStages',[]);
+  var stages=getFatStages();
+  checkFatStageAdvance();
+  stages=getFatStages();
   var cur=Store.get('fatCurStage',0);
-  var ck=Store.get('fatCheckins',{});
+  var p=getProfile();
+  var start=parseFloat(p.startWeight)||0;
+  var finalTarget=parseFloat(p.targetWeight)||0;
+  var curW=latestWeight()||start;
   var today=todayStr();
   var curStage=stages[cur];
-  var html='<div class="card"><h2>🎯 阶段目标 · 阶段性打卡</h2><div class="hint">把一个大目标拆成几个小阶段，完成一个再开始下一个，更容易坚持。</div></div>';
-  if(!curStage){
-    html+='<div class="card"><div class="empty-tip">还没有阶段目标。在下方设置一个，开始你的减脂足迹吧～</div></div>';
-  }else{
-    var cnt=fatStageCheckinCount(cur);
-    var target=curStage.target||0;
-    var pct=target>0?Math.min(100,Math.round(cnt/target*100)):0;
-    var doneToday=!!ck[today];
-    html+='<div class="card"><h2>📍 当前阶段：'+esc(curStage.name||'未命名')+'</h2>';
-    html+='<div class="hint">已完成阶段打卡 <b>'+cnt+'</b> / '+target+' 天（'+pct+'%）</div>';
-    html+='<div class="xp-bar"><i style="width:'+pct+'%"></i></div>';
-    html+='<div class="row" style="margin-top:8px">';
-    html+='<button class="btn '+(doneToday?'ghost':'')+'" id="fatToday">'+(doneToday?'✅ 今日已打卡（点此取消）':'✅ 今日打卡')+'</button>';
-    html+='<button class="btn amber" id="fatDone">🏁 完成本阶段</button>';
-    html+='</div></div>';
+  var isLose=start&&finalTarget?start>finalTarget:true;
+  var html='<div class="card"><h2>🎯 阶段目标 · 体重目标链</h2><div class="hint">把最终目标拆成多个小体重目标，完成一个自动进入下一个，成就感更强。</div></div>';
+
+  // 档案提示
+  if(!start||!finalTarget){
+    html+='<div class="card"><div class="empty-tip">先去「我的档案」填写起始体重和目标体重，才能设置阶段目标～</div></div>';
+    $('#inner-stage').innerHTML=html;
+    return;
   }
+
+  // 当前阶段卡
+  if(curStage){
+    var stagePct=fatStageProgress(curStage,curW);
+    var prevW=parseFloat(curStage.startWeight)||start;
+    var tw=parseFloat(curStage.targetWeight);
+    var away=Math.abs(curW-tw).toFixed(1);
+    html+='<div class="card"><h2>📍 当前阶段：'+esc(curStage.name||'未命名')+'</h2>';
+    html+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin:6px 0;font-size:13px"><span>目标体重 <b>'+tw+'</b> kg</span><span>当前 <b>'+(curW||'-')+'</b> kg</span></span></div>';
+    html+='<div class="hint">距本阶段目标还差 <b>'+away+'</b> kg · 进度 '+stagePct+'%</div>';
+    html+='<div class="xp-bar"><i style="width:'+stagePct+'%"></i></div>';
+    html+='<div style="font-size:11px;color:var(--gray);margin-top:6px">上一阶段/起始：'+prevW+' kg → 本阶段目标：'+tw+' kg</div>';
+    html+='</div>';
+  }else if(stages.length && cur>=stages.length){
+    html+='<div class="card"><h2>🎉 全部阶段已完成</h2><div class="hint">当前体重 <b>'+(curW||'-')+'</b> kg，所有阶段目标都已达成！</div></div>';
+  }else{
+    html+='<div class="card"><div class="empty-tip">还没有阶段目标。在下方添加一个，比如 60kg → 57kg～</div></div>';
+  }
+
+  // 最终目标进度条（对比用）
+  var finalPct=fatFinalProgress(start,finalTarget,curW);
+  html+='<div class="card"><h2>🏁 最终目标进度</h2>';
+  html+='<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>'+start+' kg</span><span>'+finalTarget+' kg</span></span></div>';
+  html+='<div class="xp-bar"><i style="width:'+finalPct+'%"></i></div>';
+  html+='<div class="hint" style="margin-top:6px">总体完成 <b>'+finalPct+'%</b>（当前 '+curW+' kg）</div></div>';
+
+  // 全部阶段
   if(stages.length){
     html+='<div class="card"><h2>📋 全部阶段</h2>';
     for(var i=0;i<stages.length;i++){
@@ -1892,49 +2016,99 @@ function renderStage(){
       if(s.done)st='<span style="color:var(--green2);font-weight:700">已完成 ✓</span>';
       else if(i===cur)st='<span style="color:var(--amber);font-weight:700">进行中</span>';
       else st='<span style="color:var(--gray)">未开始</span>';
-      html+='<div class="rec"><div class="body"><div>'+esc(s.name||'未命名')+' · '+fatStageCheckinCount(i)+'/'+s.target+' 天</div><div class="t">'+(s.doneDate?('完成于 '+fmtDate(s.doneDate)):'')+'</div></div><div class="acts">'+st+'</div></div>';
+      var sp=fatStageProgress(s,curW);
+      html+='<div class="rec"><div class="body"><div>'+esc(s.name||'未命名')+' · 目标 '+s.targetWeight+' kg</div><div class="t">'+(s.startWeight?('从 '+s.startWeight+' kg 开始'):'')+(s.doneDate?(' · 完成于 '+fmtDate(s.doneDate)):'')+' · 进度 '+sp+'%</div></div><div class="acts">'+st+'</div></div>';
     }
     html+='</div>';
   }
-  html+='<div class="card"><h2>＋ 设置新阶段目标</h2><div class="hint">添加后即为「当前阶段」，完成它再点「完成本阶段」。</div>';
-  html+='<input class="mc-field" id="fatName" placeholder="阶段名，如：第一阶段·习惯养成">';
-  html+='<input class="mc-field" id="fatTarget" type="number" inputmode="numeric" placeholder="目标打卡天数，如：21">';
-  html+='<button class="btn" id="fatAdd" style="margin-top:6px">＋ 添加并设为当前阶段</button></div>';
-  $('#inner-stage').innerHTML=html;
-  if(curStage){
-    var tb=$('#fatToday');
-    if(tb)tb.onclick=function(){
-      var c2=Store.get('fatCheckins',{});
-      if(c2[today]){delete c2[today];toast('已取消今日打卡')}else{c2[today]=true;toast('✅ 今日打卡 +1')}
-      Store.set('fatCheckins',c2);renderStage();
-    };
-    var db=$('#fatDone');
-    if(db)db.onclick=function(){
-      var s2=Store.get('fatStages',[]);
-      var c2=Store.get('fatCurStage',0);
-      if(!s2[c2])return;
-      s2[c2].done=true;s2[c2].doneDate=todayStr();Store.set('fatStages',s2);
-      var nx=c2+1;
-      if(s2[nx]&&!s2[nx].done){Store.set('fatCurStage',nx);toast('🏁 本阶段完成，已进入下一阶段')}
-      else{toast('🎉 本阶段完成！可设置新目标')}
-      renderStage();
-    };
+
+  // 添加/编辑阶段
+  html+='<div class="card"><h2>＋ 设置新阶段目标</h2><div class="hint">按体重设置小目标，比如第一阶段 57kg、第二阶段 55kg。</div>';
+  html+='<input class="mc-field" id="fatName" placeholder="阶段名，如：第一阶段·57kg">';
+  html+='<input class="mc-field" id="fatTargetWeight" type="number" step="0.1" inputmode="decimal" placeholder="目标体重，如：57">';
+  html+='<button class="btn" id="fatAdd" style="margin-top:6px">＋ 添加阶段</button></div>';
+
+  // 修改已有阶段（快速调整）
+  if(stages.length){
+    html+='<div class="card"><h2>✏️ 调整阶段目标</h2><div class="hint">可随时修改任一阶段的目标体重。</div><div id="fatEditList"></div></div>';
   }
+
+  $('#inner-stage').innerHTML=html;
+
+  // 添加阶段
   var ab=$('#fatAdd');
   if(ab)ab.onclick=function(){
     var nm=$('#fatName').value.trim();
-    var tg=parseInt($('#fatTarget').value,10);
+    var tw=parseFloat($('#fatTargetWeight').value);
     if(!nm){toast('先写阶段名～');return}
-    if(!tg||tg<1){toast('目标天数填个正整数～');return}
-    var s3=Store.get('fatStages',[]);
-    var wasEmpty=s3.length===0;
-    s3.push({name:nm,target:tg,startDate:todayStr(),done:false,doneDate:''});
+    if(!tw||tw<=0){toast('目标体重填个正数～');return}
+    // 校验：必须在 start 与 finalTarget 之间（方向允许）
+    if((isLose && (tw>start || tw<finalTarget)) || (!isLose && (tw<start || tw>finalTarget))){
+      toast('阶段目标需在 '+start+' kg 到 '+finalTarget+' kg 之间');return;
+    }
+    var s3=getFatStages();
+    var lastW=s3.length?parseFloat(s3[s3.length-1].targetWeight):start;
+    s3.push({name:nm,targetWeight:tw,startWeight:lastW,done:false,doneDate:''});
     Store.set('fatStages',s3);
-    if(wasEmpty)Store.set('fatCurStage',s3.length-1);
-    $('#fatName').value='';$('#fatTarget').value='';
+    if(s3.length===1)Store.set('fatCurStage',0);
+    $('#fatName').value='';$('#fatTargetWeight').value='';
     toast('＋ 已添加阶段「'+nm+'」');
     renderStage();
   };
+
+  // 编辑列表
+  var el=$('#fatEditList');
+  if(el){
+    var eh='';
+    for(var i=0;i<stages.length;i++){
+      var s=stages[i];
+      eh+='<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">';
+      eh+='<input class="mc-field" style="flex:1" data-edit-nm="'+i+'" value="'+esc(s.name||'')+'" placeholder="阶段名">';
+      eh+='<input class="mc-field" style="width:90px" type="number" step="0.1" data-edit-tw="'+i+'" value="'+s.targetWeight+'" placeholder="kg">';
+      eh+='<button class="btn sm ghost" data-del="'+i+'">删除</button>';
+      eh+='</div>';
+    }
+    eh+='<button class="btn" id="fatSaveEdit" style="margin-top:4px">💾 保存调整</button>';
+    el.innerHTML=eh;
+    $('#fatSaveEdit').onclick=function(){
+      var s3=getFatStages();
+      var editsN=document.querySelectorAll('[data-edit-nm]');
+      var editsW=document.querySelectorAll('[data-edit-tw]');
+      for(var i=0;i<s3.length;i++){
+        var nIn=document.querySelector('[data-edit-nm="'+i+'"]');
+        var wIn=document.querySelector('[data-edit-tw="'+i+'"]');
+        if(nIn)s3[i].name=nIn.value.trim();
+        if(wIn){
+          var v=parseFloat(wIn.value);
+          if(v>0)s3[i].targetWeight=v;
+        }
+      }
+      // 重新校正 startWeight 链
+      for(var i=0;i<s3.length;i++){
+        s3[i].startWeight=(i===0?start:parseFloat(s3[i-1].targetWeight));
+      }
+      Store.set('fatStages',s3);
+      toast('✅ 阶段目标已更新');
+      renderStage();
+    };
+    var dels=document.querySelectorAll('[data-del]');
+    for(var d=0;d<dels.length;d++){
+      dels[d].onclick=function(ev){
+        var i=parseInt(ev.currentTarget.getAttribute('data-del'));
+        openConfirmModal('删除这个阶段？','删除后不可恢复',function(ok){
+          if(ok){
+            var s3=getFatStages();
+            s3.splice(i,1);
+            var cur2=Store.get('fatCurStage',0);
+            if(cur2>=s3.length)cur2=Math.max(0,s3.length-1);
+            Store.set('fatCurStage',cur2);
+            Store.set('fatStages',s3);
+            renderStage();
+          }
+        });
+      };
+    }
+  }
 }
 
 /* ============ 减脂足迹：打卡日历（参考记录中心日历来设计）============ */
@@ -1944,9 +2118,10 @@ function renderFatCalendar(){
   var first=new Date(y,m,1).getDay();
   var days=new Date(y,m+1,0).getDate();
   var today=todayStr();
-  var ck=Store.get('fatCheckins',{});
+  var logMap={};
+  getWeightLog().forEach(function(r){logMap[r.date]=r.weight});
   var html='<div class="card"><div id="calHead"><span class="nav" id="fatCalPrev">‹</span><span>'+y+'年'+(m+1)+'月足迹</span><span class="nav" id="fatCalNext">›</span></div>';
-  html+='<div style="font-size:11px;color:var(--gray);margin-bottom:6px">已打卡 <b id="fatCalDone">0</b> 天</div>';
+  html+='<div style="font-size:11px;color:var(--gray);margin-bottom:6px">已记录体重 <b id="fatCalDone">0</b> 天</div>';
   html+='<div id="fatCalGrid">';
   var wk=['日','一','二','三','四','五','六'];
   for(var w=0;w<7;w++){html+='<div class="calCell empty" style="font-size:9px;color:var(--gray);min-height:0">'+wk[w]+'</div>'}
@@ -1955,14 +2130,15 @@ function renderFatCalendar(){
   for(var d=1;d<=days;d++){
     var ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     var isToday=ds===today;
-    var has=!!ck[ds];
+    var wgt=logMap[ds];
+    var has=!!wgt;
     if(has)doneDays++;
     var cls='calCell'+(has?' has':'')+(isToday?' today':'');
-    html+='<div class="'+cls+'" data-ds="'+ds+'"><div class="dnum">'+d+'</div></div>';
+    html+='<div class="'+cls+'" data-ds="'+ds+'"><div class="dnum">'+d+'</div>'+(has?('<div style="font-size:9px;color:var(--green2);font-weight:700">'+wgt+'</div>'):'')+'</div>';
   }
   html+='</div>';
-  html+='<div class="cal-legend">🟢 绿底=当天完成了阶段打卡。点击某天可补卡 / 取消。</div></div>';
-  html+='<div class="card" id="fatCalDetail"><div class="hint">点击上方某天进行补卡或取消。</div></div>';
+  html+='<div class="cal-legend">🟢 绿底=当天记录过体重，数字即当天体重。点击某天可补录体重。</div></div>';
+  html+='<div class="card" id="fatCalDetail"><div class="hint">点击上方某天，补录或查看那天的体重。</div></div>';
   $('#inner-cal').innerHTML=html;
   $('#fatCalDone').textContent=doneDays;
   $('#fatCalPrev').onclick=function(){var nd=new Date(y,m-1,1);state.fatCalDate=nd;renderFatCalendar()};
@@ -1971,20 +2147,39 @@ function renderFatCalendar(){
   for(var c=0;c<cells.length;c++){
     cells[c].onclick=function(ev){
       var ds=ev.currentTarget.getAttribute('data-ds');
-      var c2=Store.get('fatCheckins',{});
-      if(c2[ds]){delete c2[ds];toast('已取消 '+fmtDate(ds)+' 打卡')}else{c2[ds]=true;toast('✅ '+fmtDate(ds)+' 补卡')}
-      Store.set('fatCheckins',c2);renderFatCalendar();
+      openFatCalendarDay(ds);
     };
   }
-  try{
-    var g=$('#fatCalGrid');var sx=null;
-    g.addEventListener('touchstart',function(e){sx=e.touches?e.touches[0].clientX:null;},{passive:true});
-    g.addEventListener('touchend',function(e){
-      if(sx===null)return;
-      var dx=(e.changedTouches?e.changedTouches[0].clientX:sx)-sx;sx=null;
-      if(Math.abs(dx)>48){ if(dx<0){var nx=$('#fatCalNext');if(nx)nx.click();}else{var pv=$('#fatCalPrev');if(pv)pv.click();} }
-    },{passive:true});
-  }catch(e){}
+  bindCalSwipe($('#fatCalGrid'),$('#fatCalPrev'),$('#fatCalNext'));
+}
+function openFatCalendarDay(ds){
+  var log=getWeightLog();
+  var rec=log.filter(function(r){return r.date===ds})[0];
+  var html='<h2>📅 '+fmtDate(ds)+'</h2>';
+  html+='<div class="hint">补录或修改当天体重</div>';
+  html+='<input class="mc-field" type="number" step="0.1" id="fatDayWeight" value="'+(rec?rec.weight:'')+'" placeholder="kg">';
+  html+='<button class="btn" id="fatDaySave" style="margin-top:6px">💾 保存</button>';
+  if(rec){html+='<button class="btn ghost" id="fatDayDel" style="margin-top:6px">删除</button>'}
+  $('#fatCalDetail').innerHTML=html;
+  $('#fatDaySave').onclick=function(){
+    var v=parseFloat($('#fatDayWeight').value);
+    if(!v||v<=0){toast('请输入有效体重');return}
+    var log2=getWeightLog().filter(function(r){return r.date!==ds});
+    log2.push({date:ds,weight:v});
+    Store.set('weightLog',log2);
+    checkFatStageAdvance();
+    toast('已保存 '+fmtDate(ds)+' 体重');
+    renderFatCalendar();
+  };
+  var delBtn=$('#fatDayDel');
+  if(delBtn)delBtn.onclick=function(){
+    openConfirmModal('删除这条体重记录？','删除后不可恢复',function(ok){
+      if(ok){
+        Store.set('weightLog',getWeightLog().filter(function(r){return r.date!==ds}));
+        toast('已删除');renderFatCalendar();
+      }
+    });
+  };
 }
 
 /* ============ 体重打卡（阶梯目标 · v10）============ */
@@ -2111,6 +2306,7 @@ function renderWeight(){
     nl.push({date:today,weight:v});
     Store.set('weightLog',nl);
     addXP(2);toast('⚖️ 体重已记录 +2XP');
+    checkFatStageAdvance();
     renderWeight();checkBadges();
   }}
 
