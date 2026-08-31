@@ -333,9 +333,47 @@ main{padding:10px}
 var Store={
   _mem:{},
   get:function(k,def){try{var v=localStorage.getItem('rw5_'+k);return v?JSON.parse(v):(this._mem[k]!==undefined?this._mem[k]:def)}catch(e){return this._mem[k]!==undefined?this._mem[k]:def}},
-  set:function(k,v){try{localStorage.setItem('rw5_'+k,JSON.stringify(v))}catch(e){}this._mem[k]=v;if(App&&App.sync)App.sync()},
+  set:function(k,v){try{localStorage.setItem('rw5_'+k,JSON.stringify(v))}catch(e){}this._mem[k]=v;if(App&&App.sync)App.sync();if(!window.__yjxs_importing)yjxsNotifyParent();},
   del:function(k){try{localStorage.removeItem('rw5_'+k)}catch(e){}delete this._mem[k]}
 };
+
+/* ============ 与成长小树云端同步 ============ */
+var YJXS_SYNC_KEYS=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','altUsed','delayCount','noPunish','normalDays','profile','weightLog','measures','subOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount','breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak','xp','seasonXp','seasonKey','seasons','stopFromStop','bingeState','bingeStop'];
+var __yjxs_notifyTimer=null;
+function yjxsExportAll(){
+  var data={};
+  YJXS_SYNC_KEYS.forEach(function(k){data[k]=Store.get(k,null)});
+  return {__yjxs:true,v:1,exportedAt:new Date().toISOString(),data:data};
+}
+function yjxsImportAll(payload){
+  if(!payload||!payload.data)return;
+  var data=payload.data;
+  YJXS_SYNC_KEYS.forEach(function(k){if(data.hasOwnProperty(k))Store.set(k,data[k])});
+}
+function yjxsNotifyParent(){
+  if(window.__yjxs_importing)return;
+  if(__yjxs_notifyTimer)clearTimeout(__yjxs_notifyTimer);
+  __yjxs_notifyTimer=setTimeout(function(){
+    if(window.parent&&window.parent!==window&&window.parent.postMessage){
+      window.parent.postMessage({type:'yjxs-data',payload:yjxsExportAll()},'*');
+    }
+  },600);
+}
+window.addEventListener('message',function(ev){
+  if(!ev.data)return;
+  if(ev.data.type==='yjxs-sync-in'){
+    try{
+      window.__yjxs_importing=true;
+      yjxsImportAll(ev.data.payload);
+      window.__yjxs_importing=false;
+      if(window.__yjxs_booted){
+        if(typeof renderPage==='function')renderPage();
+        if(typeof renderNav==='function')renderNav();
+        if(typeof renderLvl==='function')renderLvl();
+      }
+    }catch(e){window.__yjxs_importing=false;}
+  }
+});
 
 /* ============ 工具 ============ */
 var $=function(s){return document.querySelector(s)};
@@ -741,7 +779,6 @@ function renderCheckin(){
   html+='<div class="daybar"><span>今天 '+fmtDate(today)+'</span><span class="total">已打卡 <b id="dayDone">0</b>/5 · <span id="dayKcal">0</span> kcal</span></div>';
   html+='<div class="progress"><i id="dayBar" style="width:0%"></i></div><div id="mealList"></div>';
   html+='<div class="hint" style="margin-top:8px;text-align:center">💡 三餐两点按时吃 → 不容易「太饿 → 必须马上吃」</div>';
-  html+='<div class="hint" style="margin-top:6px;text-align:center;color:var(--gray);font-size:11px">💧 喝水顺手喝就好，不单独打卡——把精力留给「按时吃饭」</div></div>';
   html+='<div class="card"><h2>📌 核心提醒</h2><div class="hint" style="line-height:1.7">• 每餐都吃，<b>不要饿着自己</b>（饿是暴食的最大诱因）<br>• 吃到七八分饱即可<br>• 下面只是<b>参考建议</b>，你有更重要——吃了就是成功</div></div>';
   $('#inner-checkin').innerHTML=html;
 
@@ -2258,7 +2295,7 @@ window.injectStairToReward=injectStairToReward;
 window.__v8boot=boot;
 function wait(){
   if(typeof Store!=='undefined'&&typeof renderLvl==='function'&&typeof renderNav==='function'){
-    try{init();}catch(e){window.__yjerr && window.__yjerr('init: '+e.message)}
+    try{init();window.__yjxs_booted=true;if(window.parent&&window.parent!==window&&window.parent.postMessage){window.parent.postMessage({type:'yjxs-ready'},'*');}}catch(e){window.__yjerr && window.__yjerr('init: '+e.message)}
   }
   else if(document.readyState!=='complete'){window.addEventListener('load',wait);}
   else{setTimeout(wait,60);}
