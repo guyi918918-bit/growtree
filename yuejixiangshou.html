@@ -1,0 +1,2272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>悦己享瘦 · 5分STOP</title>
+<style>
+:root{
+  --green:#34a853;--green2:#2e8b46;--light:#eef7f0;--ink:#1f3d2b;
+  --gray:#8a9a90;--line:#e3ede6;--red:#e06b6b;--amber:#e8a33d;--purple:#8b5cf6;
+  --card:#ffffff;--bg:#f4f8f5;--shadow:0 2px 10px rgba(31,61,43,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;padding-bottom:14px}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font-family:inherit}
+
+/* 顶栏 */
+#topbar{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;padding:10px 14px 4px}
+.brand .logo{font-size:20px}
+.brand h1{font-size:15px;font-weight:700}
+.brand .lvl{margin-left:auto;background:var(--purple);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:12px}
+.sync{font-size:10px;color:var(--gray);padding:0 14px 4px}
+#welcome{font-size:11px;color:var(--green2);padding:2px 14px 5px;font-style:italic}
+/* v10：体重打卡 hero + 阶梯折叠 */
+.weight-hero{background:linear-gradient(135deg,#eef7f0,#fff);border:2px solid var(--green)}
+.wh-top{display:flex;align-items:baseline;gap:6px;justify-content:center;padding:8px 0}
+.wh-label{font-size:13px;color:var(--gray)}
+.wh-value{font-size:42px;font-weight:800;color:var(--green2);line-height:1}
+.wh-unit{font-size:14px;color:var(--gray)}
+.wh-goal{text-align:center;font-size:12px;color:var(--ink);margin-bottom:10px}
+.wh-goal b{color:var(--amber)}
+.wh-input{display:flex;gap:8px}
+.wh-input input{flex:1;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:16px;text-align:center}
+.wh-input .btn{padding:0 24px;font-size:15px}
+.ladder-wrap{padding:0;overflow:hidden}
+.ladder-toggle{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;cursor:pointer;user-select:none}
+.lt-left{display:flex;align-items:center;gap:6px;font-weight:700}
+.lt-right{display:flex;align-items:center;gap:8px}
+.lt-arrow{transition:.2s;display:inline-block}
+.lt-arrow.open{transform:rotate(180deg)}
+.ladder-body{max-height:0;overflow:hidden;transition:max-height .3s}
+.ladder-body.open{max-height:2000px}
+.ladder-track{max-height:320px;overflow-y:auto;padding:4px 14px}
+.ladder-row{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:12px}
+.ladder-row.done{opacity:.55}
+.ladder-row.done .lr-w{text-decoration:line-through}
+.ladder-row.current{background:var(--light);border-radius:6px;padding:6px 8px;font-weight:700}
+.ladder-row.next .lr-w{color:var(--amber);font-weight:700}
+.lr-num{width:42px;color:var(--gray)}
+.lr-w{flex:1}
+.lr-dot{width:18px;text-align:center;color:var(--green)}
+.lr-date{width:70px;text-align:right;color:var(--gray);font-size:11px}
+.ladder-hint{font-size:11px;color:var(--amber);padding:8px 14px 12px;text-align:center}
+#bootError{display:none;position:fixed;left:10px;right:10px;bottom:10px;z-index:999;background:#fff3f3;color:var(--red);border:1px solid var(--red);border-radius:10px;padding:10px;font-size:11px;line-height:1.5;max-height:40vh;overflow:auto}
+#bootError:before{content:'⚠️ 页面报错（可截图反馈）：\A';white-space:pre}
+#bootError:empty{display:none}
+
+/* 二级导航（横向） */
+#secNav{display:flex;gap:6px;padding:4px 12px 6px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line);background:#fff}
+#secNav::-webkit-scrollbar{display:none}
+.secBtn{flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:7px 14px;border-radius:10px;font-size:12px;color:var(--gray);background:var(--card);border:1px solid var(--line);white-space:nowrap;transition:.2s}
+.secBtn .ic{font-size:15px}
+.secBtn.active{background:var(--green);color:#fff;border-color:var(--green)}
+
+/* 三级导航（横向胶囊） */
+#subNav{display:flex;gap:6px;padding:5px 12px 8px;overflow-x:auto;scrollbar-width:none;min-height:36px;align-items:center;background:#fafdfb}
+#subNav::-webkit-scrollbar{display:none}
+.subBtn{flex:0 0 auto;padding:6px 13px;border-radius:14px;font-size:11px;background:var(--card);border:1px solid var(--line);color:var(--ink);white-space:nowrap}
+.subBtn.active{background:var(--green2);color:#fff;border-color:var(--green2)}
+
+main{padding:10px}
+.page{display:none;animation:fade .25s ease}
+.page.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.card{background:var(--card);border-radius:12px;padding:12px;margin-bottom:10px;box-shadow:var(--shadow)}
+.card h2{font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.card .hint{font-size:11px;color:var(--gray);margin-bottom:8px;line-height:1.5}
+.muted{color:var(--gray);font-size:11px}
+
+.btn{background:var(--green);color:#fff;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:5px;width:100%}
+.btn.ghost{background:var(--card);color:var(--green2);border:1px solid var(--green)}
+.btn.danger{background:#fff;color:var(--red);border:1px solid var(--red)}
+.btn.sm{padding:5px 9px;font-size:11px;border-radius:7px;width:auto}
+.btn.purple{background:var(--purple)}
+.btn.amber{background:var(--amber)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row.between{justify-content:space-between}
+
+/* ===== 每日打卡（一体化：吃了+拍照+卡路里，下方建议） ===== */
+.meal-card{border:1px solid var(--line);border-radius:11px;margin-bottom:7px;background:#fff;overflow:hidden}
+.meal-card .mc-head{display:flex;align-items:center;gap:10px;padding:11px 12px;cursor:pointer}
+.meal-card .box{width:26px;height:26px;border-radius:7px;border:2px solid var(--green);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;font-weight:700}
+.meal-card.done .box{background:var(--green)}
+.meal-card.done .mc-name{text-decoration:line-through;color:var(--gray)}
+.mc-name{flex:1;font-size:13px;font-weight:600}
+.mc-tag{font-size:10px;color:var(--green2);background:var(--light);padding:2px 7px;border-radius:6px}
+.mc-body{padding:0 12px 12px;display:none}
+.meal-card.open .mc-body{display:block}
+.mc-label{font-size:11px;color:var(--gray);margin:8px 0 3px}
+.mc-field{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:4px;font-size:12px}
+.mc-kcal{font-size:11px;color:var(--purple);font-weight:700}
+.suggest{font-size:11px;color:var(--gray);background:var(--light);border-radius:8px;padding:8px 10px;margin-top:6px;line-height:1.6}
+.suggest b{color:var(--green2)}
+.suggest .ex{color:var(--ink)}
+.daybar{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--gray);margin-bottom:6px}
+.daybar .total{color:var(--purple);font-weight:700;font-size:13px}
+
+/* 食谱 */
+.recipe-group{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:8px}
+.recipe-group .gh{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--light);font-weight:700;font-size:13px}
+.recipe-group .gh .del{margin-left:auto;color:var(--red);font-size:11px}
+.recipe-group ol{padding:6px 12px 8px;list-style:none}
+.recipe-group li{display:flex;align-items:flex-start;gap:6px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:12px}
+.recipe-group li:last-child{border:none}
+.recipe-group li .x{margin-left:auto;color:var(--red);font-size:11px;cursor:pointer}
+.add-row{display:flex;gap:6px;padding:6px 10px}
+.add-row input{flex:1;border:1px solid var(--line);border-radius:7px;padding:7px;font-size:12px}
+
+/* 紧凑日历 */
+#calHead{display:flex;align-items:center;justify-content:space-between;font-weight:700;margin:2px 0 6px}
+#calHead .nav{background:var(--light);border-radius:7px;padding:4px 10px;font-size:13px;cursor:pointer}
+#calGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.calCell{min-height:38px;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;background:#f2f5f3;border:1px solid transparent;padding:1px}
+.calCell .dnum{font-weight:600;line-height:1}
+.calCell .dots{display:flex;gap:1px;margin-top:2px}
+.calCell .dots i{width:5px;height:5px;border-radius:50%;background:var(--green);display:block}
+.calCell .dots i.off{background:#dfe6e1}
+.calCell.has{background:#dff0e3}
+.calCell.today{border:2px solid var(--green);background:#eaf7ed}
+.calCell.today .dnum{color:var(--green2);font-weight:800}
+.calCell.binged{background:#fdeaea}
+.cal-legend{margin-top:8px;font-size:10px;color:var(--gray);text-align:center;background:var(--light);border-radius:6px;padding:6px;line-height:1.5}
+
+/* ===== 5分STOP 互动（醒目大卡片） ===== */
+.stop-hero{background:linear-gradient(135deg,#34a853,#2e8b46);color:#fff;border-radius:14px;padding:16px;margin-bottom:10px;text-align:center}
+.stop-hero .big{font-size:20px;font-weight:800;letter-spacing:1px}
+.stop-hero .sub{font-size:11px;opacity:.9;margin-top:4px}
+.stop-step{border:1px solid var(--line);border-radius:11px;margin-bottom:8px;overflow:hidden;background:#fff}
+.stop-step .ss-head{padding:12px;font-weight:700;font-size:13px;display:flex;align-items:center;gap:8px}
+.stop-step .ss-letter{width:28px;height:28px;border-radius:8px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex:0 0 auto}
+.stop-step.active{border:2px solid var(--green)}
+.stop-step.done .ss-letter{background:var(--purple)}
+.stop-step .ss-body{padding:0 12px 12px;font-size:12px;color:var(--gray)}
+.stop-step .ss-action{padding:0 12px 12px}
+.stop-letter-xl{font-size:32px;font-weight:900;color:var(--green)}
+.stop-flow{display:flex;align-items:center;justify-content:center;gap:6px;font-size:18px;color:var(--green);margin:6px 0 10px;font-weight:800}
+.emotion-pick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+.emotion-pick .em{flex:0 0 auto;padding:8px 4px;border:1px solid var(--line);border-radius:8px;font-size:11px;text-align:center;background:#fff}
+.emotion-pick .em .eic{font-size:18px;display:block;margin-bottom:2px}
+.emotion-pick .em.on{background:var(--light);border-color:var(--green);font-weight:700}
+.intensity{display:flex;gap:4px;margin:8px 0;align-items:center}
+.intensity .dot{flex:1;height:8px;border-radius:4px;background:var(--line)}
+.intensity .dot.on{background:var(--green)}
+.breath-circle{width:90px;height:90px;border-radius:50%;border:4px solid var(--green);margin:10px auto;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--green);transition:.3s}
+.breath-circle.in{transform:scale(1.25);background:var(--light)}
+.observe-result{background:var(--light);border-radius:8px;padding:8px;margin-top:6px;font-size:11px;line-height:1.6}
+.proceed-btns{display:flex;gap:6px;margin-top:8px}
+.proceed-btns .btn{flex:1}
+
+/* 欲望分组 & 替代方案 */
+.craving-group{border:1px solid var(--line);border-radius:10px;margin-bottom:7px;overflow:hidden;background:#fff}
+.craving-group .cg-head{padding:10px 12px;background:var(--light);font-weight:600;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.craving-group.open .cg-head{background:#d9efdf}
+.cg-body{padding:9px 12px;display:none}
+.craving-group.open .cg-body{display:block}
+.alt-item{display:flex;align-items:center;gap:7px;padding:9px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;font-size:12px;background:#fff}
+.alt-item .ai-ic{font-size:16px;flex:0 0 auto}
+.alt-item .ai-nm{flex:1}
+.alt-item .ai-xp{font-size:10px;color:var(--purple);font-weight:700}
+.alt-item .ai-act{display:flex;gap:4px}
+.alt-item .ai-act button{font-size:11px;color:var(--green2)}
+.alt-item.used{background:var(--light)}
+.alt-add{display:flex;gap:6px;margin-top:6px}
+.alt-add input{flex:1;border:1px solid var(--line);border-radius:7px;padding:7px;font-size:12px}
+.empty-tip{text-align:center;color:var(--gray);font-size:11px;padding:14px}
+
+/* 冲动记录 */
+.rec{display:flex;align-items:flex-start;gap:8px;padding:9px;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;background:#fff}
+.rec .body{flex:1;font-size:12px}
+.rec .body .t{font-size:10px;color:var(--gray)}
+.rec .acts{display:flex;gap:4px}
+.rec .acts button{font-size:11px;color:var(--green2)}
+.rec .acts .del-btn{color:var(--red)}
+
+/* 暴食止损 */
+.step-card{border:1px solid var(--line);border-radius:10px;margin-bottom:6px;overflow:hidden;background:#fff}
+.step-card .sc-head{padding:10px 12px;font-weight:700;font-size:12px;display:flex;align-items:center;gap:6px}
+.step-card.active{border:2px solid var(--green)}
+.step-card.done .sc-head{background:var(--light)}
+.step-card .sc-body{padding:8px 12px;font-size:12px;color:var(--gray)}
+.step-card .sc-action{padding:0 12px 11px}
+.next-meal-row{display:flex;gap:6px;margin-top:6px}
+.next-meal-row input{flex:1;border:1px solid var(--line);border-radius:7px;padding:7px;font-size:12px}
+
+/* 徽章 */
+.badge-section-title{font-size:12px;font-weight:800;margin:10px 0 6px;display:flex;align-items:center;gap:5px}
+.badge-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.badge{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 4px;border-radius:10px;background:var(--card);border:1px solid var(--line);text-align:center}
+.badge .ic{font-size:22px;filter:grayscale(1);opacity:.35}
+.badge.got .ic{filter:none;opacity:1}
+.badge.got{border-color:var(--green);background:var(--light)}
+.badge .nm{font-size:10px;font-weight:700}
+.badge .cd{font-size:9px;color:var(--gray);line-height:1.3}
+.xp-bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin:3px 0}
+.xp-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--purple),#c4b5fd)}
+.season-banner{background:linear-gradient(135deg,#8b5cf6,#34a853);color:#fff;border-radius:12px;padding:12px;margin-bottom:10px}
+.season-banner .big{font-size:18px;font-weight:800}
+
+/* 统计 */
+.insight{background:var(--light);border-radius:9px;padding:10px;font-size:12px;line-height:1.7}
+
+/* Toast & 模态 */
+#toast{position:fixed;left:50%;bottom:40px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:9px 16px;border-radius:18px;font-size:12px;opacity:0;transition:.3s;z-index:200;pointer-events:none;max-width:82%;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150;display:none;align-items:flex-end}
+#modal.show{display:flex}
+#modal .panel{background:#fff;width:100%;border-radius:14px 14px 0 0;padding:14px;max-height:82vh;overflow:auto}
+#modal h3{margin-bottom:8px;font-size:14px}
+.field{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px;margin-bottom:7px;font-size:13px}
+.modal-actions{display:flex;gap:7px;margin-top:5px}
+.sort-item{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:9px;margin-bottom:5px;background:#fff}
+.sort-item .drag{color:var(--gray);font-size:14px;cursor:pointer}
+.sort-item .nm{flex:1;font-size:13px}
+.rule-box{background:var(--light);border-radius:9px;padding:10px 12px}
+.rule-sec{margin-bottom:8px}
+.rule-t{font-size:12px;font-weight:800;margin-bottom:3px;color:var(--ink)}
+.rule-li{font-size:11px;color:#4a5c51;line-height:1.7;padding-left:2px}
+.rule-li b{color:var(--green2)}
+.rule-note{margin-top:7px;background:#fff;border:1px dashed var(--green);border-radius:7px;padding:8px;font-size:11px;color:var(--green2);line-height:1.5}
+.chip{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:var(--light);border-radius:10px;font-size:11px;margin:2px}
+
+/* ===== 减脂足迹：体重打卡 + 档案 + 围度 ===== */
+.fat-card{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:#fff}
+.fat-card h2{font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.fat-card .hint{font-size:11px;color:var(--gray);margin-bottom:8px;line-height:1.5}
+.goal-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:8px}
+.goal-item{background:var(--light);border-radius:9px;padding:9px;text-align:center}
+.goal-item .lbl{font-size:10px;color:var(--gray)}
+.goal-item .val{font-size:16px;font-weight:800;color:var(--green2);margin-top:2px}
+.ladder-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.ladder-head .big{font-size:15px;font-weight:800}
+.ladder-track{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 6px;max-height:260px;overflow-y:auto}
+.ladder-row{display:flex;align-items:center;gap:8px;padding:4px 6px;font-size:11px;border-bottom:1px dashed var(--line)}
+.ladder-row:last-child{border:none}
+.ladder-row .lr-num{width:40px;color:var(--gray);text-align:right;flex:0 0 auto}
+.ladder-row .lr-w{width:64px;font-weight:700;flex:0 0 auto}
+.ladder-row .lr-dot{flex:0 0 auto;width:18px;height:18px;border-radius:50%;border:2px solid var(--green);display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff}
+.ladder-row.done .lr-dot{background:var(--green)}
+.ladder-row.done .lr-w{color:var(--green2);text-decoration:line-through}
+.ladder-row.current{background:var(--light);border-radius:6px}
+.ladder-row.current .lr-dot{background:var(--amber);border-color:var(--amber)}
+.ladder-row.current .lr-w{color:var(--amber);font-weight:800}
+.ladder-row .lr-date{margin-left:auto;font-size:10px;color:var(--gray)}
+.weight-input-row{display:flex;gap:6px;align-items:center;margin-top:6px}
+.weight-input-row input{flex:1;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:13px}
+.wl-history{max-height:200px;overflow-y:auto;margin-top:8px}
+.wl-item{display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:12px;border-bottom:1px solid var(--line)}
+.wl-item .t{color:var(--gray);font-size:10px;width:66px;flex:0 0 auto}
+.wl-item .w{flex:1;font-weight:700}
+.wl-item .d{flex:1;font-size:10px;color:var(--gray)}
+.wl-item .ac a{color:var(--red);font-size:11px;cursor:pointer}
+.mini-prog{font-size:11px;color:var(--gray);margin-top:4px}
+.mini-prog b{color:var(--green2)}
+.field-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.field-row .lbl{flex:0 0 auto;width:88px;font-size:12px;color:var(--gray)}
+.field-row .field{flex:1;margin:0}
+.measure-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
+.measure-item{border:1px solid var(--line);border-radius:9px;padding:8px}
+.measure-item .mi-lbl{font-size:10px;color:var(--gray)}
+.measure-item .mi-val{font-size:13px;font-weight:700;margin-top:2px}
+.measure-item input{width:100%;border:1px solid var(--line);border-radius:6px;padding:6px;font-size:12px;margin-top:3px}
+.measure-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}
+.measure-table th,.measure-table td{border:1px solid var(--line);padding:5px 4px;text-align:center}
+.measure-table th{background:var(--light);color:var(--green2)}
+.motd{background:linear-gradient(135deg,#34a853,#2e8b46);color:#fff;border-radius:12px;padding:12px;margin-bottom:10px}
+.motd .big{font-size:15px;font-weight:800}
+.motd .sub{font-size:11px;opacity:.9;margin-top:3px}
+
+
+/* === v8：趋势图 / 阶梯徽章 / 全局联动 === */
+.chart-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.chart-title{font-size:13px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.chart-legend{font-size:10px;color:var(--gray);display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+.chart-legend span{display:flex;align-items:center;gap:4px}
+.chart-svg{width:100%;height:180px;display:block}
+.stair-badge-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.stair-badge{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:12px;background:var(--card);border:1px solid var(--line);text-align:center;transition:.2s}
+.stair-badge.got{border-color:var(--green);background:var(--light);box-shadow:0 2px 8px rgba(46,139,87,.12)}
+.stair-badge .ic{font-size:26px;filter:grayscale(1);opacity:.3}
+.stair-badge.got .ic{filter:none;opacity:1}
+.stair-badge .nm{font-size:11px;font-weight:700;color:var(--gray)}
+.stair-badge.got .nm{color:var(--green)}
+.stair-badge .cd{font-size:9px;color:var(--gray)}
+.stair-progress{height:6px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:10px}
+.stair-progress>i{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--green2));border-radius:6px}
+.stair-next{font-size:10px;color:var(--gray);margin-top:6px;text-align:center}
+.mini-stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
+.mini-stat .num{font-size:20px;font-weight:800;color:var(--green)}
+.mini-stat .lb{font-size:10px;color:var(--gray);margin-top:2px}
+.link-chip{font-size:11px;background:var(--light);color:var(--green);padding:5px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--green);display:inline-block;margin:3px}
+.insight{border-left:3px solid var(--green);background:var(--light);padding:8px 12px;border-radius:0 8px 8px 0;font-size:11px;line-height:1.6;margin-top:8px}
+
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand">
+    <span class="logo">🌱</span>
+    <h1>悦己享瘦</h1>
+    <span class="lvl" id="lvlBadge">Lv.1</span>
+  </div>
+  <div class="sync" id="syncTxt">已同步 --:--</div>
+  <div id="welcome"></div>
+  <div id="bootError"></div>
+  <nav id="secNav"></nav>
+  <nav id="subNav"></nav>
+</div>
+
+<main id="pages"></main>
+
+<div id="modal">
+  <div class="panel" id="modalPanel"></div>
+</div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ============ 存储 ============ */
+var Store={
+  _mem:{},
+  get:function(k,def){try{var v=localStorage.getItem('rw5_'+k);return v?JSON.parse(v):(this._mem[k]!==undefined?this._mem[k]:def)}catch(e){return this._mem[k]!==undefined?this._mem[k]:def}},
+  set:function(k,v){try{localStorage.setItem('rw5_'+k,JSON.stringify(v))}catch(e){}this._mem[k]=v;if(App&&App.sync)App.sync()},
+  del:function(k){try{localStorage.removeItem('rw5_'+k)}catch(e){}delete this._mem[k]}
+};
+
+/* ============ 工具 ============ */
+var $=function(s){return document.querySelector(s)};
+var esc=function(h){return String(h==null?'':h).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
+function toast(msg){
+  var t=$('#toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(t._tm);t._tm=setTimeout(function(){t.classList.remove('show')},2200);
+}
+function todayStr(){return new Date().toISOString().slice(0,10)}
+function fmtDate(s){return (s||'').slice(5).replace('-','/')}
+
+/* ============ 鼓励文案 ============ */
+var ENCOURAGEMENTS=[
+  "下一顿照常吃，就是最温柔的重启。",
+  "你不完美，但你在这里，这本身就值得。",
+  "一次暴食不会毁掉一切，放弃才是。",
+  "完成一小步，比完美一大步更重要。",
+  "你不是坏掉的人，你只是需要被好好对待。",
+  "今天的你已经比昨天的你更懂得自己了。",
+  "允许自己难过，但不允许自己消失。",
+  "冲动会来，也会走——你只需要陪它一会儿。"
+];
+
+/* ============ 等级 + 赛季 ============ */
+var SYMBOLS=[
+  {sym:'🌱',name:'萌芽',need:0},
+  {sym:'🌿',name:'青苗',need:10},
+  {sym:'☀️',name:'向阳',need:30},
+  {sym:'🌳',name:'扎根',need:60},
+  {sym:'🌌',name:'星海',need:120},
+];
+function permaLevel(){
+  var xp=Store.get('xp',0);
+  var sym=SYMBOLS[0],lvl=1;
+  for(var i=0;i<SYMBOLS.length;i++){if(xp>=SYMBOLS[i].need){sym=SYMBOLS[i];lvl=Math.floor(xp/10)+1}}
+  return {lvl:lvl,xp:xp,sym:sym.sym,name:sym.name};
+}
+function addXP(n){
+  Store.set('xp',Store.get('xp',0)+n);
+  Store.set('seasonXp',Store.get('seasonXp',0)+n);
+  checkBadges();renderLvl();
+}
+function curQuarter(d){
+  d=d||new Date();
+  var y=d.getFullYear();
+  var q=Math.floor(d.getMonth()/3)+1;
+  var s=(q-1)*3+1,e=q*3;
+  return {key:y+'Q'+q,y:y,q:q,s:s,e:e,label:y+' Q'+q,range:s+'~'+e+'月'};
+}
+function seasonInfo(){
+  var cq=curQuarter();
+  var end=new Date(cq.y,cq.e,0,23,59,59);
+  var daysLeft=Math.max(0,Math.ceil((end-new Date())/86400000));
+  return {no:Store.get('seasonNo',1),xp:Store.get('seasonXp',0),key:cq.key,label:cq.label,range:cq.range,daysLeft:daysLeft};
+}
+function checkSeasonRollover(){
+  var cq=curQuarter();
+  var saved=Store.get('seasonKey',null);
+  if(saved===null){Store.set('seasonKey',cq.key);return false}
+  if(saved!==cq.key){doNewSeason(true);return true}
+  return false;
+}
+function doNewSeason(auto){
+  var list=Store.get('seasons',[]);
+  var oldNo=Store.get('seasonNo',1);
+  var oldXp=Store.get('seasonXp',0);
+  var oldKey=Store.get('seasonKey','');
+  var oldSeasonBadges=Store.get('seasonBadges',[]);
+  list.push({no:oldNo,key:oldKey,xp:oldXp,seasonBadges:oldSeasonBadges,endedAt:Date.now()});
+  Store.set('seasons',list);
+  Store.set('seasonXp',0);
+  Store.set('seasonBadges',[]);
+  var cq=curQuarter();
+  Store.set('seasonNo',oldNo+1);
+  Store.set('seasonKey',cq.key);
+  toast(auto?('🌟 '+cq.label+' 新赛季自动开启'):'🎉 新赛季开启！');
+  renderLvl();
+}
+
+/* ============ 徽章：赛季（日常/清零）+ 永久（长期/永不清零，更多更有趣）============ */
+var SEASON_BADGES=[
+  {id:'sb_first',nm:'破土而出',ic:'🌱',cd:'本赛季首次记录'},
+  {id:'sb_meal5',nm:'三餐到点',ic:'🍚',cd:'一天打卡满5项'},
+  {id:'sb_delay3',nm:'拖延大师',ic:'⏳',cd:'成功延迟冲动3次'},
+  {id:'sb_alt3',nm:'刹车能手',ic:'🛑',cd:'使用替代动作3次'},
+  {id:'sb_craving5',nm:'自我观察',ic:'🔍',cd:'累计记录冲动5次'},
+  {id:'sb_binge_stop',nm:'温柔重启',ic:'🔄',cd:'完成一次暴食止损'},
+  {id:'sb_streak3',nm:'三天火种',ic:'🔥',cd:'连续正常3天'},
+  {id:'sb_stop_full',nm:'STOP通关',ic:'🛟',cd:'完成一次完整STOP流程'},
+];
+var PERMA_BADGES=[
+  // 里程碑类
+  {id:'pb_streak7',nm:'一周灯塔',ic:'🏮',cd:'累计连续正常7天'},
+  {id:'pb_streak30',nm:'月度星辰',ic:'⭐',cd:'累计连续正常30天'},
+  {id:'pb_streak100',nm:'百日根深',ic:'🌲',cd:'累计连续正常100天'},
+  // 记录/觉察类
+  {id:'pb_craving50',nm:'情绪地图',ic:'🗺️',cd:'累计记录冲动50次'},
+  {id:'pb_craving200',nm:'内心气象员',ic:'🌤️',cd:'累计记录冲动200次'},
+  // 自救类
+  {id:'pb_no_punish5',nm:'善待自己',ic:'💗',cd:'暴食后不惩罚累计5次'},
+  {id:'pb_no_punish20',nm:'温柔战士',ic:'🛡️',cd:'暴食后不惩罚累计20次'},
+  {id:'pb_binge_stop5',nm:'重启大师',ic:'🔄',cd:'完成暴食止损5次'},
+  // 等级/赛季类
+  {id:'pb_lvl10',nm:'破茧成蝶',ic:'🦋',cd:'永久等级达 Lv.10'},
+  {id:'pb_lvl30',nm:'高山仰止',ic:'🏔️',cd:'永久等级达 Lv.30'},
+  {id:'pb_seasons5',nm:'四季轮回',ic:'🍂',cd:'完成5个赛季'},
+  {id:'pb_seasons20',nm:'岁月如歌',ic:'🎵',cd:'完成20个赛季'},
+  // 仪式/陪伴类（更有趣）
+  {id:'pb_morning_egg',nm:'清晨一颗蛋',ic:'🥚',cd:'累计正常吃早餐30次'},
+  {id:'pb_water',nm:'流水不争先',ic:'💧',cd:'累计喝水打卡100次'},
+  {id:'pb_midnight_safe',nm:'深夜守护者',ic:'🌙',cd:'深夜冲动时选择替代10次'},
+  {id:'pb_observer',nm:'旁观者清',ic:'👁️',cd:'记录情绪100次仍不评判'},
+  {id:'pb_phoenix',nm:'浴火重生',ic:'🔥',cd:'暴食后次日必正常吃早餐5次'},
+  {id:'pb_companion',nm:'陪自己走夜路',ic:'🕯️',cd:'累计打开本工作台100天'},
+];
+
+/* ============ 导航结构（3二级 × 3-4三级）============ */
+var NAV=[
+  {id:'record',ic:'📋',nm:'记录中心',subs:[
+    {id:'checkin',nm:'每日打卡'},
+    {id:'recipe',nm:'食谱搭配'},
+    {id:'calendar',nm:'打卡日历'},
+  ]},
+  {id:'cope',ic:'🛟',nm:'应对中心',subs:[
+    {id:'stop',nm:'5分STOP'},
+    {id:'foodmood',nm:'饮食情绪'},
+    {id:'binge',nm:'暴食止损'},
+  ]},
+  {id:'grow',ic:'🌿',nm:'成长中心',subs:[
+    {id:'impulse',nm:'冲动记录'},
+    {id:'reward',nm:'奖励殿堂'},
+    {id:'stats',nm:'我的统计'},
+    {id:'settings',nm:'设置'},
+  ]},
+  {id:'footprint',ic:'👣',nm:'减脂足迹',subs:[
+    {id:'weight',nm:'体重打卡'},
+    {id:'profile',nm:'我的档案'},
+    {id:'measure',nm:'围度测量'},
+  ]},
+];
+
+/* ============ 状态 ============ */
+var state={
+  sec:'record',
+  sub:{},
+  rendered:{},
+  progressOpen:false
+};
+
+/* ============ 默认数据初始化 ============ */
+function defaultAlts(){
+  return {
+    '想嚼/口腔刺激':[
+      {ic:'🍬',nm:'无糖口香糖',def:true},
+      {ic:'🧊',nm:'冰块/冰水',def:true},
+      {ic:'🥬',nm:'生芹菜杆',def:true},
+    ],
+    '想吃甜的/需要安抚':[
+      {ic:'🍫',nm:'85%黑巧克力一小块',def:true},
+      {ic:'🍵',nm:'热可可（无糖）',def:true},
+      {ic:'🍌',nm:'冻香蕉',def:true},
+    ],
+    '重口味/需要发泄':[
+      {ic:'🌶️',nm:'辣味海苔',def:true},
+      {ic:'🥒',nm:'泡椒竹笋',def:true},
+      {ic:'🚶',nm:'快走10分钟',def:true},
+    ],
+    '想吃大量/填满感':[
+      {ic:'💧',nm:'一大瓶气泡水',def:true},
+      {ic:'🥗',nm:'一大盘蔬菜沙拉',def:true},
+      {ic:'🍲',nm:'番茄鸡蛋汤（无限量）',def:true},
+    ],
+    '咸脆/酥脆感':[
+      {ic:'🥜',nm:'一小把坚果',def:true},
+      {ic:'🧀',nm:'低盐奶酪条',def:true},
+    ],
+    '奶油/浓郁口感':[
+      {ic:'🥑',nm:'半个牛油果',def:true},
+      {ic:'🥛',nm:'无糖酸奶+奇亚籽',def:true},
+    ],
+  };
+}
+function defaultRecipes(){
+  return {
+    '早餐':['鸡蛋 + 牛奶/豆浆 + 主食（包子/全麦面包）','无糖酸奶 + 燕麦 + 一把坚果'],
+    '午餐':['一拳米饭 + 一掌心瘦肉 + 两拳蔬菜','杂粮饭 + 鱼/鸡胸 + 炒时蔬'],
+    '晚餐':['清淡为主：粥/杂粮 + 豆腐/鱼 + 蔬菜','番茄鸡蛋面（七八分饱）'],
+    '加餐':['一根香蕉 / 一小把坚果','无糖酸奶 / 低糖水果','一杯无糖饮品（气泡水/茶）'],
+  };
+}
+function initData(){
+  if(!Store.get('meals',null)){
+    Store.set('meals',{});
+  }
+  if(!Store.get('alts',null)){
+    Store.set('alts',defaultAlts());
+  }
+  if(!Store.get('recipes',null)){
+    Store.set('recipes',defaultRecipes());
+  }
+  if(!Store.get('impulses',null))Store.set('impulses',[]);
+  if(!Store.get('binges',null))Store.set('binges',[]);
+  if(!Store.get('seasonBadges',null))Store.set('seasonBadges',[]);
+  if(!Store.get('badgesAll',null))Store.set('badgesAll',[]);
+  if(!Store.get('altUsed',null))Store.set('altUsed',0);
+  if(!Store.get('delayCount',null))Store.set('delayCount',0);
+  if(!Store.get('noPunish',null))Store.set('noPunish',0);
+  if(!Store.get('normalDays',null))Store.set('normalDays',{});
+
+  if(!Store.get('profile',null)){
+    Store.set('profile',{nickname:'',gender:'女',age:'',height:'',startWeight:'',targetWeight:'',step:'0.2',calorie:'1500',motto:''});
+  }
+  if(!Store.get('weightLog',null))Store.set('weightLog',[]);  // [{date,weight}]
+  if(!Store.get('measures',null))Store.set('measures',[]);    // [{date,上臂,腰围,腹围,臀围,大腿,小腿}]
+  if(!Store.get('subOrder',null)){
+    var order={};
+    for(var i=0;i<NAV.length;i++){order[NAV[i].id]=NAV[i].subs.map(function(s){return s.id})}
+    Store.set('subOrder',order);
+  }
+}
+
+/* ============ 徽章判定 ============ */
+function gotSeasonBadges(){return Store.get('seasonBadges',[])}
+function gotPermaBadges(){return Store.get('badgesAll',[])}
+function award(id){
+  var isPerma=false;
+  for(var i=0;i<PERMA_BADGES.length;i++){if(PERMA_BADGES[i].id===id){isPerma=true;break}}
+  if(isPerma){
+    var all=gotPermaBadges();
+    if(all.indexOf(id)<0){all.push(id);Store.set('badgesAll',all);toast('👑 永久成就解锁：'+id)}
+  }else{
+    var sb=gotSeasonBadges();
+    if(sb.indexOf(id)<0){sb.push(id);Store.set('seasonBadges',sb);toast('🏆 赛季徽章解锁：'+id)}
+  }
+  renderLvl();
+}
+function checkBadges(){
+  var impulses=Store.get('impulses',[]);
+  var delay=Store.get('delayCount',0);
+  var used=Store.get('altUsed',0);
+  var stops=Store.get('stopFull',0)||0;
+  if(impulses.length>=1)award('sb_first');
+  if(impulses.length>=5)award('sb_craving5');
+  if(delay>=3)award('sb_delay3');
+  if(used>=3)award('sb_alt3');
+  // 永久：记录数
+  if(impulses.length>=50)award('pb_craving50');
+  if(impulses.length>=200)award('pb_craving200');
+  if(Store.get('noPunish',0)>=5)award('pb_noPunish5');
+  if(Store.get('noPunish',0)>=20)award('pb_noPunish20');
+  if(Store.get('bingeStop',0)>=5)award('pb_binge_stop5');
+  if(stops>=1)award('sb_stop_full');
+  // 等级
+  var pl=permaLevel();
+  if(pl.lvl>=10)award('pb_lvl10');
+  if(pl.lvl>=30)award('pb_lvl30');
+  // 连续正常
+  var maxStreak=Store.get('maxStreak',0);
+  if(maxStreak>=7)award('pb_streak7');
+  if(maxStreak>=30)award('pb_streak30');
+  if(maxStreak>=100)award('pb_streak100');
+  // 赛季
+  if(Store.get('seasonNo',1)>=6)award('pb_seasons5');
+  if(Store.get('seasonNo',1)>=21)award('pb_seasons20');
+  // 早餐/喝水/深夜/陪伴
+  if(Store.get('breakfastCount',0)>=30)award('pb_morning_egg');
+  if(Store.get('waterCount',0)>=100)award('pb_water');
+  if(Store.get('nightAlt',0)>=10)award('pb_midnight_safe');
+  if(Store.get('observerCount',0)>=100)award('pb_observer');
+  if(Store.get('phoenixCount',0)>=5)award('pb_phoenix');
+  if(Store.get('openDays',0)>=100)award('pb_companion');
+}
+
+/* ============ 渲染：导航 ============ */
+function renderNav(){
+  // 二级
+  var secHtml='';
+  for(var i=0;i<NAV.length;i++){
+    var s=NAV[i];
+    secHtml+='<button class="secBtn '+(s.id===state.sec?'active':'')+'" data-sec="'+s.id+'"><span class="ic">'+s.ic+'</span>'+s.nm+'</button>';
+  }
+  $('#secNav').innerHTML=secHtml;
+  var secBtns=$('#secNav').querySelectorAll('.secBtn');
+  for(var j=0;j<secBtns.length;j++){
+    secBtns[j].onclick=function(ev){try{
+      var id=ev.currentTarget.getAttribute('data-sec');switchSec(id);
+    }catch(e){window.__yjerr && window.__yjerr('secBtn click: '+e.message)}}
+  }
+  try{renderSubNav();}catch(e){window.__yjerr && window.__yjerr('renderSubNav: '+e.message)}
+}
+function getOrderedSubs(secId){
+  var order=Store.get('subOrder',{});
+  var ids=order[secId]||[];
+  var sec=NAV.filter(function(s){return s.id===secId})[0];
+  if(!sec || !Array.isArray(sec.subs)){ // 防御：找不到分组时返回空数组，绝不抛错
+    window.__yjerr && window.__yjerr('getOrderedSubs: 未知分组 '+secId);
+    return [];
+  }
+  var map={};for(var i=0;i<sec.subs.length;i++){map[sec.subs[i].id]=sec.subs[i]}
+  var out=[];
+  for(var k=0;k<ids.length;k++){if(map[ids[k]]){out.push(map[ids[k]]);delete map[ids[k]]}}
+  for(var m in map){if(map.hasOwnProperty(m))out.push(map[m])}
+  return out;
+}
+function renderSubNav(){
+  var subs=getOrderedSubs(state.sec);
+  if(!subs || !subs.length){ // 防御：该分组无三级目录时不崩
+    $('#subNav').innerHTML='';
+    return;
+  }
+  if(!state.sub[state.sec]){state.sub[state.sec]=subs[0].id}
+  var html='';
+  for(var i=0;i<subs.length;i++){
+    var s=subs[i];
+    if(!s) continue;
+    html+='<button class="subBtn '+(s.id===state.sub[state.sec]?'active':'')+'" data-sub="'+s.id+'">'+s.nm+'</button>';
+  }
+  $('#subNav').innerHTML=html;
+  var btns=$('#subNav').querySelectorAll('.subBtn');
+  for(var j=0;j<btns.length;j++){
+    btns[j].onclick=function(ev){try{
+      var id=ev.currentTarget.getAttribute('data-sub');state.sub[state.sec]=id;renderSubNav();renderPage();
+    }catch(e){window.__yjerr && window.__yjerr('subBtn click: '+e.message)}}
+  }
+}
+function switchSec(secId){
+  if(!secId){window.__yjerr && window.__yjerr('switchSec: secId 为空');return;}
+  state.sec=secId;
+  try{
+    if(!state.sub[secId]){var subs=getOrderedSubs(secId);state.sub[secId]=subs&&subs[0]?subs[0].id:null}
+    renderNav();renderPage();
+    window.scrollTo(0,0);
+  }catch(e){window.__yjerr && window.__yjerr('switchSec: '+e.message)}
+}
+
+/* ============ 页面路由 ============ */
+var PAGES={
+  'checkin':renderCheckin,
+  'recipe':renderRecipe,
+  'calendar':renderCalendar,
+  'stop':renderStop,
+  'foodmood':renderFoodmood,
+  'binge':renderBinge,
+  'impulse':renderImpulse,
+  'reward':renderReward,
+  'stats':renderStats,
+  'weight':renderWeight,'profile':renderProfile,'measure':renderMeasure,
+  'settings':renderSettings,
+};
+function renderPage(){
+  try{_renderPageInner();}catch(e){window.__yjerr && window.__yjerr('renderPage: '+e.message)}
+}
+function _renderPageInner(){
+  var subId=state.sub[state.sec];
+  var el=$('#pages');
+  var html='';
+  var allSubs=[];
+  for(var i=0;i<NAV.length;i++){allSubs=allSubs.concat(NAV[i].subs)}
+  for(var k=0;k<allSubs.length;k++){
+    var sid=allSubs[k].id;
+    html+='<section class="page '+(sid===subId?'active':'')+'" id="page-'+sid+'"></section>';
+  }
+  el.innerHTML=html;
+  for(var m=0;m<allSubs.length;m++){
+    var id=allSubs[m].id;
+    var section=$('#page-'+id);
+    if(section){section.innerHTML='<div id="inner-'+id+'"></div>'}
+  }
+  if(PAGES[subId]){try{PAGES[subId]()}catch(e){console.error(e)}} 
+  else{$('#inner-'+subId).innerHTML='<div class="card"><h2>建设中</h2><div class="hint">该模块即将上线</div></div>'}
+  renderLvl();
+}
+
+/* ============ 概览（每日打卡顶部简版）============ */
+function renderOverview(){
+  var meals=Store.get('meals',{})[todayStr()]||{};
+  var mealsDef=[
+    {id:'breakfast',nm:'早餐',tag:'含蛋白质：鸡蛋/牛奶/豆浆'},
+    {id:'morning',nm:'上午加餐',tag:'一根香蕉或一小把坚果'},
+    {id:'lunch',nm:'午餐',tag:'蛋白质+蔬菜+碳水，七八分饱'},
+    {id:'afternoon',nm:'下午加餐',tag:'酸奶/水果/无糖饮品'},
+    {id:'dinner',nm:'晚餐',tag:'清淡，别吃撑也别饿着'},
+  ];
+  var done=0;
+  for(var i=0;i<mealsDef.length;i++){if(meals[mealsDef[i].id])done++}
+  return done;
+}
+
+/* ============ 每日打卡（需求1：一体化，下方建议，不写细节）============ */
+function renderCheckin(){
+  var today=todayStr();
+  var meals=Store.get('meals',{});
+  if(!meals[today])meals[today]={};
+  var data=meals[today];
+  var mealsDef=[
+    {id:'breakfast',nm:'早餐',tag:'蛋白质：鸡蛋/牛奶/豆浆',suggest:'例：<span class="ex">鸡蛋2个 + 牛奶1杯 + 全麦面包1片</span> ≈ 400kcal',kcal:'400'},
+    {id:'morning',nm:'上午加餐',tag:'一根香蕉或一小把坚果',suggest:'例：<span class="ex">香蕉1根</span> ≈ 90kcal',kcal:'90'},
+    {id:'lunch',nm:'午餐',tag:'蛋白质+蔬菜+碳水，七八分饱',suggest:'例：<span class="ex">米饭1拳 + 鸡胸/瘦肉 + 蔬菜2拳</span> ≈ 550kcal',kcal:'550'},
+    {id:'afternoon',nm:'下午加餐',tag:'酸奶/水果/无糖饮品',suggest:'例：<span class="ex">无糖酸奶1杯 + 蓝莓一把</span> ≈ 120kcal',kcal:'120'},
+    {id:'dinner',nm:'晚餐',tag:'清淡，别吃撑也别饿着',suggest:'例：<span class="ex">杂粮粥 + 豆腐/鱼 + 蔬菜</span> ≈ 450kcal',kcal:'450'},
+  ];
+  var html='<div class="card"><h2>🍽️ 每日打卡</h2><div class="hint">只点「吃了没」，下方是建议，不用自己写。点到即算完成，<b>不节食</b>。</div>';
+  html+='<div class="daybar"><span>今天 '+fmtDate(today)+'</span><span class="total">已打卡 <b id="dayDone">0</b>/5 · <span id="dayKcal">0</span> kcal</span></div>';
+  html+='<div class="progress"><i id="dayBar" style="width:0%"></i></div><div id="mealList"></div>';
+  html+='<div class="hint" style="margin-top:8px;text-align:center">💡 三餐两点按时吃 → 不容易「太饿 → 必须马上吃」</div>';
+  html+='<div class="hint" style="margin-top:6px;text-align:center;color:var(--gray);font-size:11px">💧 喝水顺手喝就好，不单独打卡——把精力留给「按时吃饭」</div></div>';
+  html+='<div class="card"><h2>📌 核心提醒</h2><div class="hint" style="line-height:1.7">• 每餐都吃，<b>不要饿着自己</b>（饿是暴食的最大诱因）<br>• 吃到七八分饱即可<br>• 下面只是<b>参考建议</b>，你有更重要——吃了就是成功</div></div>';
+  $('#inner-checkin').innerHTML=html;
+
+  function drawList(){
+    var mh='';
+    var done=0,totalKcal=0;
+    for(var i=0;i<mealsDef.length;i++){
+      var m=mealsDef[i];
+      var isDone=!!data[m.id];
+      var rec=isDone?(data[m.id].desc||'已打卡'):'';
+      var kcal=isDone?(data[m.id].kcal||0):0;
+      if(isDone){done++;totalKcal+=parseInt(kcal)||0}
+      mh+='<div class="meal-card '+(isDone?'done ':'')+(state.openMeal===m.id?'open':'')+'">';
+      mh+='<div class="mc-head" data-m="'+m.id+'">';
+      mh+='<div class="box">'+(isDone?'\u2713':'')+'</div>';
+      mh+='<div class="mc-name">'+m.nm+'</div>';
+      mh+='<span class="mc-tag">'+(isDone?(rec||'已打卡'):m.tag)+'</span>';
+      mh+='</div>';
+      mh+='<div class="mc-body">';
+      mh+='<div class="mc-label">📷 吃了什么（拍照描述，可选）</div>';
+      mh+='<div class="row"><input class="mc-field" placeholder="例如：鸡蛋+牛奶+面包" value="'+esc(rec)+'" style="flex:1"><button class="btn sm pick-recipe" data-m="'+m.id+'" style="width:auto;margin-left:6px">📖 从食谱选</button></div>';
+      mh+='<div class="mc-label">🔥 约多少 kcal（可选）</div>';
+      mh+='<input class="mc-field" type="number" placeholder="'+m.kcal+'" value="'+esc(kcal)+'">';
+      mh+='<div class="suggest">'+m.suggest+'</div>';
+      mh+='<div class="row" style="margin-top:8px">';
+      mh+='<button class="btn '+(isDone?'danger':'')+'" style="flex:1" data-act="'+(isDone?'undo':'do')+'" data-m="'+m.id+'">'+(isDone?'↩️ 取消打卡':'✅ 确认：我吃了')+'</button>';
+      mh+='</div></div></div>';
+    }
+    $('#mealList').innerHTML=mh;
+    $('#dayDone').textContent=done;
+    $('#dayKcal').textContent=totalKcal;
+    $('#dayBar').style.width=(done/5*100)+'%';
+    // 绑定
+    var heads=$('#mealList').querySelectorAll('.mc-head');
+    for(var h=0;h<heads.length;h++){
+      heads[h].onclick=function(ev){
+        var mid=ev.currentTarget.getAttribute('data-m');
+        state.openMeal=state.openMeal===mid?null:mid;
+        drawList();
+      };
+    }
+    var acts=$('#mealList').querySelectorAll('button[data-act]');
+    for(var a=0;a<acts.length;a++){
+      acts[a].onclick=function(ev){
+        var mid=ev.currentTarget.getAttribute('data-m');
+        var act=ev.currentTarget.getAttribute('data-act');
+        var card=ev.currentTarget.closest('.meal-card');
+        var desc=(card.querySelector('input')||{}).value||'';
+        var kcal=(card.querySelectorAll('input')[1]||{}).value||'0';
+        if(act==='do'){data[mid]={desc:desc,kcal:parseInt(kcal)||0};if(mid==='breakfast')Store.set('breakfastCount',Store.get('breakfastCount',0)+1)}
+        else{delete data[mid]}
+        meals[today]=data;Store.set('meals',meals);
+        if(act==='do'){addXP(2);toast('✅ '+mealsDef.filter(function(x){return x.id===mid})[0].nm+' 已打卡 +2XP');state.openMeal=null}
+        drawList();checkMeal5();saveNormalDay();
+      };
+    }
+    // 「从食谱选」按钮：把食谱搭配里的条目一键填进「吃了什么」
+    var picks=$('#mealList').querySelectorAll('.pick-recipe');
+    for(var p=0;p<picks.length;p++){
+      picks[p].onclick=function(ev){
+        var mid=ev.currentTarget.getAttribute('data-m');
+        openRecipePicker(mid);
+      };
+    }
+  }
+  drawList();
+  state.rendered.checkin=true;
+}
+
+// 从食谱搭配里选一条，填入对应餐次的「吃了什么」
+function openRecipePicker(mealId){
+  var recipes=Store.get('recipes',{});
+  var groups=Object.keys(recipes);
+  if(groups.length===0){
+    toast('还没有食谱，先去「食谱搭配」添加吧～');
+    return;
+  }
+  // 优先显示与该餐次同名的分组（如"早餐"），其余排在后面
+  var order=['早餐','上午加餐','午餐','下午加餐','晚餐'];
+  groups.sort(function(a,b){
+    var ai=order.indexOf(a),bi=order.indexOf(b);
+    if(a===mealId)ai=-1;if(b===mealId)bi=-1;
+    if(ai<0)ai=99;if(bi<0)bi=99;
+    return ai-bi;
+  });
+  var html='<h3>📖 选择「'+mealId+'」的搭配</h3><div class="hint" style="margin-bottom:8px">点一条就填到打卡里（可再去食谱搭配修改/新增）</div>';
+  for(var gi=0;gi<groups.length;gi++){
+    var g=groups[gi];var items=recipes[g]||[];
+    if(items.length===0)continue;
+    html+='<div class="mc-label" style="margin-top:8px">'+esc(g)+'</div>';
+    for(var ai=0;ai<items.length;ai++){
+      html+='<button class="field recipe-pick" data-m="'+mealId+'" data-g="'+esc(g)+'" data-i="'+ai+'" style="cursor:pointer;text-align:left">＋ '+esc(items[ai])+'</button>';
+    }
+  }
+  openModal(html);
+  var btns=$('#modalPanel').querySelectorAll('.recipe-pick');
+  for(var b=0;b<btns.length;b++){
+    btns[b].onclick=function(ev){
+      var mid=ev.currentTarget.getAttribute('data-m');
+      var g=ev.currentTarget.getAttribute('data-g');
+      var i=parseInt(ev.currentTarget.getAttribute('data-i'));
+      var val=Store.get('recipes',{})[g][i];
+      var today=todayStr();var meals=Store.get('meals',{});
+      if(!meals[today])meals[today]={};
+      var cur=meals[today][mid]||{desc:'',kcal:0};
+      // 多选累加：把选的搭配追加到描述里
+      var desc=(cur.desc?cur.desc+' + ':'')+val;
+      meals[today][mid]={desc:desc,kcal:cur.kcal||0};
+      Store.set('meals',meals);
+      closeModal();
+      drawList();
+      toast('已填入「'+mealId+'」');checkMeal5();saveNormalDay();
+    };
+  }
+}
+function checkMeal5(){
+  var today=todayStr();
+  var data=Store.get('meals',{})[today]||{};
+  var cnt=0;for(var k in data){if(data.hasOwnProperty(k))cnt++}
+  if(cnt>=5)award('sb_meal5');
+}
+
+/* ============ 食谱搭配（需求：可增删分组、条目）============ */
+function renderRecipe(){
+  var recipes=Store.get('recipes',{});
+  var html='<div class="card"><h2>📖 食谱搭配</h2><div class="hint">早/中/晚/加餐的搭配参考。可以<b>添加新分组</b>、<b>增删条目</b>，改成你爱吃的。</div>';
+  html+='<div class="add-row"><input id="newGroupNm" placeholder="新建分组名（如：快手早餐）"><button class="btn sm" id="addGroup" style="width:auto">＋ 添加分组</button></div>';
+  html+='<div id="recipeList"></div></div>';
+  $('#inner-recipe').innerHTML=html;
+  function draw(){
+    var rh='';
+    for(var g in recipes){if(!recipes.hasOwnProperty(g))continue;
+      rh+='<div class="recipe-group"><div class="gh"><span>🍴</span>'+esc(g)+'<span class="del" data-g="'+esc(g)+'">删除分组</span></div><ol>';
+      var items=recipes[g]||[];
+      for(var i=0;i<items.length;i++){
+        rh+='<li><span>'+(i+1)+'. '+esc(items[i])+'</span><span class="x" data-g="'+esc(g)+'" data-i="'+i+'">✕</span></li>';
+      }
+      rh+='</ol><div class="add-row"><input id="addItem-'+esc(g)+'" placeholder="添加一条搭配"><button class="btn sm addItemBtn" data-g="'+esc(g)+'" style="width:auto">＋</button></div></div>';
+    }
+    $('#recipeList').innerHTML=rh;
+    var dels=$('#recipeList').querySelectorAll('.gh .del');
+    for(var d=0;d<dels.length;d++){
+      dels[d].onclick=function(ev){
+        var g=ev.currentTarget.getAttribute('data-g');
+        var r=Store.get('recipes',{});delete r[g];Store.set('recipes',r);draw();
+      };
+    }
+    var xs=$('#recipeList').querySelectorAll('.x');
+    for(var x=0;x<xs.length;x++){
+      xs[x].onclick=function(ev){
+        var g=ev.currentTarget.getAttribute('data-g');
+        var i=parseInt(ev.currentTarget.getAttribute('data-i'));
+        var r=Store.get('recipes',{});r[g].splice(i,1);Store.set('recipes',r);draw();
+      };
+    }
+    var addBtns=$('#recipeList').querySelectorAll('.addItemBtn');
+    for(var b=0;b<addBtns.length;b++){
+      addBtns[b].onclick=function(ev){
+        var g=ev.currentTarget.getAttribute('data-g');
+        var inp=$('#addItem-'+g);
+        if(!inp||!inp.value.trim()){toast('先写点内容～');return}
+        var r=Store.get('recipes',{});r[g].push(inp.value.trim());Store.set('recipes',r);draw();
+      };
+    }
+  }
+  draw();
+  $('#addGroup').onclick=function(){
+    var v=$('#newGroupNm').value.trim();
+    if(!v){toast('先写分组名～');return}
+    var r=Store.get('recipes',{});r[v]=[];Store.set('recipes',r);
+    $('#newGroupNm').value='';draw();
+  };
+}
+
+/* ============ 紧凑日历（需求2：紧凑，圆点=打卡项数）============ */
+function renderCalendar(){
+  var now=state.calDate||new Date();
+  var y=now.getFullYear(),m=now.getMonth();
+  var first=new Date(y,m,1).getDay();
+  var days=new Date(y,m+1,0).getDate();
+  var today=todayStr();
+  var meals=Store.get('meals',{});
+  var html='<div class="card"><div id="calHead"><span class="nav" id="calPrev">‹</span><span>'+y+'年'+(m+1)+'月打卡</span><span class="nav" id="calNext">›</span></div>';
+  html+='<div style="font-size:11px;color:var(--gray);margin-bottom:6px">已打卡 <b id="calDone">0</b> 天</div>';
+  html+='<div id="calGrid">';
+  var wk=['日','一','二','三','四','五','六'];
+  for(var w=0;w<7;w++){html+='<div class="calCell empty" style="font-size:9px;color:var(--gray);min-height:0">'+wk[w]+'</div>'}
+  for(var e=0;e<first;e++){html+='<div class="calCell empty"></div>'}
+  var doneDays=0;
+  for(var d=1;d<=days;d++){
+    var ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    var dm=meals[ds]||{};var cnt=0;for(var k in dm){if(dm.hasOwnProperty(k))cnt++}
+    var isToday=ds===today;
+    var hasBinge=(Store.get('binges',[])).filter(function(b){return b.date===ds}).length>0;
+    if(cnt>0)doneDays++;
+    var cls='calCell'+(cnt>0?' has':'')+(isToday?' today':'')+(hasBinge?' binged':'');
+    html+='<div class="'+cls+'" data-ds="'+ds+'"><div class="dnum">'+d+'</div><div class="dots">';
+    for(var p=0;p<5;p++){html+='<i class="'+(p<cnt?'':'off')+'"></i>'}
+    html+='</div></div>';
+  }
+  html+='</div>';
+  html+='<div class="cal-legend">🟢 圆点越满=当天打卡越积极（最多5颗/天）｜🔴 红底=当天有暴食事件<br>点击某天可查看/编辑当天</div></div>';
+  html+='<div class="card" id="calDetail"><div class="hint">点击上方某天，查看或编辑那天</div></div>';
+  $('#inner-calendar').innerHTML=html;
+  $('#calDone').textContent=doneDays;
+  $('#calPrev').onclick=function(){var nd=new Date(y,m-1,1);state.calDate=nd;renderCalendar()};
+  $('#calNext').onclick=function(){var nd=new Date(y,m+1,1);state.calDate=nd;renderCalendar()};
+  var cells=$('#calGrid').querySelectorAll('.calCell[data-ds]');
+  for(var c=0;c<cells.length;c++){
+    cells[c].onclick=function(ev){
+      var ds=ev.currentTarget.getAttribute('data-ds');
+      showDayDetail(ds);
+    };
+  }
+}
+function showDayDetail(ds){
+  var meals=Store.get('meals',{});
+  var dm=meals[ds]||{};
+  var names={breakfast:'早餐',morning:'上午加餐',lunch:'午餐',afternoon:'下午加餐',dinner:'晚餐'};
+  var html='<h2>📅 '+fmtDate(ds)+'</h2><div class="hint">编辑当天的打卡情况（只记录「吃了没」）</div>';
+  var keys=['breakfast','morning','lunch','afternoon','dinner'];
+  for(var i=0;i<keys.length;i++){
+    var k=keys[i];
+    var checked=!!dm[k];
+    html+='<label style="display:flex;align-items:center;gap:8px;padding:7px;border:1px solid var(--line);border-radius:8px;margin-bottom:5px;font-size:12px"><input type="checkbox" data-k="'+k+'" '+(checked?'checked':'')+'> '+names[k]+' <span style="margin-left:auto;color:var(--gray);font-size:11px">'+(dm[k]?dm[k].desc||'已打卡':'')+'</span></label>';
+  }
+  html+='<button class="btn" id="saveDay" style="margin-top:6px">保存</button>';
+  $('#calDetail').innerHTML=html;
+  $('#saveDay').onclick=function(){
+    var meals2=Store.get('meals',{});
+    if(!meals2[ds])meals2[ds]={};
+    var boxes=$('#calDetail').querySelectorAll('input[type=checkbox]');
+    for(var b=0;b<boxes.length;b++){
+      var cb=boxes[b];var k=cb.getAttribute('data-k');
+      if(cb.checked){if(!meals2[ds][k])meals2[ds][k]={desc:'',kcal:0}}else{delete meals2[ds][k]}
+    }
+    Store.set('meals',meals2);
+    toast('已保存 '+fmtDate(ds));
+    if(ds===todayStr()){renderCheckin();renderOverview()}
+    renderCalendar();
+  };
+}
+
+/* ============ 【核心】5分STOP（需求3/5：醒目 + 强互动）============ */
+function renderStop(){
+  var st=Store.get('stopState',{step:0,emotion:'',emotions:[],intensity:0,observed:''});
+  if(!Array.isArray(st.emotions))st.emotions=[];
+  var html='<div class="stop-hero"><div class="big">🛟 5分STOP</div><div class="sub">停下来 5 分钟，不吃东西也可以——情绪会自己走掉</div></div>';
+  html+='<div class="card" style="padding:8px 10px"><div class="hint" style="margin-bottom:4px">点一步、做一步，做完自动进入下一步。不需要完美，<b>开始了就算成功</b>。</div>';
+  html+='<div class="stop-flow"><span class="stop-letter-xl">S</span><span>→</span><span class="stop-letter-xl">T</span><span>→</span><span class="stop-letter-xl">O</span><span>→</span><span class="stop-letter-xl">P</span></div></div>';
+  // S
+  html+=stepCard('S','停下','站起来，放下手里的东西，对自己说：「我现在很想吃，这很正常」。',0,st.step,function(){
+    html+='<button class="btn" data-goto="1">✅ 我停下了</button>';
+  });
+  // T
+  html+=stepCard('T','深呼吸 3 次','吸…… 停…… 呼…… 让身体从「应激」切回「冷静」。',1,st.step,function(){
+    html+='<div class="breath-circle" id="breath">点击开始<br>3次</div>';
+  });
+  // O
+  html+=stepCard('O','观察情绪 & 欲望','是什么情绪？冲动多强？这个欲望背后，我真正缺的是什么？',2,st.step,function(){
+    html+='<div class="mc-label">选择情绪（<b>可多选</b>，点一个选一个，再点取消）</div><div class="emotion-pick" id="emPick"></div>';
+    html+='<div class="mc-label">冲动强度 <span id="intVal">5</span>/10</div><div class="intensity" id="intBar"></div>';
+    html+='<input class="mc-field" id="obsNeed" placeholder="我真正缺的是什么？（陪伴 / 放松 / 成就感 / 安全……）">';
+  });
+  // P
+  html+=stepCard('P','选择替代行动','不吃东西也可以——去「饮食情绪」找替代方案，或用下面快速动作。',3,st.step,function(){
+    html+='<div class="proceed-btns"><button class="btn ghost" data-p="alt">🍬 找替代方案</button><button class="btn ghost" data-p="delay">⏳ 我延迟了</button><button class="btn danger" data-p="failed">😔 这次没忍住</button></div>';
+  });
+  html+='</div>';
+  html+='<div class="card"><h2>💡 记住</h2><div class="hint" style="line-height:1.7">S 停下 → T 深呼吸 → O 观察 → P 选择。<br>哪怕只做到 <b>S + T</b>，你已经在打断「必须马上吃」的惯性了。<br>没忍住也<b>没关系</b>——点「这次没忍住」，去「暴食止损」温柔重启。</div></div>';
+  $('#inner-stop').innerHTML=html;
+
+  // 渲染步骤卡片（简化：用固定结构 + 动态按钮区）
+  renderStepCards(st);
+  bindStop(st);
+}
+function stepCard(letter,nm,desc,idx,cur,extra){
+  var cls='stop-step'+(cur===idx?' active':'')+(cur>idx?' done':'');
+  var html='<div class="'+cls+'" data-idx="'+idx+'">';
+  html+='<div class="ss-head"><span class="ss-letter">'+letter+'</span><span>'+nm+'</span></div>';
+  html+='<div class="ss-body">'+desc+'</div>';
+  html+='<div class="ss-action" id="act-'+idx+'"></div>';
+  html+='</div>';
+  return html;
+}
+function renderStepCards(st){
+  // 每次重建 DOM 后都重新填充各步骤操作区
+  updateStop(st);
+}
+function updateStop(st){
+  // 更新各步骤状态
+  var cards=$('#inner-stop').querySelectorAll('.stop-step');
+  for(var i=0;i<cards.length;i++){
+    var c=cards[i];var idx=parseInt(c.getAttribute('data-idx'));
+    c.classList.remove('active','done');
+    if(st.step>idx)c.classList.add('done');
+    if(st.step===idx)c.classList.add('active');
+  }
+  // S 按钮
+  var act0=$('#act-0');
+  if(act0){act0.innerHTML='<button class="btn" id="s0btn">✅ 我停下了</button>';
+    $('#s0btn').onclick=function(){st.step=1;saveStop(st);renderStop()}}
+  // T 呼吸
+  var act1=$('#act-1');
+  if(act1){
+    act1.innerHTML='<div class="breath-circle" id="breath">点击开始<br>3次</div>';
+    bindBreath(st);
+  }
+  // O 情绪 + 强度
+  var act2=$('#act-2');
+  if(act2){
+    act2.innerHTML='<div class="mc-label">选择情绪（可多选）</div><div class="emotion-pick" id="emPick"></div><div class="mc-label">冲动强度 <span id="intVal">'+(st.intensity||5)+'</span>/10</div><div class="intensity" id="intBar"></div><input class="mc-field" id="obsNeed" placeholder="我真正缺的是什么？（陪伴/放松/成就感/安全……）" value="'+(st.observed||'')+'"><button class="btn" id="s2btn" style="margin-top:6px">✅ 我看清楚了</button>';
+    bindObserve(st);
+  }
+  // P 选择
+  var act3=$('#act-3');
+  if(act3){
+    act3.innerHTML='<div class="proceed-btns"><button class="btn ghost" id="pAlt">🍬 找替代方案</button><button class="btn ghost" id="pDelay">⏳ 我延迟了</button><button class="btn danger" id="pFailed">😔 这次没忍住</button></div>';
+    bindProceed(st);
+  }
+}
+function bindStop(st){
+  // 初始化 S
+  var act0=$('#act-0');
+  if(act0&&st.step===0){
+    act0.innerHTML='<button class="btn" id="s0btn">✅ 我停下了</button>';
+    var b0=$('#s0btn');if(b0)b0.onclick=function(){st.step=1;saveStop(st);renderStop()};
+  }
+  bindBreath(st);
+  bindObserve(st);
+  bindProceed(st);
+}
+function bindBreath(st){
+  var bc=$('#breath');
+  if(!bc||st.step!==1)return;
+  var count=0;
+  var el=bc;
+  var phase='in';
+  el.onclick=function(){
+    count++;
+    if(count>3){st.step=2;saveStop(st);addXP(2);renderStop();return}
+    el.textContent='第 '+count+' 次\n吸气→';
+    setTimeout(function(){el.textContent='第 '+count+' 次\n呼气↓'},1500);
+    setTimeout(function(){el.textContent='第 '+count+' 次\n停…'},3000);
+    setTimeout(function(){if(count<3)el.textContent='点击继续\n'+(3-count)+'次' },4500);
+  };
+}
+function bindObserve(st){
+  var pick=$('#emPick');
+  if(!pick||st.step!==2)return;
+  if(!Array.isArray(st.emotions))st.emotions=[];
+  var ems=[{ic:'😰',n:'压力/焦虑'},{ic:'😩',n:'疲惫'},{ic:'😔',n:'低落/空虚'},{ic:'😤',n:'愤怒'},{ic:'😶',n:'无聊'},{ic:'😞',n:'孤独'},{ic:'😱',n:'恐惧'},{ic:'🥳',n:'庆祝'}];
+  var html='';
+  for(var i=0;i<ems.length;i++){
+    var on=st.emotions.indexOf(ems[i].n)>=0;
+    html+='<div class="em '+(on?'on':'')+'" data-n="'+ems[i].n+'"><span class="eic">'+ems[i].ic+'</span>'+ems[i].n+'</div>';
+  }
+  pick.innerHTML=html;
+  var emEls=pick.querySelectorAll('.em');
+  for(var e=0;e<emEls.length;e++){
+    emEls[e].onclick=(function(nm){
+      return function(){
+        var idx=st.emotions.indexOf(nm);
+        if(idx>=0){st.emotions.splice(idx,1)}      // 再次点击 = 取消（多选切换）
+        else{st.emotions.push(nm)}                  // 可多选：选几个都行
+        st.emotion=st.emotions[st.emotions.length-1]||''; // 兼容旧字段
+        saveStop(st);
+        renderObserveOnly(st);
+      };
+    })(ems[e].n);
+  }
+  renderObserveOnly(st);
+}
+function renderObserveOnly(st){
+  var ib=$('#intBar');
+  if(ib){
+    var v=st.intensity||5;
+    var h='';
+    for(var i=0;i<10;i++){h+='<div class="dot '+(i<v?'on':'')+'"></div>'}
+    ib.innerHTML=h;
+    var dots=ib.querySelectorAll('.dot');
+    for(var d=0;d<dots.length;d++){
+      dots[d].onclick=function(ev){
+        var idx=Array.prototype.indexOf.call(ib.children,ev.currentTarget)+1;
+        st.intensity=idx;saveStop(st);renderObserveOnly(st);
+      };
+    }
+  }
+  var iv=$('#intVal');if(iv)iv.textContent=st.intensity||5;
+  var obs=$('#obsNeed');
+  if(obs&&!obs.oninput){
+    obs.oninput=function(ev){st.observed=ev.currentTarget.value;saveStop(st)};
+  }
+  var b2=$('#s2btn');
+  if(b2)b2.onclick=function(){st.step=3;saveStop(st);renderStop()};
+}
+function bindProceed(st){
+  var pAlt=$('#pAlt'),pDelay=$('#pDelay'),pFailed=$('#pFailed');
+  if(pAlt){pAlt.onclick=function(){
+    // 跳转到饮食情绪，并标记"来自STOP"
+    state.sec='cope';state.sub.cope='foodmood';
+    Store.set('stopFromStop',true);
+    renderNav();renderPage();window.scrollTo(0,0);
+  }}
+  if(pDelay){pDelay.onclick=function(){
+    st.step=4;saveStop(st);
+    Store.set('delayCount',Store.get('delayCount',0)+1);
+    addXP(5);toast('⏳ 你延迟了！冲动会自己走掉 +5XP');
+    setTimeout(function(){resetStop()},1200);
+  }}
+  if(pFailed){pFailed.onclick=function(){
+    // 转暴食止损
+    state.sec='cope';state.sub.cope='binge';
+    renderNav();renderPage();window.scrollTo(0,0);
+  }}
+}
+function saveStop(st){Store.set('stopState',st)}
+function resetStop(){Store.set('stopState',{step:0,emotion:'',emotions:[],intensity:0,observed:''});renderStop()}
+
+/* ============ 饮食情绪（需求5：情绪→联动推荐替代方案 + 可管理）============ */
+function renderFoodmood(){
+  var alts=Store.get('alts',{});
+  var groups=Object.keys(alts);
+  var fromStop=Store.get('stopFromStop',false);
+  var stopSt=Store.get('stopState',{});
+  var html='<div class="card"><h2>🍬 饮食情绪 · 替代方案</h2>';
+  if(fromStop&&stopSt.emotion){
+    html+='<div class="season-banner" style="margin-bottom:8px"><div class="big">你刚才感到「'+esc(stopSt.emotion)+'」</div><div style="font-size:11px">下面是给你的推荐 → 点一个「用了」就算成功 +3XP</div></div>';
+  }else{
+    html+='<div class="hint">冲动来了？先选情绪（可选），会<b>自动推荐</b>适合你的替代方案。点了「用了」= 记录成功 +3XP。<br>每个方案都可以 <b>改名 / 删除 / 排序 / 调换分组</b>。</div>';
+  }
+  html+='</div>';
+  // 情绪快速筛选
+  html+='<div class="card"><h2>🎯 先选情绪（可选）</h2><div class="emotion-pick" id="fmEmPick" style="grid-template-columns:repeat(4,1fr)"></div></div>';
+  html+='<div id="groupList"></div>';
+  // 添加新欲望分组
+  html+='<div class="card"><h2>＋ 新建欲望分组</h2><div class="alt-add"><input id="newGroupNm2" placeholder="如：想吃热的/需要仪式感"><button class="btn sm" id="addGroup2" style="width:auto">添加</button></div></div>';
+  $('#inner-foodmood').innerHTML=html;
+
+  var ems=[{ic:'😰',n:'压力/焦虑'},{ic:'😔',n:'低落/空虚'},{ic:'😤',n:'愤怒'},{ic:'😶',n:'无聊'},{ic:'😞',n:'孤独'},{ic:'🥳',n:'庆祝'},{ic:'😩',n:'疲惫'},{ic:'💤',n:'深夜'}];
+  var emHtml='';
+  for(var i=0;i<ems.length;i++){emHtml+='<div class="em" data-n="'+ems[i].n+'"><span class="eic">'+ems[i].ic+'</span>'+ems[i].n+'</div>'}
+  $('#fmEmPick').innerHTML=emHtml;
+  var emEls=$('#fmEmPick').querySelectorAll('.em');
+  for(var e=0;e<emEls.length;e++){
+    emEls[e].onclick=function(ev){
+      var n=ev.currentTarget.getAttribute('data-n');
+      // 简单映射：不同情绪高亮对应欲望分组
+      state.fmFilter=n;
+      renderFoodmood();
+    };
+  }
+
+  // 渲染分组
+  function drawGroups(){
+    var gh='';
+    for(var gi=0;gi<groups.length;gi++){
+      var g=groups[gi];
+      var isRecommended=fromStop&&isEmotionRelated(stopSt.emotion,g);
+      gh+='<div class="craving-group '+(isRecommended?'open':'')+'" data-g="'+esc(g)+'">';
+      gh+='<div class="cg-head" data-g="'+esc(g)+'"><span>'+(isRecommended?'⭐ ':'')+esc(g)+'</span><span style="margin-left:auto;font-size:10px;color:var(--gray)">共 '+alts[g].length+' 个 · 点击展开管理</span></div>';
+      gh+='<div class="cg-body">';
+      for(var ai=0;ai<alts[g].length;ai++){
+        var a=alts[g][ai];
+        gh+='<div class="alt-item" data-g="'+esc(g)+'" data-i="'+ai+'">';
+        gh+='<span class="ai-ic">'+esc(a.ic||'🍃')+'</span>';
+        gh+='<span class="ai-nm">'+esc(a.nm)+'</span>';
+        gh+='<span class="ai-xp">+3XP</span>';
+        gh+='<span class="ai-act"><button data-act="use">用了</button><button data-act="edit">改名</button><button data-act="del">删除</button><button data-act="mv">调换分组</button></button><button data-act="up">↑</button><button data-act="down">↓</button></span>';
+        gh+='</div>';
+      }
+      gh+='<div class="alt-add"><input id="addAlt-'+esc(g)+'" placeholder="添加替代方案（如：85%黑巧一小块）"><button class="btn sm addAltBtn" data-g="'+esc(g)+'" style="width:auto">＋ 添加</button></div>';
+      gh+='</div></div>';
+    }
+    $('#groupList').innerHTML=gh;
+    // 展开/折叠
+    var heads=$('#groupList').querySelectorAll('.cg-head');
+    for(var h=0;h<heads.length;h++){
+      heads[h].onclick=function(ev){
+        var g=ev.currentTarget.getAttribute('data-g');
+        var card=ev.currentTarget.closest('.craving-group');
+        card.classList.toggle('open');
+      };
+    }
+    // 替代方案操作
+    var items=$('#groupList').querySelectorAll('.alt-item');
+    for(var it=0;it<items.length;it++){
+      items[it].onclick=function(ev){
+        var btn=ev.target.closest('button');
+        if(!btn)return;
+        var card=ev.currentTarget;
+        var g=card.getAttribute('data-g');
+        var i=parseInt(card.getAttribute('data-i'));
+        var act=btn.getAttribute('data-act');
+        var alt=alts[g][i];
+        if(act==='use'){
+          alt.used=true;addXP(3);Store.set('altUsed',Store.get('altUsed',0)+1);
+          // 记录冲动（替代成功）
+          var imp=Store.get('impulses',[]);
+          imp.push({date:todayStr(),time:new Date().toTimeString().slice(0,5),emotion:stopSt.emotion||'',intensity:stopSt.intensity||0,delayed:true,note:'替代：'+alt.nm});
+          Store.set('impulses',imp);
+          Store.set('stopFromStop',false);
+          toast('🍬 用了「'+alt.nm+'」，冲动会自己走掉 +3XP');
+          card.classList.add('used');
+          checkBadges();
+        }else if(act==='edit'){
+          openRenameModal(g,i,alt.nm,function(nv){
+            if(nv!==null&&nv.trim()){alts[g][i].nm=nv.trim();Store.set('alts',alts);drawGroups();toast('已改名')}
+          });
+        }else if(act==='del'){
+          openConfirmModal('删除这个方案？','「'+alt.nm+'」删除后不可恢复，确定吗？',function(ok){
+            if(ok){alts[g].splice(i,1);Store.set('alts',alts);drawGroups();toast('已删除')}
+          });
+        }else if(act==='mv'){
+          openMoveAlt(g,i,alts);
+        }else if(act==='up'){
+          if(i>0){var tmp=alts[g][i-1];alts[g][i-1]=alts[g][i];alts[g][i]=tmp;Store.set('alts',alts);drawGroups()}
+        }else if(act==='down'){
+          if(i<alts[g].length-1){var tmp2=alts[g][i+1];alts[g][i+1]=alts[g][i];alts[g][i]=tmp2;Store.set('alts',alts);drawGroups()}
+        }
+      };
+    }
+    // 添加方案
+    var addBtns=$('#groupList').querySelectorAll('.addAltBtn');
+    for(var ab=0;ab<addBtns.length;ab++){
+      addBtns[ab].onclick=function(ev){
+        var g=ev.currentTarget.getAttribute('data-g');
+        var inp=$('#addAlt-'+g);
+        if(!inp||!inp.value.trim()){toast('先写内容～');return}
+        alts[g].push({ic:'🍃',nm:inp.value.trim()});Store.set('alts',alts);
+        Store.set('stopFromStop',false);
+        drawGroups();
+      };
+    }
+  }
+  drawGroups();
+  // 新建分组
+  $('#addGroup2').onclick=function(){
+    var v=$('#newGroupNm2').value.trim();
+    if(!v){toast('先写分组名～');return}
+    alts[v]=[];Store.set('alts',alts);
+    $('#newGroupNm2').value='';
+    groups=Object.keys(alts);
+    drawGroups();
+  };
+}
+// 情绪→欲望分组关联（让"情绪选择"和"替代方案"真正联动）
+function isEmotionRelated(emotion,group){
+  if(!emotion)return false;
+  var map={
+    '压力/焦虑':['想嚼/口腔刺激','重口味/需要发泄'],
+    '愤怒':['重口味/需要发泄','想吃大量/填满感'],
+    '低落/空虚':['想吃甜的/需要安抚','奶油/浓郁口感'],
+    '无聊':['想嚼/口腔刺激','咸脆/酥脆感'],
+    '孤独':['想吃甜的/需要安抚','奶油/浓郁口感'],
+    '疲惫':['想吃甜的/需要安抚','咸脆/酥脆感'],
+    '庆祝':['想吃甜的/需要安抚','奶油/浓郁口感'],
+    '恐惧':['想吃大量/填满感','重口味/需要发泄'],
+    '深夜':['想吃甜的/需要安抚','想吃大量/填满感'],
+  };
+  var related=map[emotion]||[];
+  return related.indexOf(group)>=0;
+}
+function openMoveAlt(g,i,alts){
+  var groups=Object.keys(alts).filter(function(x){return x!==g});
+  if(groups.length===0){toast('没有其他分组～');return}
+  var html='<h3>移动到哪个分组</h3>';
+  for(var k=0;k<groups.length;k++){html+='<button class="field" data-to="'+esc(groups[k])+'" style="cursor:pointer;text-align:left">→ '+esc(groups[k])+'</button>'}
+  openModal(html);
+  var btns=$('#modalPanel').querySelectorAll('[data-to]');
+  for(var b=0;b<btns.length;b++){
+    btns[b].onclick=function(ev){
+      var to=ev.currentTarget.getAttribute('data-to');
+      var alt=alts[g][i];
+      alts[g].splice(i,1);
+      alts[to].push(alt);
+      Store.set('alts',alts);
+      closeModal();
+      renderFoodmood();
+      toast('已移到「'+to+'」');
+    };
+  }
+}
+
+/* ============ 暴食止损（需求：三步引导）============ */
+function renderBinge(){
+  var bst=Store.get('bingeState',{step:0,nextMealTime:'',nextMealFood:''});
+  var html='<div class="card"><h2>🔄 暴食止损 · 三步重启</h2><div class="hint">暴食已经发生，<b>不惩罚、不补偿、不节食</b>。做完这三步 = 温柔重启。<br>核心是第三步：<b>安排下一顿饭</b>——下一顿照常吃，就是最温柔的重启。</div></div>';
+  // 步骤
+  var steps=[
+    {l:'①',t:'物理隔离（5分钟内）',b:'把剩余食物收起来/扔掉 → 离开吃东西的地方 → 喝一大杯温水',done:'收好了'},
+    {l:'②',t:'心理止损（说三句话）',b:'「这一顿已经发生了，我改变不了」「我不会因为这顿就前功尽弃」「我的下一顿饭会正常吃」',done:'说完了'},
+    {l:'③',t:'行为重启（安排下一顿）',b:'定下<b>下一顿饭的时间</b>和<b>吃什么</b>（哪怕只是一碗粥+鸡蛋）',done:'已安排'},
+  ];
+  for(var i=0;i<3;i++){
+    var s=steps[i];
+    var cls='step-card'+(bst.step===i?' active':'')+(bst.step>i?' done':'');
+    html+='<div class="'+cls+'"><div class="sc-head"><span>'+s.l+'</span> '+s.t+'</div>';
+    if(bst.step===i){
+      html+='<div class="sc-body">'+s.b+'</div>';
+      if(i<2){
+        html+='<div class="sc-action"><button class="btn" id="bstep'+i+'">'+s.done+' \u2713</button></div>';
+      }else{
+        html+='<div class="sc-body">下一顿时间：<input class="mc-field" id="nmTime" value="'+esc(bst.nextMealTime||'明天 08:00')+'" placeholder="如：明天 08:00"></div>';
+        html+='<div class="sc-body">下一顿吃什么：<input class="mc-field" id="nmFood" value="'+esc(bst.nextMealFood||'粥 + 鸡蛋 + 小菜')+'" placeholder="如：粥 + 鸡蛋"></div>';
+        html+='<div class="sc-action"><button class="btn" id="bstep2">✅ 安排好了，我要重启</button></div>';
+      }
+    }
+    if(bst.step>i){html+='<div class="sc-body" style="padding:0 12px 8px;color:var(--green2)">\u2713 已完成</div>';}
+    html+='</div>';
+  }
+  html+='<div class="card"><h2>💗 关于「麻痹期」</h2><div class="hint" style="line-height:1.7">你可能会想<b>不称体重、逃避、继续吃</b>——这很正常，是大脑的防御。<br>但请至少做<b>一件最小的事</b>：喝一杯温水 / 刷个牙 / 定下顿饭时间。<br>做完就算<b>打断惯性</b>，不需要立刻完美。</div></div>';
+  $('#inner-binge').innerHTML=html;
+  for(var j=0;j<2;j++){
+    var btn=$('#bstep'+j);
+    if(btn)btn.onclick=function(ev){
+      var idx=parseInt(ev.currentTarget.id.replace('bstep',''));
+      bst.step=idx+1;Store.set('bingeState',bst);renderBinge();
+    };
+  }
+  var b2=$('#bstep2');
+  if(b2){
+    b2.onclick=function(){
+      bst.nextMealTime=$('#nmTime').value||'';
+      bst.nextMealFood=$('#nmFood').value||'';
+      bst.step=3;Store.set('bingeState',bst);
+      // 记录暴食事件
+      var bs=Store.get('binges',[]);
+      bs.push({date:todayStr(),time:new Date().toTimeString().slice(0,5),nextMeal:bst.nextMealTime+' · '+bst.nextMealFood,note:'止损完成'});
+      Store.set('binges',bs);
+      Store.set('bingeStop',Store.get('bingeStop',0)+1);
+      Store.set('noPunish',Store.get('noPunish',0)+1);
+      // 标记今天正常日（重启）
+      var nd=Store.get('normalDays',{});nd[todayStr()]=true;Store.set('normalDays',nd);
+      addXP(10);checkBadges();
+      toast('🔄 重启完成 +10XP · 明天正常吃早餐');
+      setTimeout(function(){bst.step=0;Store.set('bingeState',bst);renderBinge()},2000);
+    };
+  }
+}
+
+/* ============ 冲动记录（可编辑/删除）============ */
+function renderImpulse(){
+  var imp=Store.get('impulses',[]);
+  var html='<div class="card"><h2>📝 冲动记录</h2><div class="hint">每次冲动来了记一笔。<b>只要记录，就算成功</b>——不要求你忍住。<br>可点击「编辑 / 删除」。</div></div>';
+  html+='<div class="card"><h2>＋ 记一笔</h2>';
+  html+='<div class="emotion-pick" id="impEm" style="grid-template-columns:repeat(4,1fr)"></div>';
+  html+='<input class="mc-field" id="impNote" placeholder="当时发生了什么？（可选，如：加班到9点，特别想吃）">';
+  html+='<label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:6px"><input type="checkbox" id="impDelay"> 我成功延迟了 / 用了替代法</label>';
+  html+='<button class="btn" id="impAdd" style="margin-top:8px">＋ 记录这次冲动</button></div>';
+  html+='<div id="impList"></div>';
+  $('#inner-impulse').innerHTML=html;
+  var ems=[{ic:'😰',n:'压力/焦虑'},{ic:'😔',n:'低落/空虚'},{ic:'😤',n:'愤怒'},{ic:'😶',n:'无聊'},{ic:'😞',n:'孤独'},{ic:'🥳',n:'庆祝'},{ic:'😩',n:'疲惫'},{ic:'💤',n:'深夜'}];
+  var emHtml='<div class="em" data-n="">＋ 不填</div>';
+  for(var i=0;i<ems.length;i++){emHtml+='<div class="em" data-n="'+ems[i].n+'"><span class="eic">'+ems[i].ic+'</span>'+ems[i].n+'</div>'}
+  $('#impEm').innerHTML=emHtml;
+  var picked='';
+  var emEls=$('#impEm').querySelectorAll('.em');
+  for(var e=0;e<emEls.length;e++){
+    emEls[e].onclick=function(ev){
+      picked=ev.currentTarget.getAttribute('data-n');
+      var all=$('#impEm').querySelectorAll('.em');
+      for(var x=0;x<all.length;x++){all[x].classList.remove('on')}
+      ev.currentTarget.classList.add('on');
+    };
+  }
+  $('#impAdd').onclick=function(){
+    var note=$('#impNote').value.trim();
+    var delayed=$('#impDelay').checked;
+    var rec={date:todayStr(),time:new Date().toTimeString().slice(0,5),emotion:picked,note:note,intensity:0,delayed:delayed};
+    imp.push(rec);Store.set('impulses',imp);
+    if(delayed)Store.set('delayCount',Store.get('delayCount',0)+1);
+    if(picked==='💤'||picked==='深夜')Store.set('nightAlt',Store.get('nightAlt',0)+1);
+    Store.set('observerCount',Store.get('observerCount',0)+1);
+    addXP(2);checkBadges();
+    toast('📝 记录了 +2XP');
+    $('#impNote').value='';$('#impDelay').checked=false;picked='';
+    drawImp();
+  };
+  function drawImp(){
+    var lh='';
+    if(imp.length===0){lh='<div class="empty-tip">还没有记录，下次冲动来了记一笔吧。</div>'}
+    var sorted=imp.slice().sort(function(a,b){return (b.date+''+b.time).localeCompare(a.date+''+a.time)});
+    for(var i=0;i<sorted.length;i++){
+      var r=sorted[i];
+      var realIdx=imp.indexOf(r);
+      lh+='<div class="rec"><div class="body"><div>'+(r.emotion?r.emotion+' · ':'')+(r.note||'冲动记录')+'</div><div class="t">'+fmtDate(r.date)+' '+r.time+(r.delayed?' · ✅ 成功延迟':'')+'</div></div><div class="acts"><button class="edit-btn" data-i="'+realIdx+'">编辑</button><button class="del-btn" data-i="'+realIdx+'">删除</button></div></div>';
+    }
+    $('#impList').innerHTML=lh;
+    var edits=$('#impList').querySelectorAll('.edit-btn');
+    for(var ed=0;ed<edits.length;ed++){
+      edits[ed].onclick=function(ev){
+        var i=parseInt(ev.currentTarget.getAttribute('data-i'));
+        var r=imp[i];
+        openRenameModal('',i,r.note||'',function(nv){
+          if(nv!==null){r.note=nv.trim();imp[i]=r;Store.set('impulses',imp);drawImp();toast('已更新')}
+        });
+      };
+    }
+    var dels=$('#impList').querySelectorAll('.del-btn');
+    for(var dl=0;dl<dels.length;dl++){
+      dels[dl].onclick=function(ev){
+        var i=parseInt(ev.currentTarget.getAttribute('data-i'));
+        openConfirmModal('删除这条记录？','删除后不可恢复，确定吗？',function(ok){
+          if(ok){imp.splice(i,1);Store.set('impulses',imp);drawImp();checkBadges()}
+        });
+      };
+    }
+  }
+  drawImp();
+}
+
+/* ============ 奖励殿堂（赛季 + 永久，更多永久徽章）============ */
+function renderReward(){
+  var si=seasonInfo();
+  var html='<div class="season-banner"><div class="big">'+si.label+' · 第 '+si.no+' 赛季</div><div style="font-size:11px;opacity:.9">赛季XP '+si.xp+' · 还剩 '+si.daysLeft+' 天 · '+si.range+'</div></div>';
+  html+='<div style="margin-bottom:8px"><div style="font-size:12px;font-weight:700">永久等级</div><div class="xp-bar"><i style="width:'+(permaLevel().lvl%10*10)+'%"></i></div><div style="font-size:11px;color:var(--gray)">Lv.'+permaLevel().lvl+' '+permaLevel().sym+' '+permaLevel().name+' · '+permaLevel().xp+' XP（永不重置）</div></div>';
+  // 本赛季徽章
+  html+='<div class="badge-section-title">🏆 本赛季徽章（日常可完成，赛季清零后重新解锁）</div>';
+  html+='<div class="badge-grid" id="seasonBadgeGrid"></div>';
+  // 永久徽章
+  html+='<div class="badge-section-title">👑 永久徽章（长期成就，永不清零 · 见证你的成长）</div>';
+  html+='<div class="badge-grid" id="permaBadgeGrid"></div>';
+  html+='<div style="text-align:center;margin-top:10px"><button class="btn ghost" id="newSeasonBtn" style="width:auto">🎉 手动开启新赛季（归档当前）</button></div>';
+  $('#inner-reward').innerHTML=html;
+  var sb=gotSeasonBadges();
+  var pb=gotPermaBadges();
+  var sHtml='',pHtml='';
+  for(var i=0;i<SEASON_BADGES.length;i++){var b=SEASON_BADGES[i];var got=sb.indexOf(b.id)>=0;sHtml+='<div class="badge '+(got?'got':'')+'"><div class="ic">'+b.ic+'</div><div class="nm">'+b.nm+'</div><div class="cd">'+(got?'已解锁':b.cd)+'</div></div>'}
+  for(var j=0;j<PERMA_BADGES.length;j++){var b2=PERMA_BADGES[j];var got2=pb.indexOf(b2.id)>=0;pHtml+='<div class="badge '+(got2?'got':'')+'"><div class="ic">'+b2.ic+'</div><div class="nm">'+b2.nm+'</div><div class="cd">'+(got2?'已解锁':b2.cd)+'</div></div>'}
+  $('#seasonBadgeGrid').innerHTML=sHtml;
+  $('#permaBadgeGrid').innerHTML=pHtml;
+  $('#newSeasonBtn').onclick=function(){
+    openConfirmModal('开启新赛季？','将归档当前赛季并清零赛季XP/赛季徽章（永久等级与永久徽章永不清零），确定？',function(ok){
+      if(ok){doNewSeason(false);renderReward();renderStats()}
+    });
+  };
+}
+
+/* ============ 统计 ============ */
+function renderStats(){
+  var imp=Store.get('impulses',[]);
+  var meals=Store.get('meals',{});
+  var totalDays=Object.keys(meals).length;
+  var streak=computeStreak();
+  var si=seasonInfo();
+  var pb=gotPermaBadges();
+  var insights=[
+    '🌱 你已经记录冲动 <b>'+imp.length+'</b> 次——觉察，是改变的第一步。',
+    '🔥 当前连续正常 <b>'+streak+'</b> 天。',
+    '📅 累计记录 <b>'+totalDays+'</b> 天饮食。',
+    '👑 永久成就已解锁 <b>'+pb.length+' / '+PERMA_BADGES.length+'</b> 枚。',
+  ];
+  var html='<div class="card"><h2>📊 我的统计</h2>';
+  html+='<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:8px">';
+  html+='<div class="season-banner" style="margin:0"><div class="big">'+streak+'</div><div style="font-size:10px">当前连续正常日</div></div>';
+  html+='<div class="season-banner" style="margin:0;background:linear-gradient(135deg,#34a853,#2e8b46)"><div class="big">'+permaLevel().lvl+'</div><div style="font-size:10px">永久等级 '+permaLevel().sym+'</div></div>';
+  html+='</div>';
+  html+='<div class="insight">'+insights.join('<br>')+'</div></div>';
+  // 情绪分布
+  html+='<div class="card"><h2>🎨 情绪分布</h2><div class="hint">哪些情绪最常引发冲动？（点击「应对中心 → 饮食情绪」针对性准备）</div><div id="emoDist"></div></div>';
+  $('#inner-stats').innerHTML=html;
+  var dist={};
+  for(var i=0;i<imp.length;i++){var em=imp[i].emotion||'未填';dist[em]=(dist[em]||0)+1}
+  var dh='';
+  var keys=Object.keys(dist);
+  if(keys.length===0)dh='<div class="empty-tip">记录越多，越能看到自己的规律。</div>';
+  for(var k=0;k<keys.length;k++){var em=keys[k];var cnt=dist[em];dh+='<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px"><span style="width:80px">'+esc(em)+'</span><div class="progress" style="flex:1;margin:0"><i style="width:'+Math.min(100,cnt*10)+'%"></i></div><span style="font-size:11px;color:var(--gray)">'+cnt+'</span></div>'}
+  $('#emoDist').innerHTML=dh;
+}
+function computeStreak(){
+  var nd=Store.get('normalDays',{});
+  var d=new Date();
+  var streak=0;
+  while(true){
+    var ds=d.toISOString().slice(0,10);
+    if(nd[ds]){streak++;d.setDate(d.getDate()-1)}
+    else{var meals=Store.get('meals',{});if(meals[ds]&&Object.keys(meals[ds]).length>=3){streak++;d.setDate(d.getDate()-1)}else break}
+  }
+  if(streak>Store.get('maxStreak',0)){Store.set('maxStreak',streak);checkBadges()}
+  return streak;
+}
+function saveNormalDay(){
+  var today=todayStr();
+  var dm=Store.get('meals',{})[today]||{};
+  var cnt=0;for(var k in dm){if(dm.hasOwnProperty(k))cnt++}
+  if(cnt>=3){
+    var nd=Store.get('normalDays',{});nd[today]=true;Store.set('normalDays',nd);
+    var streak=computeStreak();
+    if(streak>=3)award('sb_streak3');
+  }
+}
+
+/* ============ 设置（详细赛季规则 + 目录排序 + 备份）============ */
+function renderSettings(){
+  var order=Store.get('subOrder',{});
+  var html='<div class="card"><h2>📜 赛季规则（详细说明）</h2><div class="rule-box">';
+  html+='<div class="rule-sec"><div class="rule-t">⏰ 赛季周期</div><div class="rule-li">每 <b>3 个月</b> 为一个赛季，按<b>自然季度</b>划分：Q1(1-3月) / Q2(4-6月) / Q3(7-9月) / Q4(10-12月)。跨季度打开时<b>自动轮转</b>新赛季。</div></div>';
+  html+='<div class="rule-sec"><div class="rule-t">🔄 赛季清零（每3个月）</div><div class="rule-li">• 赛季 XP → 归零<br>• <b>本赛季徽章</b> → 重置，新赛季可<b>重新解锁</b>（保持新鲜感与短期目标）</div></div>';
+  html+='<div class="rule-sec"><div class="rule-t">🌟 永不清零（永久保留）</div><div class="rule-li">• <b>永久等级 Lv.</b>（每 10 XP 升 1 级，符号进阶 🌱→🌿→☀️→🌳→🌌）<br>• <b>累计总 XP</b><br>• <b>👑 永久徽章</b>（长期里程碑，永不重置，见证成长）<br>• 饮食打卡 / 日历 / 冲动 / 暴食 / 食谱等<b>所有记录</b></div></div>';
+  html+='<div class="rule-sec"><div class="rule-t">🎯 为什么这么设计</div><div class="rule-li">清零 ≠ 失去。赛季徽章给你<b>短期可完成的目标</b>（日常小动作）；永久徽章记录<b>真正了不起的里程碑</b>（连续30天、等级30、暴食后5次温柔重启…）。每 3 个月一条新的起跑线，但<b>过去的每一步都还在</b>。</div></div>';
+  html+='</div><div class="rule-note">💡 赛季清零不是「归零失败」，而是每3个月给自己一次重新出发的机会。你从没有白努力。</div></div>';
+  // 目录排序
+  html+='<div class="card"><h2">🔀 目录排序</h2><div class="hint">调整每个二级目录下的三级目录顺序。点 ↑ ↓ 移动，「保存排序」生效。</div><div id="sortArea"></div><button class="btn" id="saveSort" style="margin-top:6px">💾 保存排序</button><button class="btn ghost" id="resetSort" style="margin-top:6px">恢复默认</button></div>';
+  // 数据管理
+  html+='<div class="card"><h2>💾 数据管理</h2><div class="row"><button class="btn ghost" id="exportBtn" style="flex:1">导出备份</button><button class="btn ghost" id="importBtn" style="flex:1">导入恢复</button><button class="btn danger" id="clearBtn" style="flex:1">清空全部</button></div><input type="file" id="importFile" accept=".json" style="display:none"></div>';
+  $('#inner-settings').innerHTML=html;
+  // 排序
+  function drawSort(){
+    var sh='';
+    for(var i=0;i<NAV.length;i++){
+      var sec=NAV[i];
+      var ids=order[sec.id]||sec.subs.map(function(s){return s.id});
+      sh+='<div style="font-weight:700;font-size:12px;margin:8px 0 4px">'+sec.ic+' '+sec.nm+'</div>';
+      for(var j=0;j<ids.length;j++){
+        var sid=ids[j];
+        var nm=(sec.subs.filter(function(s){return s.id===sid})[0]||{}).nm||sid;
+        sh+='<div class="sort-item"><span class="drag">⣿</span><span class="nm">'+esc(nm)+'</span><span class="row" style="gap:4px"><button class="btn sm ghost mv" data-sec="'+sec.id+'" data-i="'+j+'" data-d="-1" '+(j===0?'disabled':'')+'>↑</button><button class="btn sm ghost mv" data-sec="'+sec.id+'" data-i="'+j+'" data-d="1" '+(j===ids.length-1?'disabled':'')+'>↓</button></span></div>';
+      }
+    }
+    $('#sortArea').innerHTML=sh;
+    var mvs=$('#sortArea').querySelectorAll('.mv');
+    for(var m=0;m<mvs.length;m++){
+      mvs[m].onclick=function(ev){
+        var btn=ev.currentTarget;
+        if(btn.disabled)return;
+        var sec=btn.getAttribute('data-sec');
+        var idx=parseInt(btn.getAttribute('data-i'));
+        var d=parseInt(btn.getAttribute('data-d'));
+        var ids=order[sec];
+        var tmp=ids[idx];ids[idx]=ids[idx+d];ids[idx+d]=tmp;
+        order[sec]=ids;Store.set('subOrder',order);drawSort();
+      };
+    }
+  }
+  drawSort();
+  $('#saveSort').onclick=function(){Store.set('subOrder',order);toast('✅ 排序已保存');renderNav()};
+  $('#resetSort').onclick=function(){
+    var def={};for(var i=0;i<NAV.length;i++){def[NAV[i].id]=NAV[i].subs.map(function(s){return s.id})}
+    Store.set('subOrder',def);order=def;drawSort();renderNav();toast('已恢复默认');
+  };
+  // 备份
+  $('#exportBtn').onclick=function(){
+    var data={};
+    var keys=['profile','weightLog','measures','meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','seasonNo','seasonKey','seasonXp','xp','normalDays','subOrder','delayCount','altUsed','noPunish','maxStreak','stopState','bingeState'];
+    for(var k=0;k<keys.length;k++){data[keys[k]]=Store.get(keys[k],null)}
+    var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='recovery-backup-'+(new Date().toISOString().slice(0,10))+'.json';
+    a.click();toast('已导出备份');
+  };
+  $('#importBtn').onclick=function(){$('#importFile').click()};
+  $('#importFile').onchange=function(ev){
+    var file=ev.target.files[0];if(!file)return;
+    var rd=new FileReader();
+    rd.onload=function(e){
+      try{
+        var d=JSON.parse(e.target.result);
+        for(var k in d){if(d.hasOwnProperty(k))Store.set(k,d[k])}
+        toast('已导入，即将刷新');setTimeout(function(){location.reload()},1000);
+      }catch(err){toast('文件格式错误')}
+    };
+    rd.readAsText(file);
+  };
+  $('#clearBtn').onclick=function(){
+    openConfirmModal('清空全部数据？','此操作不可撤销，所有打卡、记录、徽章都会清空！',function(ok){
+      if(!ok)return;
+      var keys=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','seasonNo','seasonKey','seasonXp','xp','normalDays','delayCount','altUsed','noPunish','maxStreak','stopState','bingeState'];
+      for(var k=0;k<keys.length;k++)Store.del(keys[k]);
+      toast('已清空');setTimeout(function(){location.reload()},800);
+    });
+  };
+}
+
+/* ============ 等级/Lvl 渲染 ============ */
+function renderLvl(){
+  var pl=permaLevel();
+  var el=$('#lvlBadge');if(el)el.textContent='Lv.'+pl.lvl+' '+pl.sym;
+  var si=seasonInfo();
+  var sync=$('#syncTxt');if(sync)sync.textContent='已同步 '+new Date().toLocaleTimeString('zh-CN',{hour12:false}).slice(0,5);
+  var wel=$('#welcome');if(wel)wel.textContent='「 '+ENCOURAGEMENTS[Math.floor(Math.random()*ENCOURAGEMENTS.length)]+' 」';
+}
+
+/* ============ 模态框 ============ */
+function openModal(html){
+  $('#modalPanel').innerHTML=html;
+  $('#modal').classList.add('show');
+}
+function closeModal(){
+  $('#modal').classList.remove('show');
+  $('#modalPanel').innerHTML='';
+}
+$('#modal').addEventListener('click',function(ev){if(ev.target===$('#modal'))closeModal()});
+
+// 内置「重命名」弹窗（替代 prompt，手机/微信浏览器不会弹窗被拦截）
+function openRenameModal(g,i,oldVal,cb){
+  var html='<h3>✏️ 改名方案</h3>'+
+    '<input id="renameInput" class="mc-field" value="'+esc(oldVal)+'" placeholder="输入新名字">'+
+    '<div class="row" style="margin-top:10px">'+
+      '<button class="btn danger" id="renameCancel" style="flex:1">取消</button>'+
+      '<button class="btn" id="renameOk" style="flex:1">保存</button>'+
+    '</div>';
+  openModal(html);
+  var inp=$('#renameInput');inp.focus();inp.select();
+  $('#renameOk').onclick=function(){var v=inp.value;closeModal();cb(v)};
+  $('#renameCancel').onclick=function(){closeModal();cb(null)};
+}
+// 内置「确认」弹窗（替代 confirm）
+function openConfirmModal(title,desc,cb){
+  var html='<h3>'+esc(title)+'</h3>'+
+    '<div class="hint" style="line-height:1.7">'+esc(desc)+'</div>'+
+    '<div class="row" style="margin-top:10px">'+
+      '<button class="btn danger" id="cfmCancel" style="flex:1">取消</button>'+
+      '<button class="btn" id="cfmOk" style="flex:1">确定</button>'+
+    '</div>';
+  openModal(html);
+  $('#cfmOk').onclick=function(){closeModal();cb(true)};
+  $('#cfmCancel').onclick=function(){closeModal();cb(false)};
+}
+
+/* ============ 全局暴露（供 onclick 内联 & 测试）============ */
+var App={
+  renderNav:renderNav,renderPage:renderPage,renderLvl:renderLvl,
+  renderCheckin:renderCheckin,renderRecipe:renderRecipe,renderCalendar:renderCalendar,
+  renderStop:renderStop,renderFoodmood:renderFoodmood,renderBinge:renderBinge,
+  renderImpulse:renderImpulse,renderWeight:renderWeight,renderProfile:renderProfile,renderMeasure:renderMeasure,renderReward:renderReward,renderStats:renderStats,renderSettings:renderSettings,
+  renderOverview:renderOverview,toast:toast,esc:esc,
+  init:init,doNewSeason:doNewSeason,seasonInfo:seasonInfo,permaLevel:permaLevel,
+  sync:function(){renderLvl()},
+  Store:Store,
+  resetStop:resetStop,
+  // 暴露给测试/调试的内部接口
+  isEmotionRelated:isEmotionRelated,
+  SEASON_BADGES:SEASON_BADGES,
+  PERMA_BADGES:PERMA_BADGES,
+  addXP:addXP,award:award,checkBadges:checkBadges,
+  computeStreak:computeStreak,
+};
+window.App=App;
+window.isEmotionRelated=isEmotionRelated;
+window.SEASON_BADGES=SEASON_BADGES;
+window.PERMA_BADGES=PERMA_BADGES;
+window.permaLevel=permaLevel;
+window.doNewSeason=doNewSeason;
+window.addXP=addXP;
+window.award=award;
+window.checkBadges=checkBadges;
+window.Store=Store;
+
+
+/* ============ 工具：体重相关 ============ */
+function getProfile(){return Store.get('profile',{nickname:'',gender:'女',age:'',height:'',startWeight:'',targetWeight:'',step:'0.2',calorie:'1500',motto:''})}
+function getWeightLog(){return Store.get('weightLog',[])}
+function sortedLog(){return getWeightLog().slice().sort(function(a,b){return a.date<b.date?-1:1})}
+function latestWeight(){var l=sortedLog();return l.length?l[l.length-1].weight:0}
+
+/* ============ 体重打卡（阶梯目标 · v10）============ */
+function renderWeight(){
+  var p=getProfile();
+  var log=getWeightLog();
+  var start=parseFloat(p.startWeight)||0;
+  var target=parseFloat(p.targetWeight)||0;
+  var step=parseFloat(p.step)||0.5;
+  var today=todayStr();
+  var todays=log.filter(function(w){return w.date===today});
+  var cur=todays.length?parseFloat(todays[todays.length-1].weight):(latestWeight()||start);
+  var isLose=start>target;
+  var total=start&&target?Math.abs(start-target):0;
+  // ★ 关键：用「整数格数」运算，彻底规避 60-59.6=0.3999999999999986 的浮点误差
+  var dec=Math.pow(10,(step.toString().split('.')[1]||'').length); // 步长小数位数→放大倍数(0.2→10,0.5→10)
+  var totalSteps=total>0?Math.ceil(Math.round(total*dec)/Math.round(step*dec)):0;
+  // 已走过的阶梯数：按"起始 - 当前"自动识别（不管中间是否打卡，都能定位）
+  var reached=start&&target?(isLose?(start-cur):(cur-start)):0;
+  var curStep=totalSteps>0?Math.max(0,Math.min(totalSteps,Math.round(reached/step))):0; // round 替代 floor，消除浮点
+  var nextStep=Math.min(totalSteps,curStep+1);
+  var nextWeight=totalSteps>0?(start+(isLose?-1:1)*(nextStep*step)):target;
+  nextWeight=Math.round(nextWeight*10)/10; // 显示规整到0.1
+  var doneKg=reached>0?reached:0;
+  var progressPct=total>0?Math.min(100,Math.max(0,doneKg/total*100)):0;
+
+  var html='';
+  html+='<div class="motd"><div class="big">👣 体重打卡</div><div class="sub">每一次记录，都是向目标迈进的一小步</div></div>';
+
+  /* ---- ① 今日体重（置顶，最显眼） ---- */
+  html+='<div class="fat-card weight-hero">';
+  html+='<div class="wh-top"><span class="wh-label">当前体重</span><span class="wh-value" id="whValue">'+(cur||'-')+'</span><span class="wh-unit">kg</span></div>';
+  html+='<div class="wh-goal">距目标 <b>'+(target?Math.max(0,Math.abs(cur-target)).toFixed(1)+' kg':'—')+'</b></div>';
+  html+='<div class="wh-input">';
+  html+='<input type="number" id="wtInput" step="0.1" placeholder="今天体重 kg" value="'+(cur||start||'')+'">';
+  html+='<button class="btn" id="wtSave">打卡</button>';
+  html+='</div>';
+  if(todays.length){html+='<div class="hint" style="color:var(--green2);margin-top:8px">✅ 今天已记录：'+todays.map(function(t){return t.weight+' kg'}).join('、')+'</div>'}
+  else{html+='<div class="hint" style="margin-top:8px">记录后自动推进阶梯 👇</div>'}
+  html+='</div>';
+
+  /* ---- ② 目标概览 ---- */
+  html+='<div class="fat-card"><h2>🎯 我的减重目标</h2>';
+  html+='<div class="goal-grid">';
+  html+='<div class="goal-item"><div class="lbl">起始</div><div class="val">'+(start||'-')+'</div></div>';
+  html+='<div class="goal-item"><div class="lbl">目标</div><div class="val">'+(target||'-')+'</div></div>';
+  html+='<div class="goal-item"><div class="lbl">步长</div><div class="val">'+step+'</div></div>';
+  html+='<div class="goal-item"><div class="lbl">总阶梯</div><div class="val">'+totalSteps+'</div></div>';
+  html+='</div>';
+  html+='<div class="mini-prog">进度 <b>'+progressPct.toFixed(0)+'%</b>（累计下降 '+doneKg.toFixed(1)+' kg）</div>';
+  html+='<div class="xp-bar"><i style="width:'+progressPct+'%"></i></div>';
+  html+='<div class="hint" style="margin-top:6px;text-align:center">💡 先去「我的档案」填好起始/目标体重，这里就会出现阶梯～</div></div>';
+
+  /* ---- ③ 阶梯进度（可折叠，默认收起） ---- */
+  var open=state.progressOpen?' open':'';
+  html+='<div class="fat-card ladder-wrap">';
+  html+='<div class="ladder-toggle" id="ladderToggle">';
+  html+='<span class="lt-left"><span class="ic">🪜</span><span>阶梯进度</span></span>';
+  html+='<span class="lt-right"><span class="muted">已走 '+curStep+' / '+totalSteps+' 阶</span><span class="lt-arrow'+open+'">▾</span></span>';
+  html+='</div>';
+  html+='<div class="ladder-body'+open+'" id="ladderBody">';
+  if(!start||!target){
+    html+='<div class="empty-tip">先在「我的档案」设置起始和目标体重～</div>';
+  }else{
+    var dir=isLose?-1:1;
+    html+='<div class="ladder-track" id="ladderTrack">';
+    // 从目标往上排：最上面 = 目标（最后一级），最下面 = 起始（#0）
+    for(var i=totalSteps;i>=0;i--){
+      var w=start+dir*(i*step);
+      var cls='ladder-row';
+      if(i<curStep)cls+=' done';
+      else if(i===curStep)cls+=' current';
+      else if(i===nextStep)cls+=' next';
+      var rec=log.filter(function(lg){return Math.abs(lg.weight-w)<step/2 })[0];
+      var dateStr=rec?fmtDate(rec.date):'';
+      html+='<div class="'+cls+'"><span class="lr-num">#'+(totalSteps-i)+'</span><span class="lr-w">'+w.toFixed(1)+' kg</span><span class="lr-dot">'+(i<curStep?'✓':(i===curStep?'●':''))+'</span><span class="lr-date">'+dateStr+'</span></div>';
+    }
+    html+='</div>';
+    html+='<div class="ladder-hint">➡️ 下一个目标：<b>'+nextWeight.toFixed(1)+' kg</b>（#'+(totalSteps-nextStep+1)+'）— 打卡会自动推进到这里</div>';
+  }
+  html+='</div></div>';
+
+  /* ---- ④ 历史记录 ---- */
+  html+='<div class="fat-card"><h2>📈 记录历史</h2><div class="wl-history" id="wlHistory"></div></div>';
+  $('#inner-weight').innerHTML=html;
+
+  // 折叠交互
+  var tog=$('#ladderToggle');if(tog){tog.onclick=function(){
+    state.progressOpen=!state.progressOpen;renderWeight();
+  }}
+
+  // 历史渲染
+  function drawHistory(){
+    var h=$('#wlHistory');if(!h)return;
+    var l=sortedLog().slice().reverse();
+    if(!l.length){h.innerHTML='<div class="empty-tip">还没有记录～每天称一次就好</div>';return}
+    var hh='';
+    for(var i=0;i<l.length;i++){
+      var r=l[i];
+      var prev=l[i+1];
+      var diff=prev?(r.weight-prev.weight):0;
+      var dStr=diff>0.001?'<span style="color:var(--red)">↑'+diff.toFixed(1)+'</span>':'<span style="color:var(--green)">↓'+Math.abs(diff).toFixed(1)+'</span>';
+      hh+='<div class="wl-item"><span class="t">'+fmtDate(r.date)+'</span><span class="w">'+r.weight+' kg</span><span class="d">'+(prev?dStr:'起始')+'</span><span class="ac"><a data-d="'+r.date+'">删除</a></span></div>';
+    }
+    h.innerHTML=hh;
+    var dels=h.querySelectorAll('[data-d]');
+    for(var d=0;d<dels.length;d++){
+      dels[d].onclick=function(ev){
+        var dd=ev.currentTarget.getAttribute('data-d');
+        openConfirmModal('删除这条体重记录？','删除后不可恢复',function(ok){
+          if(ok){var nl=getWeightLog().filter(function(x){return x.date!==dd});Store.set('weightLog',nl);renderWeight();checkBadges();toast('已删除')}
+        });
+      };
+    }
+  }
+  drawHistory();
+
+  // 保存体重（自动推进阶梯）
+  var saveBtn=$('#wtSave');
+  if(saveBtn){saveBtn.onclick=function(){
+    var v=parseFloat($('#wtInput').value);
+    if(!v||v<=0){toast('请输入有效体重');return}
+    var nl=getWeightLog().filter(function(x){return x.date!==today});
+    nl.push({date:today,weight:v});
+    Store.set('weightLog',nl);
+    addXP(2);toast('⚖️ 体重已记录 +2XP');
+    renderWeight();checkBadges();
+  }}
+
+  // 更新概览里的当前值
+  var wh=$('#whValue');if(wh)wh.textContent=(cur||'-');
+}
+
+
+/* ============ 我的档案（基本信息）============ */
+function renderProfile(){
+  var p=getProfile();
+  var html='<div class="motd"><div class="big">📋 我的档案</div><div class="sub">填好这些信息，体重打卡和食谱建议会更准</div></div>';
+  html+='<div class="fat-card"><h2>👤 基本信息</h2>';
+  html+='<div class="field-row"><span class="lbl">昵称</span><input class="field" id="f_nickname" value="'+esc(p.nickname||'')+'" placeholder="如：绵绵"></div>';
+  html+='<div class="field-row"><span class="lbl">性别</span><select class="field" id="f_gender"><option '+(p.gender==='女'?'selected':'')+'>女</option><option '+(p.gender==='男'?'selected':'')+'>男</option></select></div>';
+  html+='<div class="field-row"><span class="lbl">年龄</span><input class="field" type="number" id="f_age" value="'+esc(p.age||'')+'" placeholder="岁"></div>';
+  html+='<div class="field-row"><span class="lbl">身高</span><input class="field" type="number" id="f_height" value="'+esc(p.height||'')+'" placeholder="cm"></div>';
+  html+='<div class="field-row"><span class="lbl">起始体重</span><input class="field" type="number" id="f_startWeight" step="0.1" value="'+esc(p.startWeight||'')+'" placeholder="kg"></div>';
+  html+='<div class="field-row"><span class="lbl">目标体重</span><input class="field" type="number" id="f_targetWeight" step="0.1" value="'+esc(p.targetWeight||'')+'" placeholder="kg"></div>';
+  html+='<div class="field-row"><span class="lbl">阶梯步长</span><input class="field" type="number" id="f_step" step="0.1" value="'+esc(p.step||'0.2')+'" placeholder="每阶梯 kg 数"></div>';
+  html+='<div class="field-row"><span class="lbl">每日热量</span><input class="field" type="number" id="f_calorie" value="'+esc(p.calorie||'1500')+'" placeholder="千卡"></div>';
+  html+='<div class="field-row" style="align-items:flex-start"><span class="lbl" style="padding-top:8px">个性签名<br>/目标宣言</span><textarea class="field" id="f_motto" rows="2" placeholder="写下你想对自己说的话…">'+esc(p.motto||'')+'</textarea></div>';
+  html+='<button class="btn" id="profileSave" style="margin-top:6px">💾 保存档案</button></div>';
+  // 预览
+  html+='<div class="fat-card"><h2>🌱 减脂小档案</h2><div class="hint" id="profilePreview">填写后这里会生成你的专属卡片～</div></div>';
+  $('#inner-profile').innerHTML=html;
+
+  function drawPreview(){
+    var pp=getProfile();
+    var el=$('#profilePreview');if(!el)return;
+    if(!pp.startWeight||!pp.targetWeight){el.innerHTML='填好「起始体重」和「目标体重」后，这里会显示你的减脂路线～';return}
+    var st=parseFloat(pp.startWeight),tg=parseFloat(pp.targetWeight);
+    var diff=Math.abs(st-tg);var step=parseFloat(pp.step)||0.2;
+    var steps=Math.ceil(diff/step);
+    el.innerHTML='向着 <b>'+tg+' kg</b> 出发 · 一共 <b>'+steps+'</b> 个小阶梯<br>每完成一个都是进步，慢一点也没关系。';
+  }
+  drawPreview();
+
+  $('#profileSave').onclick=function(){
+    var np={
+      nickname:$('#f_nickname').value.trim(),
+      gender:$('#f_gender').value,
+      age:$('#f_age').value,
+      height:$('#f_height').value,
+      startWeight:$('#f_startWeight').value,
+      targetWeight:$('#f_targetWeight').value,
+      step:$('#f_step').value||'0.2',
+      calorie:$('#f_calorie').value||'1500',
+      motto:$('#f_motto').value.trim(),
+    };
+    Store.set('profile',np);
+    // 若起始/目标齐全且无体重记录，自动补一条起始体重
+    var log=getWeightLog();
+    if(np.startWeight&&log.length===0){
+      log.push({date:todayStr(),weight:parseFloat(np.startWeight)});
+      Store.set('weightLog',log);
+    }
+    toast('✅ 档案已保存');
+    drawPreview();
+    renderWeight();
+  };
+}
+
+/* ============ 围度测量 ============ */
+function renderMeasure(){
+  var list=Store.get('measures',[]);
+  var fields=[['上臂','cm'],['腰围','cm'],['腹围','cm'],['臀围','cm'],['大腿','cm'],['小腿','cm']];
+  var html='<div class="motd"><div class="big">📏 围度测量</div><div class="sub">体重会波动，围度更能反映真实的身体变化</div></div>';
+  html+='<div class="fat-card"><h2>＋ 记录一次围度</h2><div class="hint">不用每次都全填，有空就记。</div><div class="measure-grid" id="measureGrid"></div><button class="btn" id="msSave" style="margin-top:8px">💾 保存这次测量</button></div>';
+  html+='<div class="fat-card"><h2>📊 最新一次 vs 首次</h2><div class="measure-grid" id="msCompare"></div></div>';
+  html+='<div class="fat-card"><h2>🗂️ 历史记录</h2><div style="overflow-x:auto"><table class="measure-table" id="msTable"></table></div></div>';
+  $('#inner-measure').innerHTML=html;
+
+  // 输入网格
+  var gh='';
+  for(var i=0;i<fields.length;i++){
+    gh+='<div class="measure-item"><div class="mi-lbl">'+fields[i][0]+' ('+fields[i][1]+')</div><input type="number" step="0.1" id="ms_'+i+'" placeholder="-"></div>';
+  }
+  $('#measureGrid').innerHTML=gh;
+  // 预填最新一次
+  if(list.length){
+    var last=list[list.length-1];
+    for(var li=0;li<fields.length;li++){var inp=$('#ms_'+li);if(inp&&last[fields[li][0]]!=null)inp.value=last[fields[li][0]]}
+  }
+
+  $('#msSave').onclick=function(){
+    var rec={date:todayStr()};var filled=false;
+    for(var fi=0;fi<fields.length;fi++){var v=parseFloat($('#ms_'+fi).value);if(v>0){rec[fields[fi][0]]=v;filled=true}}
+    if(!filled){toast('至少填一项～');return}
+    list.push(rec);Store.set('measures',list);
+    addXP(2);toast('📏 围度已记录 +2XP');renderMeasure();checkBadges();
+  };
+
+  // 对比
+  function drawCompare(){
+    var c=$('#msCompare');if(!c)return;
+    if(list.length<1){c.innerHTML='<div class="empty-tip">记录两次以上就能看到对比啦～</div>';return}
+    var first=list[0],last=list[list.length-1];var ch='';
+    for(var i=0;i<fields.length;i++){
+      var f=fields[i][0];
+      var a=first[f],b=last[f];
+      var diff=(a!=null&&b!=null)?(a-b):null;
+      var dStr=diff==null?'—':(diff>0?'<span style="color:var(--green)">↓'+diff.toFixed(1)+'</span>':(diff<0?'<span style="color:var(--red)">↑'+Math.abs(diff).toFixed(1)+'</span>':'→0'));
+      ch+='<div class="measure-item"><div class="mi-lbl">'+f+'</div><div class="mi-val">'+(b!=null?b:'—')+' <span style="font-size:9px;color:var(--gray)">'+(diff==null?'':diff>0?'↓':'')+'</span></div><div class="mi-lbl">'+dStr+'</div></div>';
+    }
+    c.innerHTML=ch;
+  }
+  drawCompare();
+
+  // 历史表格
+  function drawTable(){
+    var t=$('#msTable');if(!t)return;
+    if(!list.length){t.innerHTML='<div class="empty-tip">还没有记录～</div>';return}
+    var th='<tr><th>日期</th>';for(var i=0;i<fields.length;i++)th+='<th>'+fields[i][0]+'</th>';th+='<th>操作</th></tr>';
+    var rows='';
+    var rev=list.slice().reverse();
+    for(var r=0;r<rev.length;r++){
+      var rec=rev[r];
+      rows+='<tr><td>'+fmtDate(rec.date)+'</td>';
+      for(var i=0;i<fields.length;i++){rows+='<td>'+(rec[fields[i][0]]!=null?rec[fields[i][0]]:'-')+'</td>'}
+      rows+='<td><a style="color:var(--red);cursor:pointer" data-d="'+rec.date+'">删除</a></td></tr>';
+    }
+    t.innerHTML=th+rows;
+    var dels=t.querySelectorAll('[data-d]');
+    for(var d=0;d<dels.length;d++){
+      dels[d].onclick=function(ev){
+        var dd=ev.currentTarget.getAttribute('data-d');
+        openConfirmModal('删除这次围度？','删除后不可恢复',function(ok){
+          if(ok){var nl=Store.get('measures',[]).filter(function(x){return x.date!==dd});Store.set('measures',nl);renderMeasure();checkBadges();toast('已删除')}
+        });
+      };
+    }
+  }
+  drawTable();
+}
+
+
+/* ============ 初始化 ============ */
+function init(){
+  initData();
+  checkSeasonRollover();
+  // 陪伴徽章：累计打开天数
+  var od=Store.get('openDays',0)+1;Store.set('openDays',od);
+  // 初始化默认子目录
+  for(var i=0;i<NAV.length;i++){if(!state.sub[NAV[i].id]){state.sub[NAV[i].id]=NAV[i].subs[0].id}}
+  renderNav();
+  renderPage();
+  renderLvl();
+  checkBadges();
+  // 每天首次打开：标记正常日（只要打开=在努力）
+  var today=todayStr();
+  var meals=Store.get('meals',{});
+  if(!meals[today]){meals[today]={};Store.set('meals',meals)}
+  console.log('[Recovery Workbench] ready. Lv.'+permaLevel().lvl);
+}
+
+// 启动（多重兜底，确保事件一定绑上）
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init)}
+else{init()}
+window.addEventListener('load',function(){if(!App._inited){App._inited=true;init()}});
+setTimeout(function(){if(!App._inited){App._inited=true;init()}},0);
+
+</script>
+
+<script>
+/* 悦己享瘦 v8 增强补丁 - 趋势图/阶梯徽章/全局联动/下载修复 */
+(function(){
+'use strict';
+function safe(fn){try{return fn();}catch(e){return undefined;}}
+var bus={};
+window.EV={
+  on:function(ev,fn){(bus[ev]=bus[ev]||[]).push(fn);},
+  emit:function(ev){(bus[ev]=bus[ev]||[]).forEach(function(fn){try{fn();}catch(e){}});}
+};
+function hookRenderPage(){
+  if(typeof window.renderPage!=='function')return;
+  var orig=window.renderPage;
+  window.renderPage=function(){
+    orig.apply(window,arguments);
+    var sec=window.state&&window.state.sec;
+    var id=sec&&window.state.sub?window.state.sub[sec]:null;
+    if(id)EV.emit('page:'+id);
+    EV.emit('render');
+  };
+}
+function weightLog(){return Store.get('weightLog',[]);}
+function measures(){return Store.get('measures',[]);}
+function profile(){return Store.get('profile',{});}
+function stairsDone(){
+  var p=profile();
+  var start=parseFloat(p.startWeight),goal=parseFloat(p.targetWeight),step=parseFloat(p.step)||0.5;
+  var log=weightLog();
+  if(!(start>0)||!(goal>0)||!log.length)return 0;
+  var cur=parseFloat(log[log.length-1].weight);
+  if(!(cur>0))return 0;
+  var dropped=start-cur;
+  if(dropped<=0)return 0;
+  return Math.floor(dropped/step);
+}
+function currentWeight(){
+  var log=weightLog();
+  if(!log.length)return null;
+  return parseFloat(log[log.length-1].weight);
+}
+function droppedKg(){
+  var p=profile();var cur=currentWeight();
+  if(!(p.startWeight>0)||cur==null)return 0;
+  return Math.max(0,parseFloat(p.startWeight)-cur);
+}
+function svgEl(tag,attrs){
+  var e=document.createElementNS('http://www.w3.org/2000/svg',tag);
+  for(var k in attrs){if(attrs.hasOwnProperty(k))e.setAttribute(k,attrs[k]);}
+  return e;
+}
+function buildLineChart(series,opts){
+  opts=opts||{};
+  var W=opts.W||320,H=opts.H||160,pl=34,pr=12,pt=12,pb=24;
+  var iw=W-pl-pr,ih=H-pt-pb;
+  var svg=svgEl('svg',{viewBox:'0 0 '+W+' '+H,class:'chart-svg'});
+  for(var g=0;g<=4;g++){
+    var gy=pt+ih*g/4;
+    svg.appendChild(svgEl('line',{x1:pl,x2:W-pr,y1:gy,y2:gy,stroke:'#eef2ee','stroke-width':1}));
+  }
+  var all=[];
+  series.forEach(function(s){s.data.forEach(function(p){if(p.v!=null)all.push(p.v);});});
+  if(!all.length)return svg;
+  var minV=Math.min.apply(null,all),maxV=Math.max.apply(null,all),span=(maxV-minV)||1;
+  minV-=span*0.15;maxV+=span*0.15;span=maxV-minV;
+  function px(p){
+    var x=pl+(series[0].data.length<=1?0:(p.i/(series[0].data.length-1)))*iw;
+    var y=pt+(1-(p.v-minV)/span)*ih;
+    return [x,y];
+  }
+  for(var t=0;t<=4;t++){
+    var tv=minV+span*t/4,ty=pt+ih*(1-t/4);
+    var tx=svgEl('text',{x:4,y:ty+4,fill:'#9aa69a','font-size':9});
+    tx.textContent=tv.toFixed(1);svg.appendChild(tx);
+  }
+  series.forEach(function(s){
+    if(!s.data.length)return;
+    var d='';
+    s.data.forEach(function(p,i){
+      var xy=px({i:i,v:p.v});
+      d+=(i===0?'M':'L')+xy[0].toFixed(1)+','+xy[1].toFixed(1)+' ';
+    });
+    svg.appendChild(svgEl('path',{d:d,fill:'none',stroke:s.color,'stroke-width':2.2,'stroke-linecap':'round'}));
+    s.data.forEach(function(p,i){
+      var xy=px({i:i,v:p.v});
+      svg.appendChild(svgEl('circle',{cx:xy[0],cy:xy[1],r:2.6,fill:s.color}));
+    });
+  });
+  return svg;
+}
+// [v10] 趋势图已按需求移除，保留空壳避免旧引用报错
+function renderTrendCard(mountEl){ var d=document.createElement('div'); d.textContent=''; if(mountEl)mountEl.appendChild(d); }
+function renderTrendCard_disabled(mountEl){
+  var log=weightLog().slice().sort(function(a,b){return a.date<b.date?-1:1;});
+  var mes=measures().slice().sort(function(a,b){return a.date<b.date?-1:1;});
+  var wl=log.slice(-30).map(function(p,i){return {i:i,v:parseFloat(p.weight)};});
+  var waist=mes.slice(-30).map(function(p,i){
+    var v=parseFloat(p['腰围']||p.waist||0);return {i:i,v:v};
+  }).filter(function(p){return p.v>0;});
+  var card=document.createElement('div');
+  card.className='chart-card';
+  card.innerHTML='<div class="chart-title">📈 体重 & 围度趋势</div>'+
+    '<div class="chart-legend"><span>🟢 体重 (kg)</span>'+(waist.length?'<span>🟠 腰围 (cm)</span>':'')+'</div>';
+  var series=[{color:'#4caf7d',data:wl}];
+  if(waist.length)series.push({color:'#f0a04b',data:waist});
+  if(wl.length||waist.length){card.appendChild(buildLineChart(series));}
+  else{
+    card.innerHTML+='<div class="hint" style="text-align:center;padding:30px 0">记录体重 / 围度后，这里会画出你的变化曲线 ✨<br><span style="font-size:11px">趋势比单次数字更重要——体重会波动，持续向下就是胜利</span></div>';
+  }
+  mountEl.appendChild(card);
+}
+var STAIR_BADGES=[
+  {n:10,ic:'🪜',nm:'初见成效'},{n:20,ic:'🌱',nm:'小苗破土'},
+  {n:30,ic:'🌿',nm:'渐入佳境'},{n:50,ic:'☀️',nm:'阳光普照'},
+  {n:80,ic:'🌳',nm:'绿树成荫'},{n:100,ic:'🎯',nm:'百阶达成'},
+  {n:150,ic:'💎',nm:'坚定不移'},{n:200,ic:'👑',nm:'减重大师'}
+];
+function renderStairBadges(mountEl){
+  if(!mountEl)return;
+  var done=stairsDone();
+  var next=STAIR_BADGES.filter(function(b){return done<b.n;})[0]||{n:'全部',nm:'已达成'};
+  var pct=Math.min(100, Math.round(done/200*100));
+  var card=document.createElement('div');
+  card.className='chart-card';
+  card.innerHTML=
+    '<div class="chart-title">🏅 减重阶梯徽章</div>'+
+    '<div class="hint" style="margin-bottom:2px">已完成 <b style="color:var(--green)">'+done+'</b> 阶 · 累计下降 <b>'+droppedKg().toFixed(1)+' kg</b></div>'+
+    '<div class="stair-progress"><i style="width:'+pct+'%"></i></div>'+
+    '<div class="stair-next">下一枚：<b>'+(next.n==='全部'?'全部解锁 🎉':'再走 '+(next.n-done)+' 阶 → '+next.ic+' '+next.nm)+'</b></div>';
+  var row=document.createElement('div');
+  row.className='stair-badge-row';
+  STAIR_BADGES.forEach(function(b){
+    var got=done>=b.n;
+    var el=document.createElement('div');
+    el.className='stair-badge'+(got?' got':'');
+    el.innerHTML='<div class="ic">'+b.ic+'</div><div class="nm">'+b.nm+'</div><div class="cd">'+b.n+'阶</div>';
+    row.appendChild(el);
+  });
+  card.appendChild(row);
+  card.innerHTML+='<div class="hint" style="margin-top:10px;font-size:10px">💡 每减重一个「步长」= 1 阶，每 10 阶解锁一枚。阶梯徽章是<b>永久成就</b>，永不重置。</div>';
+  mountEl.appendChild(card);
+}
+function injectStairToReward(){
+  var inner=document.getElementById('inner-reward');
+  if(!inner||inner.querySelector('.v8-stair-in-reward'))return;
+  var wrap=document.createElement('div');
+  wrap.className='v8-stair-in-reward';
+  var anchor=inner.querySelector('.perma-title,.badge-section-title');
+  if(anchor&&anchor.nextSibling)inner.insertBefore(wrap,anchor.nextSibling);
+  else inner.appendChild(wrap);
+  renderStairBadges(wrap);
+}
+function injectTrendTo(subId){
+  var inner=document.getElementById('inner-'+subId);
+  if(!inner||inner.querySelector('.v8-trend'))return;
+  var wrap=document.createElement('div');
+  wrap.className='v8-trend';
+  inner.appendChild(wrap);
+  renderTrendCard(wrap);
+}
+function overviewExtras(){
+  var inner=document.getElementById('inner-overview');
+  if(!inner||inner.querySelector('.v8-overview'))return;
+  var today=window.todayStr?todayStr():new Date().toISOString().slice(0,10);
+  var log=weightLog();
+  var todays=log.filter(function(p){return p.date===today;});
+  var cur=todays.length?parseFloat(todays[todays.length-1].weight):(log.length?parseFloat(log[log.length-1].weight):null);
+  var mes=measures();
+  var todayMes=mes.filter(function(p){return p.date===today;});
+  var lastMes=todayMes.length?todayMes[todayMes.length-1]:(mes.length?mes[mes.length-1]:null);
+  var card=document.createElement('div');
+  card.className='card v8-overview';
+  card.innerHTML=
+    '<h2>👣 今日减脂足迹</h2>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
+      '<div class="mini-stat" style="flex:1;min-width:80px"><div class="num">'+(cur!=null?cur:'—')+'</div><div class="lb">'+(cur!=null?'体重 kg':'今日未称')+'</div></div>'+
+      '<div class="mini-stat" style="flex:1;min-width:80px"><div class="num">'+(lastMes&&lastMes['腰围']?lastMes['腰围']:'—')+'</div><div class="lb">腰围 cm</div></div>'+
+      '<div class="mini-stat" style="flex:1;min-width:80px"><div class="num">'+stairsDone()+'</div><div class="lb">已完成阶梯</div></div>'+
+    '</div>'+
+    '<div class="link-row">'+
+      '<span class="link-chip" data-go="weight">⚖️ 记录体重</span>'+
+      '<span class="link-chip" data-go="measure">📏 量围度</span>'+
+      '<span class="link-chip" data-go="reward">🏆 看徽章</span>'+
+    '</div>'+
+    '<div class="insight" id="v8Insight"></div>';
+  var first=inner.querySelector('.card');
+  if(first&&first.nextSibling)inner.insertBefore(card,first.nextSibling);
+  else inner.appendChild(card);
+  var ins=document.getElementById('v8Insight');
+  if(ins){
+    var p=profile();var txt='每一次记录都是对自己的温柔照顾 🌱';
+    if(cur!=null&&p.targetWeight&&cur<=parseFloat(p.targetWeight))txt='🎉 已经达到目标体重啦！接下来专注维持与围度变化～';
+    else if(cur!=null&&p.startWeight){var d=droppedKg().toFixed(1);if(d>0)txt='已经累计下降 '+d+' kg 了，身体正在慢慢变轻盈 ✨';}
+    var sd=stairsDone();
+    if(sd>=10&&sd<20)txt='🪜 已解锁第一枚阶梯徽章，小步快跑！';
+    else if(sd>=100)txt='🎯 百阶达成！你比想象中更有毅力 💪';
+    ins.textContent=txt;
+  }
+  card.querySelectorAll('.link-chip').forEach(function(c){
+    c.onclick=function(){
+      var go=c.getAttribute('data-go');
+      if(window.switchSec){
+        switchSec(go==='reward'?'成长':'足迹');
+        if(window.renderSubNav)renderSubNav();
+      }
+    };
+  });
+}
+function fixExport(){
+  document.addEventListener('click',function(ev){
+    var btn=ev.target.closest&&ev.target.closest('#exportBtn');
+    if(!btn)return;
+    ev.preventDefault();ev.stopPropagation();
+    var data={};
+    var keys=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll',
+      'altUsed','delayCount','noPunish','normalDays','profile','weightLog','measures',
+      'subOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount',
+      'breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak'];
+    keys.forEach(function(k){data[k]=Store.get(k,null);});
+    var json=JSON.stringify({__yueji:'backup',ver:8,time:new Date().toISOString(),data:data},null,2);
+    try{
+      var blob=new Blob([json],{type:'application/json'});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      a.href=url;a.download='悦己享瘦-备份-'+new Date().toISOString().slice(0,10)+'.json';
+      document.body.appendChild(a);a.click();
+      setTimeout(function(){URL.revokeObjectURL(url);a.remove();},1500);
+      if(window.toast)toast('✅ 备份已开始下载');
+    }catch(e){
+      try{
+        var w=window.open('');
+        w.document.write('<pre>'+json+'</pre>');
+        if(window.toast)toast('已在新窗口打开备份，请手动另存为');
+      }catch(e2){
+        if(window.toast)toast('导出失败：请用 Chrome / Safari 直接打开本文件');
+      }
+    }
+  },true);
+}
+// 全局错误收集器（打不开时可在控制台看到具体报错）
+window.__yjerr=function(msg){console.error('[悦己享瘦]',msg);
+  var el=document.getElementById('bootError');if(el){el.style.display='block';el.textContent=msg;}};
+window.addEventListener('error',function(ev){window.__yjerr(ev.message);});
+function boot(){
+  try{hookRenderPage();}catch(e){window.__yjerr('hookRenderPage: '+e.message)}
+  // 趋势图已移除，不再挂载 injectTrendTo
+  try{EV.on('page:overview',function(){overviewExtras();});}catch(e){}
+  try{EV.on('page:reward',function(){injectStairToReward();});}catch(e){}
+  try{fixExport();}catch(e){window.__yjerr('fixExport: '+e.message)}
+  setTimeout(function(){try{if(document.getElementById('inner-overview'))overviewExtras();}catch(e){}},250);
+  console.log('[悦己享瘦 v10] boot done');
+}
+// v9：暴露给页面内部调用（同 IIFE 作用域，供 reward/weight 页触发）
+window.renderStairBadges=renderStairBadges;
+window.injectStairToReward=injectStairToReward;
+
+/* v9 数据迁移：把旧存档里疑似旧单位(>100)的数值自动换算成 kg */
+(function(){
+  try{
+    var sw=Store.get('profile',{});
+    // 判定为旧单位：数值 > 100（kg 下人体重极少超过 100，而旧单位通常在 100~200 之间）
+    var fix=function(v){ var n=parseFloat(v); return (v&&!isNaN(n)&&n>100)? (n/2).toFixed(1) : v; };
+    var changed=false;
+    if(sw.startWeight){sw.startWeight=fix(sw.startWeight);changed=true;}
+    if(sw.targetWeight){sw.targetWeight=fix(sw.targetWeight);changed=true;}
+    if(!sw.step||parseFloat(sw.step)<0.05){sw.step='0.5';changed=true;}
+    if(changed){Store.set('profile',sw);}
+  }catch(e){}
+})();
+window.__v8boot=boot;
+function wait(){
+  if(typeof Store!=='undefined'&&typeof renderLvl==='function'&&typeof renderNav==='function'){
+    try{init();}catch(e){window.__yjerr && window.__yjerr('init: '+e.message)}
+  }
+  else if(document.readyState!=='complete'){window.addEventListener('load',wait);}
+  else{setTimeout(wait,60);}
+}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',wait);}
+else{wait();}
+})();
+
+</script>
+</body>
+</html>
