@@ -782,6 +782,9 @@ function renderCheckin(){
   html+='<div class="card"><h2>📌 核心提醒</h2><div class="hint" style="line-height:1.7">• 每餐都吃，<b>不要饿着自己</b>（饿是暴食的最大诱因）<br>• 吃到七八分饱即可<br>• 下面只是<b>参考建议</b>，你有更重要——吃了就是成功</div></div>';
   $('#inner-checkin').innerHTML=html;
 
+  // 把 drawList 挂到 window，供食谱选择弹窗等外部调用（否则 openRecipePicker 里访问不到）
+  var __drawList=null;
+
   function drawList(){
     var mh='';
     var done=0,totalKcal=0;
@@ -844,6 +847,7 @@ function renderCheckin(){
       };
     }
   }
+  __drawList=drawList;
   drawList();
   state.rendered.checkin=true;
 }
@@ -889,7 +893,7 @@ function openRecipePicker(mealId){
       meals[today][mid]={desc:desc,kcal:cur.kcal||0};
       Store.set('meals',meals);
       closeModal();
-      drawList();
+      if(typeof drawList==='function')drawList(); else if(window.__drawList)window.__drawList();
       toast('已填入「'+mealId+'」');checkMeal5();saveNormalDay();
     };
   }
