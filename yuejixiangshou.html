@@ -338,7 +338,7 @@ var Store={
 };
 
 /* ============ 与成长小树云端同步 ============ */
-var YJXS_SYNC_KEYS=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','altUsed','delayCount','noPunish','normalDays','profile','weightLog','measures','subOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount','breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak','xp','seasonXp','seasonKey','seasons','stopFromStop','bingeState','bingeStop'];
+var YJXS_SYNC_KEYS=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','altUsed','delayCount','noPunish','normalDays','profile','weightLog','measures','subOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount','breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak','xp','seasonXp','seasonKey','seasons','stopFromStop','bingeState','bingeStop','fatCheckins','fatStages','fatCurStage'];
 var __yjxs_notifyTimer=null;
 function yjxsExportAll(){
   var data={};
@@ -516,7 +516,6 @@ var NAV=[
     {id:'binge',nm:'暴食止损'},
   ]},
   {id:'grow',ic:'🌿',nm:'成长中心',subs:[
-    {id:'impulse',nm:'冲动记录'},
     {id:'reward',nm:'奖励殿堂'},
     {id:'stats',nm:'我的统计'},
     {id:'settings',nm:'设置'},
@@ -525,6 +524,8 @@ var NAV=[
     {id:'weight',nm:'体重打卡'},
     {id:'profile',nm:'我的档案'},
     {id:'measure',nm:'围度测量'},
+    {id:'stage',nm:'阶段目标'},
+    {id:'cal',nm:'足迹日历'},
   ]},
 ];
 
@@ -610,7 +611,10 @@ function initData(){
   if(!Store.get('bingeState',null))Store.set('bingeState',{step:0,nextMealTime:'',nextMealFood:''});
   if(!Store.get('seasonNo',null))Store.set('seasonNo',1);
   if(!Store.get('seasonXp',null))Store.set('seasonXp',0);
-  if(!Store.get('seasonKey',null))Store.set('seasonKey',currentQuarter().key);
+  if(!Store.get('seasonKey',null))Store.set('seasonKey',curQuarter().key);
+  if(!Store.get('fatCheckins',null))Store.set('fatCheckins',{}); // {日期:true} 阶段每日打卡
+  if(!Store.get('fatStages',null))Store.set('fatStages',[]);     // [{name,target,startDate,done,doneDate}]
+  if(!Store.get('fatCurStage',null))Store.set('fatCurStage',0);  // 当前进行中的阶段下标
 }
 
 /* ============ 徽章判定 ============ */
@@ -702,7 +706,7 @@ function renderSubNav(){
     $('#subNav').innerHTML='';
     return;
   }
-  if(!state.sub[state.sec]){state.sub[state.sec]=subs[0].id}
+  if(!state.sub[state.sec] || !subs.some(function(s){return s&&s.id===state.sub[state.sec]})){state.sub[state.sec]=subs[0].id}
   var html='';
   for(var i=0;i<subs.length;i++){
     var s=subs[i];
@@ -735,10 +739,10 @@ var PAGES={
   'stop':renderStop,
   'foodmood':renderFoodmood,
   'binge':renderBinge,
-  'impulse':renderImpulse,
   'reward':renderReward,
   'stats':renderStats,
   'weight':renderWeight,'profile':renderProfile,'measure':renderMeasure,
+  'stage':renderStage,'cal':renderFatCalendar,
   'settings':renderSettings,
 };
 function renderPage(){
@@ -1015,6 +1019,16 @@ function renderCalendar(){
       showDayDetail(ds);
     };
   }
+  // 左右滑动切换月份（内容不变，仅增加手势）
+  try{
+    var __grid=$('#calGrid');var __sx=null;
+    __grid.addEventListener('touchstart',function(e){__sx=e.touches?e.touches[0].clientX:null;},{passive:true});
+    __grid.addEventListener('touchend',function(e){
+      if(__sx===null)return;
+      var dx=(e.changedTouches?e.changedTouches[0].clientX:__sx)-__sx;__sx=null;
+      if(Math.abs(dx)>48){ if(dx<0){var nx=$('#calNext');if(nx)nx.click();}else{var pv=$('#calPrev');if(pv)pv.click();} }
+    },{passive:true});
+  }catch(e){}
 }
 function showDayDetail(ds){
   var meals=Store.get('meals',{});
@@ -1233,12 +1247,22 @@ function renderFoodmood(){
     html+='<div class="hint">冲动来了？先选情绪（可选），会<b>自动推荐</b>适合你的替代方案。点了「用了」= 记录成功 +3XP。<br>每个方案都可以 <b>改名 / 删除 / 排序 / 调换分组</b>。</div>';
   }
   html+='</div>';
+  // ===== 记一笔冲动（融合自原「成长中心·冲动记录」）=====
+  html+='<div class="card"><h2>📝 记一笔冲动</h2><div class="hint">冲动来了？先选情绪（可选），记一笔。<b>只要记录，就算成功</b>——不要求你忍住。<br>可勾选「成功延迟 / 用了替代法」。</div>';
+  html+='<div class="emotion-pick" id="impEm" style="grid-template-columns:repeat(4,1fr)"></div>';
+  html+='<input class="mc-field" id="impNote" placeholder="当时发生了什么？（可选，如：加班到9点，特别想吃）">';
+  html+='<label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:6px"><input type="checkbox" id="impDelay"> 我成功延迟了 / 用了替代法</label>';
+  html+='<button class="btn" id="impAdd" style="margin-top:8px">＋ 记录这次冲动</button></div>';
   // 情绪快速筛选
   html+='<div class="card"><h2>🎯 先选情绪（可选）</h2><div class="emotion-pick" id="fmEmPick" style="grid-template-columns:repeat(4,1fr)"></div></div>';
   html+='<div id="groupList"></div>';
   // 添加新欲望分组
   html+='<div class="card"><h2>＋ 新建欲望分组</h2><div class="alt-add"><input id="newGroupNm2" placeholder="如：想吃热的/需要仪式感"><button class="btn sm" id="addGroup2" style="width:auto">添加</button></div></div>';
+  // ===== 我的冲动记录（融合自原「成长中心·冲动记录」列表）=====
+  html+='<div class="card"><h2>💡 我的冲动记录</h2><div class="hint">在这里查看、编辑或删除你记录的每一次冲动。</div><div id="impList"></div></div>';
   $('#inner-foodmood').innerHTML=html;
+  bindImpulseForm();
+  drawImpulseList();
 
   var ems=[{ic:'😰',n:'压力/焦虑'},{ic:'😔',n:'低落/空虚'},{ic:'😤',n:'愤怒'},{ic:'😶',n:'无聊'},{ic:'😞',n:'孤独'},{ic:'🥳',n:'庆祝'},{ic:'😩',n:'疲惫'},{ic:'💤',n:'深夜'}];
   var selectedEm=state.fmFilter||(fromStop&&stopSt&&stopSt.emotion)||'';
@@ -1443,8 +1467,75 @@ function renderBinge(){
   }
 }
 
+/* ============ 冲动记录（融合进「应对中心 · 饮食情绪」，可复用 UI）============ */
+function bindImpulseForm(){
+  var ems=[{ic:'😰',n:'压力/焦虑'},{ic:'😔',n:'低落/空虚'},{ic:'😤',n:'愤怒'},{ic:'😶',n:'无聊'},{ic:'😞',n:'孤独'},{ic:'🥳',n:'庆祝'},{ic:'😩',n:'疲惫'},{ic:'💤',n:'深夜'}];
+  var emBox=$('#impEm'); if(!emBox)return;
+  var emHtml='<div class="em" data-n="">＋ 不填</div>';
+  for(var i=0;i<ems.length;i++){emHtml+='<div class="em" data-n="'+ems[i].n+'"><span class="eic">'+ems[i].ic+'</span>'+ems[i].n+'</div>'}
+  emBox.innerHTML=emHtml;
+  var picked='';
+  var emEls=emBox.querySelectorAll('.em');
+  for(var e=0;e<emEls.length;e++){
+    emEls[e].onclick=function(ev){
+      picked=ev.currentTarget.getAttribute('data-n');
+      var all=emBox.querySelectorAll('.em');
+      for(var x=0;x<all.length;x++){all[x].classList.remove('on')}
+      ev.currentTarget.classList.add('on');
+    };
+  }
+  var addBtn=$('#impAdd');
+  if(addBtn)addBtn.onclick=function(){
+    var note=$('#impNote').value.trim();
+    var delayed=$('#impDelay').checked;
+    var imp=Store.get('impulses',[]);
+    imp.push({date:todayStr(),time:new Date().toTimeString().slice(0,5),emotion:picked,note:note,intensity:0,delayed:delayed});
+    Store.set('impulses',imp);
+    if(delayed)Store.set('delayCount',Store.get('delayCount',0)+1);
+    if(picked==='💤'||picked==='深夜')Store.set('nightAlt',Store.get('nightAlt',0)+1);
+    Store.set('observerCount',Store.get('observerCount',0)+1);
+    addXP(2);checkBadges();
+    toast('📝 记录了 +2XP');
+    $('#impNote').value='';$('#impDelay').checked=false;picked='';
+    var all=emBox.querySelectorAll('.em');for(var x=0;x<all.length;x++){all[x].classList.remove('on')}
+    drawImpulseList();
+  };
+}
+function drawImpulseList(){
+  var box=$('#impList'); if(!box)return;
+  var imp=Store.get('impulses',[]);
+  if(imp.length===0){box.innerHTML='<div class="empty-tip">还没有记录，下次冲动来了记一笔吧。</div>';return}
+  var sorted=imp.slice().sort(function(a,b){return (b.date+''+b.time).localeCompare(a.date+''+b.time)});
+  var lh='';
+  for(var i=0;i<sorted.length;i++){
+    var r=sorted[i];
+    var realIdx=imp.indexOf(r);
+    lh+='<div class="rec"><div class="body"><div>'+(r.emotion?r.emotion+' · ':'')+(r.note||'冲动记录')+'</div><div class="t">'+fmtDate(r.date)+' '+r.time+(r.delayed?' · ✅ 成功延迟':'')+'</div></div><div class="acts"><button class="edit-btn" data-i="'+realIdx+'">编辑</button><button class="del-btn" data-i="'+realIdx+'">删除</button></div></div>';
+  }
+  box.innerHTML=lh;
+  var edits=box.querySelectorAll('.edit-btn');
+  for(var ed=0;ed<edits.length;ed++){
+    edits[ed].onclick=function(ev){
+      var i=parseInt(ev.currentTarget.getAttribute('data-i'));
+      var r=imp[i];
+      openRenameModal('',i,r.note||'',function(nv){
+        if(nv!==null){r.note=nv.trim();imp[i]=r;Store.set('impulses',imp);drawImpulseList();toast('已更新')}
+      });
+    };
+  }
+  var dels=box.querySelectorAll('.del-btn');
+  for(var dl=0;dl<dels.length;dl++){
+    dels[dl].onclick=function(ev){
+      var i=parseInt(ev.currentTarget.getAttribute('data-i'));
+      openConfirmModal('删除这条记录？','删除后不可恢复，确定吗？',function(ok){
+        if(ok){imp.splice(i,1);Store.set('impulses',imp);drawImpulseList();checkBadges()}
+      });
+    };
+  }
+}
 /* ============ 冲动记录（可编辑/删除）============ */
 function renderImpulse(){
+  return; // 已融合进「应对中心 · 饮食情绪」，原独立页面入口已移除
   var imp=Store.get('impulses',[]);
   var html='<div class="card"><h2>📝 冲动记录</h2><div class="hint">每次冲动来了记一笔。<b>只要记录，就算成功</b>——不要求你忍住。<br>可点击「编辑 / 删除」。</div></div>';
   html+='<div class="card"><h2>＋ 记一笔</h2>';
@@ -1758,6 +1849,143 @@ function getProfile(){return Store.get('profile',{nickname:'',gender:'女',age:'
 function getWeightLog(){return Store.get('weightLog',[])}
 function sortedLog(){return getWeightLog().slice().sort(function(a,b){return a.date<b.date?-1:1})}
 function latestWeight(){var l=sortedLog();return l.length?l[l.length-1].weight:0}
+
+/* ============ 减脂足迹：阶段目标（阶段性打卡）============ */
+function fatStageCheckinCount(idx){
+  var stages=Store.get('fatStages',[]);
+  var stage=stages[idx]; if(!stage)return 0;
+  var next=stages[idx+1];
+  var start=stage.startDate||'0000-00-00';
+  var end=(next&&next.startDate)?next.startDate:'9999-99-99';
+  var ck=Store.get('fatCheckins',{});
+  var c=0;
+  for(var d in ck){if(ck.hasOwnProperty(d)&&d>=start&&d<end)c++}
+  return c;
+}
+function renderStage(){
+  var stages=Store.get('fatStages',[]);
+  var cur=Store.get('fatCurStage',0);
+  var ck=Store.get('fatCheckins',{});
+  var today=todayStr();
+  var curStage=stages[cur];
+  var html='<div class="card"><h2>🎯 阶段目标 · 阶段性打卡</h2><div class="hint">把一个大目标拆成几个小阶段，完成一个再开始下一个，更容易坚持。</div></div>';
+  if(!curStage){
+    html+='<div class="card"><div class="empty-tip">还没有阶段目标。在下方设置一个，开始你的减脂足迹吧～</div></div>';
+  }else{
+    var cnt=fatStageCheckinCount(cur);
+    var target=curStage.target||0;
+    var pct=target>0?Math.min(100,Math.round(cnt/target*100)):0;
+    var doneToday=!!ck[today];
+    html+='<div class="card"><h2>📍 当前阶段：'+esc(curStage.name||'未命名')+'</h2>';
+    html+='<div class="hint">已完成阶段打卡 <b>'+cnt+'</b> / '+target+' 天（'+pct+'%）</div>';
+    html+='<div class="xp-bar"><i style="width:'+pct+'%"></i></div>';
+    html+='<div class="row" style="margin-top:8px">';
+    html+='<button class="btn '+(doneToday?'ghost':'')+'" id="fatToday">'+(doneToday?'✅ 今日已打卡（点此取消）':'✅ 今日打卡')+'</button>';
+    html+='<button class="btn amber" id="fatDone">🏁 完成本阶段</button>';
+    html+='</div></div>';
+  }
+  if(stages.length){
+    html+='<div class="card"><h2>📋 全部阶段</h2>';
+    for(var i=0;i<stages.length;i++){
+      var s=stages[i];
+      var st='';
+      if(s.done)st='<span style="color:var(--green2);font-weight:700">已完成 ✓</span>';
+      else if(i===cur)st='<span style="color:var(--amber);font-weight:700">进行中</span>';
+      else st='<span style="color:var(--gray)">未开始</span>';
+      html+='<div class="rec"><div class="body"><div>'+esc(s.name||'未命名')+' · '+fatStageCheckinCount(i)+'/'+s.target+' 天</div><div class="t">'+(s.doneDate?('完成于 '+fmtDate(s.doneDate)):'')+'</div></div><div class="acts">'+st+'</div></div>';
+    }
+    html+='</div>';
+  }
+  html+='<div class="card"><h2>＋ 设置新阶段目标</h2><div class="hint">添加后即为「当前阶段」，完成它再点「完成本阶段」。</div>';
+  html+='<input class="mc-field" id="fatName" placeholder="阶段名，如：第一阶段·习惯养成">';
+  html+='<input class="mc-field" id="fatTarget" type="number" inputmode="numeric" placeholder="目标打卡天数，如：21">';
+  html+='<button class="btn" id="fatAdd" style="margin-top:6px">＋ 添加并设为当前阶段</button></div>';
+  $('#inner-stage').innerHTML=html;
+  if(curStage){
+    var tb=$('#fatToday');
+    if(tb)tb.onclick=function(){
+      var c2=Store.get('fatCheckins',{});
+      if(c2[today]){delete c2[today];toast('已取消今日打卡')}else{c2[today]=true;toast('✅ 今日打卡 +1')}
+      Store.set('fatCheckins',c2);renderStage();
+    };
+    var db=$('#fatDone');
+    if(db)db.onclick=function(){
+      var s2=Store.get('fatStages',[]);
+      var c2=Store.get('fatCurStage',0);
+      if(!s2[c2])return;
+      s2[c2].done=true;s2[c2].doneDate=todayStr();Store.set('fatStages',s2);
+      var nx=c2+1;
+      if(s2[nx]&&!s2[nx].done){Store.set('fatCurStage',nx);toast('🏁 本阶段完成，已进入下一阶段')}
+      else{toast('🎉 本阶段完成！可设置新目标')}
+      renderStage();
+    };
+  }
+  var ab=$('#fatAdd');
+  if(ab)ab.onclick=function(){
+    var nm=$('#fatName').value.trim();
+    var tg=parseInt($('#fatTarget').value,10);
+    if(!nm){toast('先写阶段名～');return}
+    if(!tg||tg<1){toast('目标天数填个正整数～');return}
+    var s3=Store.get('fatStages',[]);
+    var wasEmpty=s3.length===0;
+    s3.push({name:nm,target:tg,startDate:todayStr(),done:false,doneDate:''});
+    Store.set('fatStages',s3);
+    if(wasEmpty)Store.set('fatCurStage',s3.length-1);
+    $('#fatName').value='';$('#fatTarget').value='';
+    toast('＋ 已添加阶段「'+nm+'」');
+    renderStage();
+  };
+}
+
+/* ============ 减脂足迹：打卡日历（参考记录中心日历来设计）============ */
+function renderFatCalendar(){
+  var now=state.fatCalDate||new Date();
+  var y=now.getFullYear(),m=now.getMonth();
+  var first=new Date(y,m,1).getDay();
+  var days=new Date(y,m+1,0).getDate();
+  var today=todayStr();
+  var ck=Store.get('fatCheckins',{});
+  var html='<div class="card"><div id="calHead"><span class="nav" id="fatCalPrev">‹</span><span>'+y+'年'+(m+1)+'月足迹</span><span class="nav" id="fatCalNext">›</span></div>';
+  html+='<div style="font-size:11px;color:var(--gray);margin-bottom:6px">已打卡 <b id="fatCalDone">0</b> 天</div>';
+  html+='<div id="fatCalGrid">';
+  var wk=['日','一','二','三','四','五','六'];
+  for(var w=0;w<7;w++){html+='<div class="calCell empty" style="font-size:9px;color:var(--gray);min-height:0">'+wk[w]+'</div>'}
+  for(var e=0;e<first;e++){html+='<div class="calCell empty"></div>'}
+  var doneDays=0;
+  for(var d=1;d<=days;d++){
+    var ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    var isToday=ds===today;
+    var has=!!ck[ds];
+    if(has)doneDays++;
+    var cls='calCell'+(has?' has':'')+(isToday?' today':'');
+    html+='<div class="'+cls+'" data-ds="'+ds+'"><div class="dnum">'+d+'</div></div>';
+  }
+  html+='</div>';
+  html+='<div class="cal-legend">🟢 绿底=当天完成了阶段打卡。点击某天可补卡 / 取消。</div></div>';
+  html+='<div class="card" id="fatCalDetail"><div class="hint">点击上方某天进行补卡或取消。</div></div>';
+  $('#inner-cal').innerHTML=html;
+  $('#fatCalDone').textContent=doneDays;
+  $('#fatCalPrev').onclick=function(){var nd=new Date(y,m-1,1);state.fatCalDate=nd;renderFatCalendar()};
+  $('#fatCalNext').onclick=function(){var nd=new Date(y,m+1,1);state.fatCalDate=nd;renderFatCalendar()};
+  var cells=$('#fatCalGrid').querySelectorAll('.calCell[data-ds]');
+  for(var c=0;c<cells.length;c++){
+    cells[c].onclick=function(ev){
+      var ds=ev.currentTarget.getAttribute('data-ds');
+      var c2=Store.get('fatCheckins',{});
+      if(c2[ds]){delete c2[ds];toast('已取消 '+fmtDate(ds)+' 打卡')}else{c2[ds]=true;toast('✅ '+fmtDate(ds)+' 补卡')}
+      Store.set('fatCheckins',c2);renderFatCalendar();
+    };
+  }
+  try{
+    var g=$('#fatCalGrid');var sx=null;
+    g.addEventListener('touchstart',function(e){sx=e.touches?e.touches[0].clientX:null;},{passive:true});
+    g.addEventListener('touchend',function(e){
+      if(sx===null)return;
+      var dx=(e.changedTouches?e.changedTouches[0].clientX:sx)-sx;sx=null;
+      if(Math.abs(dx)>48){ if(dx<0){var nx=$('#fatCalNext');if(nx)nx.click();}else{var pv=$('#fatCalPrev');if(pv)pv.click();} }
+    },{passive:true});
+  }catch(e){}
+}
 
 /* ============ 体重打卡（阶梯目标 · v10）============ */
 function renderWeight(){
