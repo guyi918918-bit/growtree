@@ -332,7 +332,7 @@ main{padding:10px}
 /* ============ 存储 ============ */
 var Store={
   _mem:{},
-  get:function(k,def){try{var v=localStorage.getItem('rw5_'+k);return v?JSON.parse(v):(this._mem[k]!==undefined?this._mem[k]:def)}catch(e){return this._mem[k]!==undefined?this._mem[k]:def}},
+  get:function(k,def){try{var v=localStorage.getItem('rw5_'+k);if(v===null)return this._mem[k]!==undefined?this._mem[k]:def;var p=JSON.parse(v);return p==null?(this._mem[k]!==undefined?this._mem[k]:def):p}catch(e){return this._mem[k]!==undefined?this._mem[k]:def}},
   set:function(k,v){try{localStorage.setItem('rw5_'+k,JSON.stringify(v))}catch(e){}this._mem[k]=v;if(App&&App.sync)App.sync();if(!window.__yjxs_importing)yjxsNotifyParent();},
   del:function(k){try{localStorage.removeItem('rw5_'+k)}catch(e){}delete this._mem[k]}
 };
@@ -342,13 +342,26 @@ var YJXS_SYNC_KEYS=['meals','alts','recipes','impulses','binges','seasonBadges',
 var __yjxs_notifyTimer=null;
 function yjxsExportAll(){
   var data={};
-  YJXS_SYNC_KEYS.forEach(function(k){data[k]=Store.get(k,null)});
+  YJXS_SYNC_KEYS.forEach(function(k){
+    var raw=null;
+    try{raw=localStorage.getItem('rw5_'+k)}catch(e){}
+    if(raw!==null || Store._mem[k]!==undefined){
+      data[k]=Store.get(k,null);
+    }
+  });
   return {__yjxs:true,v:1,exportedAt:new Date().toISOString(),data:data};
 }
 function yjxsImportAll(payload){
   if(!payload||!payload.data)return;
   var data=payload.data;
-  YJXS_SYNC_KEYS.forEach(function(k){if(data.hasOwnProperty(k))Store.set(k,data[k])});
+  YJXS_SYNC_KEYS.forEach(function(k){
+    if(!data.hasOwnProperty(k))return;
+    var remote=data[k];
+    var local=Store.get(k,undefined);
+    // 防护：远程为 null 且本地已有有效值时，不要把本地有效数据覆盖成 null
+    if(remote===null && local!==undefined && local!==null)return;
+    Store.set(k,remote);
+  });
 }
 function yjxsNotifyParent(){
   if(window.__yjxs_importing)return;
@@ -593,6 +606,11 @@ function initData(){
     for(var i=0;i<NAV.length;i++){order[NAV[i].id]=NAV[i].subs.map(function(s){return s.id})}
     Store.set('subOrder',order);
   }
+  if(!Store.get('stopState',null))Store.set('stopState',{step:0,emotion:'',emotions:[],intensity:0,observed:''});
+  if(!Store.get('bingeState',null))Store.set('bingeState',{step:0,nextMealTime:'',nextMealFood:''});
+  if(!Store.get('seasonNo',null))Store.set('seasonNo',1);
+  if(!Store.get('seasonXp',null))Store.set('seasonXp',0);
+  if(!Store.get('seasonKey',null))Store.set('seasonKey',currentQuarter().key);
 }
 
 /* ============ 徽章判定 ============ */
@@ -1223,15 +1241,16 @@ function renderFoodmood(){
   $('#inner-foodmood').innerHTML=html;
 
   var ems=[{ic:'😰',n:'压力/焦虑'},{ic:'😔',n:'低落/空虚'},{ic:'😤',n:'愤怒'},{ic:'😶',n:'无聊'},{ic:'😞',n:'孤独'},{ic:'🥳',n:'庆祝'},{ic:'😩',n:'疲惫'},{ic:'💤',n:'深夜'}];
+  var selectedEm=state.fmFilter||(fromStop&&stopSt&&stopSt.emotion)||'';
   var emHtml='';
-  for(var i=0;i<ems.length;i++){emHtml+='<div class="em" data-n="'+ems[i].n+'"><span class="eic">'+ems[i].ic+'</span>'+ems[i].n+'</div>'}
+  for(var i=0;i<ems.length;i++){var emOn=selectedEm===ems[i].n;emHtml+='<div class="em '+(emOn?'on':'')+'" data-n="'+ems[i].n+'"><span class="eic">'+ems[i].ic+'</span>'+ems[i].n+'</div>'}
   $('#fmEmPick').innerHTML=emHtml;
   var emEls=$('#fmEmPick').querySelectorAll('.em');
   for(var e=0;e<emEls.length;e++){
     emEls[e].onclick=function(ev){
       var n=ev.currentTarget.getAttribute('data-n');
-      // 简单映射：不同情绪高亮对应欲望分组
-      state.fmFilter=n;
+      // 再次点击同一情绪 = 取消筛选
+      state.fmFilter=(state.fmFilter===n?'':n);
       renderFoodmood();
     };
   }
@@ -1241,7 +1260,7 @@ function renderFoodmood(){
     var gh='';
     for(var gi=0;gi<groups.length;gi++){
       var g=groups[gi];
-      var isRecommended=fromStop&&isEmotionRelated(stopSt.emotion,g);
+      var isRecommended=(fromStop&&stopSt&&isEmotionRelated(stopSt.emotion,g)) || (selectedEm&&isEmotionRelated(selectedEm,g));
       gh+='<div class="craving-group '+(isRecommended?'open':'')+'" data-g="'+esc(g)+'">';
       gh+='<div class="cg-head" data-g="'+esc(g)+'"><span>'+(isRecommended?'⭐ ':'')+esc(g)+'</span><span style="margin-left:auto;font-size:10px;color:var(--gray)">共 '+alts[g].length+' 个 · 点击展开管理</span></div>';
       gh+='<div class="cg-body">';
