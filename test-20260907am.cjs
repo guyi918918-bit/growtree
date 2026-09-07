@@ -41,6 +41,8 @@ if (APP_JS.includes("state.settings.weatherMode = 'gps'")) ok('点击定位会�
 
 // ── 事件处理 ──
 if (APP_JS.includes("action === 'beauty-province-change'")) ok('handleAction 已注册省份切换事件'); else no('省份切换事件未注册');
+if (APP_JS.includes("e.target.id === 'beautyProvinceSelect'") && APP_JS.includes('handleAction(')) ok('change 事件已委托给省份下拉'); else no('省份下拉未接 change 事件');
+if (APP_JS.includes("e.target.id === 'beautyCitySelect'") && APP_JS.includes('handleAction(')) ok('change 事件已委托给城市下拉'); else no('城市下拉未接 change 事件');
 if (APP_JS.includes("action === 'beauty-city-change'")) ok('handleAction 已注册城市切换事件'); else no('城市切换事件未注册');
 if (APP_JS.includes("action === 'beauty-city-confirm'")) ok('handleAction 已注册城市确认事件'); else no('城市确认事件未注册');
 if (APP_JS.includes("action === 'beauty-city-locate'")) ok('handleAction 已注册定位事件'); else no('定位事件未注册');

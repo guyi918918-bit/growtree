@@ -11864,6 +11864,12 @@ function initEvents() {
             state._scheduleDate = e.target.value;
             render();
         }
+        if (e.target.id === 'beautyProvinceSelect') {
+            handleAction(e.target, 'beauty-province-change');
+        }
+        if (e.target.id === 'beautyCitySelect') {
+            handleAction(e.target, 'beauty-city-change');
+        }
     });
 
     // 回车快捷提交
