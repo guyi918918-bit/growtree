@@ -63,6 +63,9 @@ input,select,textarea{font-family:inherit}
 .secBtn{flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:7px 14px;border-radius:10px;font-size:12px;color:var(--gray);background:var(--card);border:1px solid var(--line);white-space:nowrap;transition:.2s}
 .secBtn .ic{font-size:15px}
 .secBtn.active{background:var(--green);color:#fff;border-color:var(--green)}
+.secWrap{flex:0 0 auto;display:inline-flex;align-items:center;gap:2px}
+.ordArrow{flex:0 0 auto;width:22px;height:28px;padding:0;border-radius:8px;font-size:12px;line-height:1;background:var(--card);border:1px solid var(--line);color:var(--ink)}
+.ordArrow:disabled{opacity:.35}
 
 /* 三级导航（横向胶囊） */
 #subNav{display:flex;gap:6px;padding:5px 12px 8px;overflow-x:auto;scrollbar-width:none;min-height:36px;align-items:center;background:#fafdfb}
@@ -534,7 +537,8 @@ var state={
   sec:'record',
   sub:{},
   rendered:{},
-  progressOpen:false
+  progressOpen:false,
+  secOrderMode:false
 };
 
 /* ============ 默认数据初始化 ============ */
@@ -676,17 +680,46 @@ function checkBadges(){
 function renderNav(){
   // 二级（按用户自定义 secOrder 排序）
   var secs=getOrderedSecs();
+  var editMode=!!state.secOrderMode;
   var secHtml='';
   for(var i=0;i<secs.length;i++){
     var s=secs[i];
-    secHtml+='<button class="secBtn '+(s.id===state.sec?'active':'')+'" data-sec="'+s.id+'"><span class="ic">'+s.ic+'</span>'+s.nm+'</button>';
+    var chip='<button class="secBtn '+(s.id===state.sec?'active':'')+'" data-sec="'+s.id+'"><span class="ic">'+s.ic+'</span>'+s.nm+'</button>';
+    if(editMode){
+      secHtml+='<span class="secWrap">'
+        +'<button class="ordArrow" data-mv="'+s.id+'" data-d="-1" '+(i===0?'disabled':'')+'>‹</button>'
+        +chip
+        +'<button class="ordArrow" data-mv="'+s.id+'" data-d="1" '+(i===secs.length-1?'disabled':'')+'>›</button>'
+        +'</span>';
+    }else{
+      secHtml+=chip;
+    }
   }
+  secHtml+='<button class="secBtn" id="secOrderToggle" style="padding:7px 10px" title="调整板块顺序">'+(editMode?'✓ 完成':'⇄')+'</button>';
   $('#secNav').innerHTML=secHtml;
   var secBtns=$('#secNav').querySelectorAll('.secBtn');
   for(var j=0;j<secBtns.length;j++){
     secBtns[j].onclick=function(ev){try{
-      var id=ev.currentTarget.getAttribute('data-sec');switchSec(id);
+      if(ev.currentTarget.id==='secOrderToggle'){
+        state.secOrderMode=!state.secOrderMode;renderNav();return;
+      }
+      var id=ev.currentTarget.getAttribute('data-sec');if(!id)return;switchSec(id);
     }catch(e){window.__yjerr && window.__yjerr('secBtn click: '+e.message)}}
+  }
+  var arrows=$('#secNav').querySelectorAll('.ordArrow');
+  for(var a=0;a<arrows.length;a++){
+    arrows[a].onclick=function(ev){try{
+      if(ev.currentTarget.disabled)return;
+      var sid=ev.currentTarget.getAttribute('data-mv');
+      var d=parseInt(ev.currentTarget.getAttribute('data-d'));
+      var ord=Store.get('secOrder',null)||NAV.map(function(x){return x.id});
+      var idx=ord.indexOf(sid);
+      if(idx<0)return;
+      var ni=idx+d;if(ni<0||ni>=ord.length)return;
+      var tmp=ord[idx];ord[idx]=ord[ni];ord[ni]=tmp;
+      Store.set('secOrder',ord);
+      renderNav();
+    }catch(e){window.__yjerr && window.__yjerr('ordArrow click: '+e.message)}}
   }
   try{renderSubNav();}catch(e){window.__yjerr && window.__yjerr('renderSubNav: '+e.message)}
 }
