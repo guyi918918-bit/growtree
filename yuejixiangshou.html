@@ -338,7 +338,7 @@ var Store={
 };
 
 /* ============ 与成长小树云端同步 ============ */
-var YJXS_SYNC_KEYS=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','altUsed','delayCount','noPunish','normalDays','profile','weightLog','measures','subOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount','breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak','xp','seasonXp','seasonKey','seasons','stopFromStop','bingeState','bingeStop','fatCheckins','fatStages','fatCurStage'];
+var YJXS_SYNC_KEYS=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','altUsed','delayCount','noPunish','normalDays','profile','weightLog','measures','subOrder','secOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount','breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak','xp','seasonXp','seasonKey','seasons','stopFromStop','bingeState','bingeStop','fatCheckins','fatStages','fatCurStage'];
 var __yjxs_notifyTimer=null;
 function yjxsExportAll(){
   var data={};
@@ -607,6 +607,9 @@ function initData(){
     for(var i=0;i<NAV.length;i++){order[NAV[i].id]=NAV[i].subs.map(function(s){return s.id})}
     Store.set('subOrder',order);
   }
+  if(!Store.get('secOrder',null)){
+    Store.set('secOrder',NAV.map(function(s){return s.id}));
+  }
   if(!Store.get('stopState',null))Store.set('stopState',{step:0,emotion:'',emotions:[],intensity:0,observed:''});
   if(!Store.get('bingeState',null))Store.set('bingeState',{step:0,nextMealTime:'',nextMealFood:''});
   if(!Store.get('seasonNo',null))Store.set('seasonNo',1);
@@ -671,10 +674,11 @@ function checkBadges(){
 
 /* ============ 渲染：导航 ============ */
 function renderNav(){
-  // 二级
+  // 二级（按用户自定义 secOrder 排序）
+  var secs=getOrderedSecs();
   var secHtml='';
-  for(var i=0;i<NAV.length;i++){
-    var s=NAV[i];
+  for(var i=0;i<secs.length;i++){
+    var s=secs[i];
     secHtml+='<button class="secBtn '+(s.id===state.sec?'active':'')+'" data-sec="'+s.id+'"><span class="ic">'+s.ic+'</span>'+s.nm+'</button>';
   }
   $('#secNav').innerHTML=secHtml;
@@ -685,6 +689,14 @@ function renderNav(){
     }catch(e){window.__yjerr && window.__yjerr('secBtn click: '+e.message)}}
   }
   try{renderSubNav();}catch(e){window.__yjerr && window.__yjerr('renderSubNav: '+e.message)}
+}
+function getOrderedSecs(){
+  var order=Store.get('secOrder',[]);
+  var map={};for(var i=0;i<NAV.length;i++){map[NAV[i].id]=NAV[i]}
+  var out=[];
+  for(var k=0;k<order.length;k++){if(map[order[k]]){out.push(map[order[k]]);delete map[order[k]]}}
+  for(var m in map){if(map.hasOwnProperty(m))out.push(map[m])}
+  return out;
 }
 function getOrderedSubs(secId){
   var order=Store.get('subOrder',{});
@@ -1725,6 +1737,7 @@ function saveNormalDay(){
 /* ============ 设置（详细赛季规则 + 目录排序 + 备份）============ */
 function renderSettings(){
   var order=Store.get('subOrder',{});
+  var secOrder=Store.get('secOrder',null)||NAV.map(function(s){return s.id});
   var html='<div class="card"><h2>📜 赛季规则（详细说明）</h2><div class="rule-box">';
   html+='<div class="rule-sec"><div class="rule-t">⏰ 赛季周期</div><div class="rule-li">每 <b>3 个月</b> 为一个赛季，按<b>自然季度</b>划分：Q1(1-3月) / Q2(4-6月) / Q3(7-9月) / Q4(10-12月)。跨季度打开时<b>自动轮转</b>新赛季。</div></div>';
   html+='<div class="rule-sec"><div class="rule-t">🔄 赛季清零（每3个月）</div><div class="rule-li">• 赛季 XP → 归零<br>• <b>本赛季徽章</b> → 重置，新赛季可<b>重新解锁</b>（保持新鲜感与短期目标）</div></div>';
@@ -1732,13 +1745,20 @@ function renderSettings(){
   html+='<div class="rule-sec"><div class="rule-t">🎯 为什么这么设计</div><div class="rule-li">清零 ≠ 失去。赛季徽章给你<b>短期可完成的目标</b>（日常小动作）；永久徽章记录<b>真正了不起的里程碑</b>（连续30天、等级30、暴食后5次温柔重启…）。每 3 个月一条新的起跑线，但<b>过去的每一步都还在</b>。</div></div>';
   html+='</div><div class="rule-note">💡 赛季清零不是「归零失败」，而是每3个月给自己一次重新出发的机会。你从没有白努力。</div></div>';
   // 目录排序
-  html+='<div class="card"><h2">🔀 目录排序</h2><div class="hint">调整每个二级目录下的三级目录顺序。点 ↑ ↓ 移动，「保存排序」生效。</div><div id="sortArea"></div><button class="btn" id="saveSort" style="margin-top:6px">💾 保存排序</button><button class="btn ghost" id="resetSort" style="margin-top:6px">恢复默认</button></div>';
+  html+='<div class="card"><h2>🔀 目录排序</h2><div class="hint">调整板块（二级目录）及其下三级目录的顺序。点 ↑ ↓ 移动，「保存排序」生效。</div><div id="sortArea"></div><button class="btn" id="saveSort" style="margin-top:6px">💾 保存排序</button><button class="btn ghost" id="resetSort" style="margin-top:6px">恢复默认</button></div>';
   // 数据管理
   html+='<div class="card"><h2>💾 数据管理</h2><div class="row"><button class="btn ghost" id="exportBtn" style="flex:1">导出备份</button><button class="btn ghost" id="importBtn" style="flex:1">导入恢复</button><button class="btn danger" id="clearBtn" style="flex:1">清空全部</button></div><input type="file" id="importFile" accept=".json" style="display:none"></div>';
   $('#inner-settings').innerHTML=html;
   // 排序
   function drawSort(){
     var sh='';
+    // 板块（二级目录）顺序
+    var secIds=secOrder.slice();
+    sh+='<div style="font-weight:700;font-size:12px;margin:8px 0 4px">🧩 板块（二级目录）顺序</div>';
+    for(var s=0;s<secIds.length;s++){
+      var sd=NAV.filter(function(x){return x.id===secIds[s]})[0]||{ic:'',nm:secIds[s]};
+      sh+='<div class="sort-item"><span class="drag">⣿</span><span class="nm">'+(sd.ic||'')+' '+esc(sd.nm)+'</span><span class="row" style="gap:4px"><button class="btn sm ghost secmv" data-i="'+s+'" data-d="-1" '+(s===0?'disabled':'')+'>↑</button><button class="btn sm ghost secmv" data-i="'+s+'" data-d="1" '+(s===secIds.length-1?'disabled':'')+'>↓</button></span></div>';
+    }
     for(var i=0;i<NAV.length;i++){
       var sec=NAV[i];
       var ids=order[sec.id]||sec.subs.map(function(s){return s.id});
@@ -1750,6 +1770,17 @@ function renderSettings(){
       }
     }
     $('#sortArea').innerHTML=sh;
+    var secmvs=$('#sortArea').querySelectorAll('.secmv');
+    for(var sm=0;sm<secmvs.length;sm++){
+      secmvs[sm].onclick=function(ev){
+        var btn=ev.currentTarget;
+        if(btn.disabled)return;
+        var idx=parseInt(btn.getAttribute('data-i'));
+        var d=parseInt(btn.getAttribute('data-d'));
+        var tmp=secOrder[idx];secOrder[idx]=secOrder[idx+d];secOrder[idx+d]=tmp;
+        Store.set('secOrder',secOrder);drawSort();
+      };
+    }
     var mvs=$('#sortArea').querySelectorAll('.mv');
     for(var m=0;m<mvs.length;m++){
       mvs[m].onclick=function(ev){
@@ -1765,15 +1796,17 @@ function renderSettings(){
     }
   }
   drawSort();
-  $('#saveSort').onclick=function(){Store.set('subOrder',order);toast('✅ 排序已保存');renderNav()};
+  $('#saveSort').onclick=function(){Store.set('subOrder',order);Store.set('secOrder',secOrder);toast('✅ 排序已保存');renderNav()};
   $('#resetSort').onclick=function(){
     var def={};for(var i=0;i<NAV.length;i++){def[NAV[i].id]=NAV[i].subs.map(function(s){return s.id})}
-    Store.set('subOrder',def);order=def;drawSort();renderNav();toast('已恢复默认');
+    Store.set('subOrder',def);order=def;
+    secOrder=NAV.map(function(s){return s.id});Store.set('secOrder',secOrder);
+    drawSort();renderNav();toast('已恢复默认');
   };
   // 备份
   $('#exportBtn').onclick=function(){
     var data={};
-    var keys=['profile','weightLog','measures','meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','seasonNo','seasonKey','seasonXp','xp','normalDays','subOrder','delayCount','altUsed','noPunish','maxStreak','stopState','bingeState'];
+    var keys=['profile','weightLog','measures','meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','seasonNo','seasonKey','seasonXp','xp','normalDays','subOrder','secOrder','delayCount','altUsed','noPunish','maxStreak','stopState','bingeState'];
     for(var k=0;k<keys.length;k++){data[keys[k]]=Store.get(keys[k],null)}
     var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
     var a=document.createElement('a');
