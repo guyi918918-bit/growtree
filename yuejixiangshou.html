@@ -1182,14 +1182,18 @@ function renderCalendar(){
     var ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     var cals=getTodayCal(ds);
     var isToday=ds===today;
-    var hasRec=cals.in>0||cals.out>0;
+    var hasRec=cals.hasRecord;
     if(hasRec)recDays++;
-    var cls='calCell'+(hasRec?' has':'')+(isToday?' today':'')+(cals.net<0?' binged':'');
-    html+='<div class="'+cls+'" data-ds="'+ds+'"><div class="dnum">'+d+'</div><div class="stats">';
-    html+='<div class="r"><span class="l">吃</span><span class="v in">'+(cals.in||'-')+'</span></div>';
-    html+='<div class="r"><span class="l">花</span><span class="v out">'+(cals.out||'-')+'</span></div>';
-    html+='<div class="r"><span class="l">缺</span><span class="v net '+(cals.net<0?'bad':'')+'">'+(cals.net>0?'+':'')+(cals.net||0)+'</span></div>';
-    html+='</div></div>';
+    var cls='calCell'+(hasRec?' has':'')+(isToday?' today':'')+(hasRec&&cals.net<0?' binged':'');
+    html+='<div class="'+cls+'" data-ds="'+ds+'"><div class="dnum">'+d+'</div>';
+    if(hasRec){
+      html+='<div class="stats">';
+      html+='<div class="r"><span class="l">吃</span><span class="v in">'+(cals.in||'-')+'</span></div>';
+      html+='<div class="r"><span class="l">花</span><span class="v out">'+(cals.out||'-')+'</span></div>';
+      html+='<div class="r"><span class="l">缺</span><span class="v net '+(cals.net<0?'bad':'')+'">'+(cals.net>0?'+':'')+(cals.net||0)+'</span></div>';
+      html+='</div>';
+    }
+    html+='</div>';
   }
   html+='</div>';
   html+='<div class="cal-legend">🟢 缺口为正=今天有盈余｜🔴 缺口为负=今天超标<br>点击某天可查看/编辑那天的摄入与运动</div></div>';
@@ -2151,10 +2155,11 @@ function getTodayCal(d){
   var bmr=getCalBmr();
   var ins=inMap[today]||[];
   var outs=outMap[today]||[];
+  var hasRecord=ins.length>0||outs.length>0;
   var sumIn=ins.reduce(function(s,x){return s+(parseInt(x.kcal)||0)},0);
   var sumEx=outs.reduce(function(s,x){return s+(parseInt(x.kcal)||0)},0);
   var sumOut=bmr+sumEx;
-  return{in:sumIn,out:sumOut,bmr:bmr,exercise:sumEx,net:sumOut-sumIn};
+  return{in:sumIn,out:sumOut,bmr:bmr,exercise:sumEx,net:sumOut-sumIn,hasRecord:hasRecord};
 }
 function getCumulativeGap(){
   var inMap=Store.get('calIn',{});
