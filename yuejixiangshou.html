@@ -154,15 +154,20 @@ main{padding:10px}
 .add-row{display:flex;gap:6px;padding:6px 10px}
 .add-row input{flex:1;border:1px solid var(--line);border-radius:7px;padding:7px;font-size:12px}
 
-/* 紧凑日历 */
+/* 紧凑日历（热量数据版） */
 #calHead{display:flex;align-items:center;justify-content:space-between;font-weight:700;margin:2px 0 6px}
 #calHead .nav{background:var(--light);border-radius:7px;padding:4px 10px;font-size:13px;cursor:pointer}
 #calGrid,#fatCalGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
-.calCell{min-height:38px;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;background:#f2f5f3;border:1px solid transparent;padding:1px}
-.calCell .dnum{font-weight:600;line-height:1}
-.calCell .dots{display:flex;gap:1px;margin-top:2px}
-.calCell .dots i{width:5px;height:5px;border-radius:50%;background:var(--green);display:block}
-.calCell .dots i.off{background:#dfe6e1}
+.calCell{min-height:62px;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;font-size:9px;background:#f2f5f3;border:1px solid transparent;padding:3px 1px}
+.calCell .dnum{font-weight:700;line-height:1;font-size:10px;margin-bottom:2px}
+.calCell .stats{width:100%;display:flex;flex-direction:column;gap:1px;line-height:1.2}
+.calCell .stats .r{display:flex;justify-content:space-between;gap:2px}
+.calCell .stats .l{color:var(--gray);font-size:8px;transform:scale(.92);transform-origin:left center}
+.calCell .stats .v{font-size:9px;font-weight:700;white-space:nowrap}
+.calCell .stats .v.in{color:var(--purple)}
+.calCell .stats .v.out{color:var(--amber)}
+.calCell .stats .v.net{color:var(--green2)}
+.calCell .stats .v.net.bad{color:var(--red)}
 .calCell.has{background:#dff0e3}
 .calCell.today{border:2px solid var(--green);background:#eaf7ed}
 .calCell.today .dnum{color:var(--green2);font-weight:800}
@@ -1139,37 +1144,37 @@ function renderRecipe(){
   };
 }
 
-/* ============ 紧凑日历（需求2：紧凑，圆点=打卡项数）============ */
+/* ============ 紧凑日历（热量数据版）============ */
 function renderCalendar(){
   var now=state.calDate||new Date();
   var y=now.getFullYear(),m=now.getMonth();
   var first=new Date(y,m,1).getDay();
   var days=new Date(y,m+1,0).getDate();
   var today=todayStr();
-  var meals=Store.get('meals',{});
-  var html='<div class="card"><div id="calHead"><span class="nav" id="calPrev">‹</span><span>'+y+'年'+(m+1)+'月打卡</span><span class="nav" id="calNext">›</span></div>';
-  html+='<div style="font-size:11px;color:var(--gray);margin-bottom:6px">已打卡 <b id="calDone">0</b> 天</div>';
+  var html='<div class="card"><div id="calHead"><span class="nav" id="calPrev">‹</span><span>'+y+'年'+(m+1)+'月热量记录</span><span class="nav" id="calNext">›</span></div>';
+  html+='<div style="font-size:11px;color:var(--gray);margin-bottom:6px">单位：大卡 · 点击某天查看/编辑</div>';
   html+='<div id="calGrid">';
   var wk=['日','一','二','三','四','五','六'];
-  for(var w=0;w<7;w++){html+='<div class="calCell empty" style="font-size:9px;color:var(--gray);min-height:0">'+wk[w]+'</div>'}
+  for(var w=0;w<7;w++){html+='<div class="calCell empty" style="font-size:9px;color:var(--gray);min-height:0;padding:2px 0">'+wk[w]+'</div>'}
   for(var e=0;e<first;e++){html+='<div class="calCell empty"></div>'}
-  var doneDays=0;
+  var recDays=0;
   for(var d=1;d<=days;d++){
     var ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
-    var dm=meals[ds]||{};var cnt=0;for(var k in dm){if(dm.hasOwnProperty(k))cnt++}
+    var cals=getTodayCal(ds);
     var isToday=ds===today;
-    var hasBinge=(Store.get('binges',[])).filter(function(b){return b.date===ds}).length>0;
-    if(cnt>0)doneDays++;
-    var cls='calCell'+(cnt>0?' has':'')+(isToday?' today':'')+(hasBinge?' binged':'');
-    html+='<div class="'+cls+'" data-ds="'+ds+'"><div class="dnum">'+d+'</div><div class="dots">';
-    for(var p=0;p<5;p++){html+='<i class="'+(p<cnt?'':'off')+'"></i>'}
+    var hasRec=cals.in>0||cals.out>0;
+    if(hasRec)recDays++;
+    var cls='calCell'+(hasRec?' has':'')+(isToday?' today':'')+(cals.net<0?' binged':'');
+    html+='<div class="'+cls+'" data-ds="'+ds+'"><div class="dnum">'+d+'</div><div class="stats">';
+    html+='<div class="r"><span class="l">吃</span><span class="v in">'+(cals.in||'-')+'</span></div>';
+    html+='<div class="r"><span class="l">花</span><span class="v out">'+(cals.out||'-')+'</span></div>';
+    html+='<div class="r"><span class="l">缺</span><span class="v net '+(cals.net<0?'bad':'')+'">'+(cals.net>0?'+':'')+(cals.net||0)+'</span></div>';
     html+='</div></div>';
   }
   html+='</div>';
-  html+='<div class="cal-legend">🟢 圆点越满=当天打卡越积极（最多5颗/天）｜🔴 红底=当天有暴食事件<br>点击某天可查看/编辑当天</div></div>';
+  html+='<div class="cal-legend">🟢 缺口为正=今天有盈余｜🔴 缺口为负=今天超标<br>点击某天可查看/编辑那天的摄入与运动</div></div>';
   html+='<div class="card" id="calDetail"><div class="hint">点击上方某天，查看或编辑那天</div></div>';
   $('#inner-calendar').innerHTML=html;
-  $('#calDone').textContent=doneDays;
   $('#calPrev').onclick=function(){var nd=new Date(y,m-1,1);state.calDate=nd;renderCalendar()};
   $('#calNext').onclick=function(){var nd=new Date(y,m+1,1);state.calDate=nd;renderCalendar()};
   var cells=$('#calGrid').querySelectorAll('.calCell[data-ds]');
@@ -1227,30 +1232,70 @@ function bindCalSwipe(el,prevBtn,nextBtn){
   el.addEventListener('mouseleave',function(){tracking=false;sx=null;sy=null;});
 }
 function showDayDetail(ds){
-  var meals=Store.get('meals',{});
-  var dm=meals[ds]||{};
-  var names={breakfast:'早餐',morning:'上午加餐',lunch:'午餐',afternoon:'下午加餐',dinner:'晚餐'};
-  var html='<h2>📅 '+fmtDate(ds)+'</h2><div class="hint">编辑当天的打卡情况（只记录「吃了没」）</div>';
-  var keys=['breakfast','morning','lunch','afternoon','dinner'];
-  for(var i=0;i<keys.length;i++){
-    var k=keys[i];
-    var checked=!!dm[k];
-    html+='<label style="display:flex;align-items:center;gap:8px;padding:7px;border:1px solid var(--line);border-radius:8px;margin-bottom:5px;font-size:12px"><input type="checkbox" data-k="'+k+'" '+(checked?'checked':'')+'> '+names[k]+' <span style="margin-left:auto;color:var(--gray);font-size:11px">'+(dm[k]?dm[k].desc||'已打卡':'')+'</span></label>';
+  var cals=getTodayCal(ds);
+  var inMap=Store.get('calIn',{});
+  var outMap=Store.get('calOut',{});
+  var ins=inMap[ds]||[];
+  var outs=outMap[ds]||[];
+  var isToday=ds===todayStr();
+  var html='<h2>📅 '+fmtDate(ds)+' · 热量账本</h2>';
+  html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0">';
+  html+='<div style="text-align:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px"><div style="font-size:10px;color:var(--gray)">摄入</div><div style="font-size:16px;font-weight:800;color:var(--purple)">'+cals.in+'</div></div>';
+  html+='<div style="text-align:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px"><div style="font-size:10px;color:var(--gray)">消耗</div><div style="font-size:16px;font-weight:800;color:var(--amber)">'+cals.out+'</div></div>';
+  html+='<div style="text-align:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px"><div style="font-size:10px;color:var(--gray)">缺口</div><div style="font-size:16px;font-weight:800;color:'+(cals.net>=0?'var(--green2)':'var(--red)')+'">'+(cals.net>=0?'+':'')+cals.net+'</div></div>';
+  html+='</div>';
+
+  // 摄入记录
+  html+='<div class="hint" style="margin:8px 0 4px">🍽️ 摄入记录</div>';
+  if(ins.length===0)html+='<div class="hint" style="margin:0 0 6px">当天无摄入记录</div>';
+  for(var i=0;i<ins.length;i++){
+    var x=ins[i];
+    html+='<div class="cal-item"><span class="nm">'+(x.type?esc(x.type)+' · ':'')+esc(x.name||'未命名')+'</span><span class="meta">'+(x.time||'')+'</span><span class="kcal">'+(x.kcal||0)+' kcal</span><span class="x" data-idx="'+i+'" data-type="in" data-ds="'+ds+'">✕</span></div>';
   }
-  html+='<button class="btn" id="saveDay" style="margin-top:6px">保存</button>';
+  // 运动记录
+  html+='<div class="hint" style="margin:10px 0 4px">🔥 运动记录</div>';
+  if(outs.length===0)html+='<div class="hint" style="margin:0 0 6px">当天无运动记录</div>';
+  for(var j=0;j<outs.length;j++){
+    var y=outs[j];
+    html+='<div class="cal-item"><span class="nm">'+esc(y.name||'未命名')+(y.duration?' · '+esc(y.duration):'')+'</span><span class="meta">'+(y.time||'')+'</span><span class="kcal">'+(y.kcal||0)+' kcal</span><span class="x" data-idx="'+j+'" data-type="out" data-ds="'+ds+'">✕</span></div>';
+  }
+  // 快速添加（仅今天或过往均可补录）
+  html+='<div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:8px"><div class="hint" style="margin-bottom:4px">补录 / 新增</div>';
+  html+='<div class="cal-add-row"><input id="calDetailName" placeholder="饮食/运动名称"><select id="calDetailType"><option>早餐</option><option>上午加餐</option><option>午餐</option><option>下午加餐</option><option>晚餐</option><option>其他</option><option>运动</option></select><input id="calDetailKcal" type="number" placeholder="kcal"></div>';
+  html+='<button class="btn" id="saveDay" style="margin-top:6px;width:100%">＋ 添加</button></div>';
   $('#calDetail').innerHTML=html;
+
+  // 删除已有记录
+  var xs=$('#calDetail').querySelectorAll('.cal-item .x');
+  for(var k=0;k<xs.length;k++){
+    xs[k].onclick=function(ev){
+      var btn=ev.currentTarget;
+      var type=btn.getAttribute('data-type');
+      var idx=parseInt(btn.getAttribute('data-idx'));
+      var dss=btn.getAttribute('data-ds');
+      var map=type==='in'?Store.get('calIn',{}):Store.get('calOut',{});
+      var arr=map[dss]||[];
+      if(idx>=0&&idx<arr.length){arr.splice(idx,1);map[dss]=arr;Store.set(type==='in'?'calIn':'calOut',map);}
+      showDayDetail(dss);renderCalendar();if(dss===todayStr()){renderCheckin();renderOverview()}
+    };
+  }
+
   $('#saveDay').onclick=function(){
-    var meals2=Store.get('meals',{});
-    if(!meals2[ds])meals2[ds]={};
-    var boxes=$('#calDetail').querySelectorAll('input[type=checkbox]');
-    for(var b=0;b<boxes.length;b++){
-      var cb=boxes[b];var k=cb.getAttribute('data-k');
-      if(cb.checked){if(!meals2[ds][k])meals2[ds][k]={desc:'',kcal:0}}else{delete meals2[ds][k]}
+    var name=$('#calDetailName').value.trim();
+    var kcal=parseInt($('#calDetailKcal').value)||0;
+    if(!name||!kcal){toast('请输入名称和热量');return;}
+    var type=$('#calDetailType').value;
+    var rec={name:name,kcal:kcal,time:nowHM()};
+    if(type==='运动'){
+      var map=Store.get('calOut',{});var arr=map[ds]||[];
+      arr.push(rec);map[ds]=arr;Store.set('calOut',map);
+    }else{
+      rec.type=type;
+      var map=Store.get('calIn',{});var arr=map[ds]||[];
+      arr.push(rec);map[ds]=arr;Store.set('calIn',map);
     }
-    Store.set('meals',meals2);
     toast('已保存 '+fmtDate(ds));
-    if(ds===todayStr()){renderCheckin();renderOverview()}
-    renderCalendar();
+    showDayDetail(ds);renderCalendar();if(ds===todayStr()){renderCheckin();renderOverview()}
   };
 }
 
@@ -2114,10 +2159,10 @@ function getCumulativeGap(){
 function getGoalStats(){
   var p=getProfile();
   var curW=latestWeight()||parseFloat(p.startWeight||0);
-  var stages=Store.get('fatStages',[]);
+  var stages=getFatStages();
   var cur=Store.get('fatCurStage',0);
   var goalW=null;
-  if(stages[cur])goalW=parseFloat(stages[cur].target);
+  if(stages[cur])goalW=parseFloat(stages[cur].targetWeight);
   if(goalW==null||isNaN(goalW))goalW=parseFloat(p.targetWeight||0);
   if(!curW||!goalW||goalW>=curW)return null;
   var totalGap=Math.round((curW-goalW)*7700);
