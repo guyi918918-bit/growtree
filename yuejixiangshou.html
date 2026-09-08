@@ -112,15 +112,27 @@ main{padding:10px}
 .daybar .total{color:var(--purple);font-weight:700;font-size:13px}
 
 /* ===== 热量账本（v11：吃进去 / 花掉 / 汇总） ===== */
-.cal-ledger-row{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:#fff}
+.cal-ledger-row{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:#fff;transition:border-color .2s,background .2s,box-shadow .2s}
+.cal-ledger-row.cal-ledger-row-over{border:2px solid var(--red);background:#fff0f0;box-shadow:0 2px 8px rgba(220,38,38,.08)}
+.cal-ledger-row.cal-ledger-row-good{border:2px solid var(--green);background:#f0fff4}
 .cal-ledger-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
 .cal-ledger-label{font-size:11px;color:var(--gray);font-weight:600}
 .cal-ledger-num{font-size:34px;font-weight:800;color:var(--ink);line-height:1;margin-top:2px}
+.cal-ledger-row-over .cal-ledger-num{color:var(--red)}
+.cal-ledger-row-over .cal-ledger-sub{color:#c0392b}
 .cal-ledger-sub{font-size:11px;color:var(--gray);margin-top:2px}
 .cal-ledger-status{font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px;white-space:nowrap}
 .cal-ledger-status.good{background:#eaf7ed;color:var(--green2)}
 .cal-ledger-status.bad{background:#fdeaea;color:var(--red)}
 .cal-ledger-status.warn{background:#fff7e6;color:#d48806}
+.cal-alert-banner{display:none;align-items:center;gap:8px;margin:8px -4px 4px;padding:10px 12px;border-radius:10px;font-size:13px;font-weight:700;line-height:1.5;animation:calAlertPop .3s ease}
+.cal-alert-banner.show{display:flex}
+.cal-alert-banner.stop{background:#fdeaea;color:#c0392b;border:1px solid #f5b7b1}
+.cal-alert-banner.go{background:#eaf7ed;color:var(--green2);border:1px solid #b7e4c7}
+@keyframes calAlertPop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.progress{height:8px;background:#e3ede6;border-radius:4px;overflow:hidden;margin-top:6px}
+.progress>i{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--green2));border-radius:4px;transition:width .3s ease,background .3s ease}
+.cal-ledger-row-over .progress>i{background:linear-gradient(90deg,#e06b6b,#c0392b)}
 .cal-ledger-detail{display:none;margin:8px 0 4px;border-top:1px dashed var(--line);padding-top:8px}
 .cal-ledger-detail.open{display:block}
 .cal-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;font-size:12px;border-bottom:1px dashed var(--line)}
@@ -131,12 +143,14 @@ main{padding:10px}
 .cal-item .x{color:var(--red);font-size:11px;cursor:pointer;margin-left:4px}
 .cal-add-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .cal-add-row input,.cal-add-row select{flex:1;min-width:60px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12px}
-.cal-summary{background:var(--light);border-radius:12px;padding:12px;margin-top:10px}
+.cal-summary{background:var(--light);border-radius:12px;padding:12px;margin-top:10px;border:1px solid transparent;transition:border-color .2s,background .2s}
+.cal-summary.cal-summary-bad{background:#fff0f0;border:2px solid var(--red)}
 .cal-summary .big-line{display:flex;align-items:baseline;gap:6px;margin-bottom:6px}
 .cal-summary .big-num{font-size:28px;font-weight:800}
 .cal-summary .big-num.good{color:var(--green2)}
 .cal-summary .big-num.bad{color:var(--red)}
 .cal-summary .sub-line{font-size:12px;color:var(--gray);margin-bottom:4px}
+.cal-summary.cal-summary-bad .sub-line{color:#5d4037}
 .cal-summary .tips{font-size:11px;color:var(--green2);background:#fff;border-radius:8px;padding:8px;margin-top:8px;line-height:1.6}
 .cal-summary .tips.warn{color:var(--red);background:#fff}
 .bmr-row{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;color:var(--gray);margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
@@ -883,17 +897,19 @@ function renderCheckin(){
 
   function inStatus(){
     var over=todayCal.in-budget;
-    if(over<=0)return{cls:'good',txt:'✅ 未超标'};
-    return{cls:'bad',txt:'⚠️ 已超 '+over+' 大卡'};
+    if(over<=0)return{cls:'good',txt:'✅ 未超标',over:0};
+    return{cls:'bad',txt:'⚠️ 已超 '+over+' 大卡',over:over};
   }
 
   var html='<div class="card"><h2>📊 今日热量账本</h2><div class="hint">吃进去的 - 花掉的 = 你今天离目标更近了多少？</div>';
 
   // 第一行：摄入
   var st=inStatus();
-  html+='<div class="cal-ledger-row">';
+  var inOver=st.cls==='bad';
+  html+='<div class="cal-ledger-row '+(inOver?'cal-ledger-row-over':(todayCal.in>0?'cal-ledger-row-good':''))+'" id="calInRow">';
   html+='<div class="cal-ledger-head"><div><div class="cal-ledger-label">🍽️ 今日摄入（吃进去的）</div><div class="cal-ledger-num" id="calInNum">'+todayCal.in+'</div><div class="cal-ledger-sub">/ 目标 '+budget+' 大卡</div></div><div class="cal-ledger-status '+st.cls+'" id="calInStatus">'+st.txt+'</div></div>';
   html+='<div class="progress"><i id="calInBar" style="width:'+Math.min(100,Math.round(todayCal.in/budget*100))+'%"></i></div>';
+  html+='<div class="cal-alert-banner '+(inOver?'stop':'go')+' '+(inOver||todayCal.in>0?'show':'')+'" id="calInAlert">'+(inOver?'🛑 停！已经超标 '+st.over+' 大卡，别再吃了':'✅ 目前摄入OK，继续保持')+'</div>';
   html+='<div class="cal-ledger-detail" id="calInDetail"></div>';
   html+='<div class="cal-add-row"><input id="calInName" placeholder="饮食名称（可选备注）"><select id="calInType"><option>早餐</option><option>上午加餐</option><option>午餐</option><option>下午加餐</option><option>晚餐</option><option>其他</option></select><input id="calInKcal" type="number" placeholder="热量 kcal"></div>';
   html+='<button class="btn" id="calInAdd" style="margin-top:6px;width:100%">＋ 添加记录</button>';
@@ -910,7 +926,7 @@ function renderCheckin(){
 
   // 汇总
   var netGood=todayCal.net>0;
-  html+='<div class="cal-summary">';
+  html+='<div class="cal-summary '+(netGood?'':'cal-summary-bad')+'" id="calSummary">';
   html+='<div class="big-line">今日净差额：<span class="big-num '+(netGood?'good':'bad')+'" id="calNetNum">'+(todayCal.net>=0?'+':'')+todayCal.net+'</span> <span style="font-size:13px;color:var(--gray)">大卡</span></div>';
   html+='<div class="sub-line" id="calNetTip">'+(netGood?'🟢 今天身体“多花了”'+(todayCal.net)+'大卡，攒下来了！':'🔴 今天超了，明天多走两步')+'</div>';
   if(gs){
@@ -983,11 +999,15 @@ function renderCheckin(){
     gs=getGoalStats();
     pred=predictDays(todayCal.net);
     var s=inStatus();
+    var inOver=s.cls==='bad';
+    var elRow=$('#calInRow');if(elRow){elRow.className='cal-ledger-row '+(inOver?'cal-ledger-row-over':(todayCal.in>0?'cal-ledger-row-good':''));}
     var elSt=$('#calInStatus');if(elSt){elSt.className='cal-ledger-status '+s.cls;elSt.textContent=s.txt;}
+    var elAlert=$('#calInAlert');if(elAlert){elAlert.className='cal-alert-banner '+(inOver?'stop':'go')+' show';elAlert.innerHTML=(inOver?'🛑 停！已经超标 <b>'+s.over+'</b> 大卡，别再吃了':'✅ 目前摄入OK，继续保持');}
     var elIn=$('#calInNum');if(elIn)elIn.textContent=todayCal.in;
     var elOut=$('#calOutNum');if(elOut)elOut.textContent=todayCal.out;
     var elNet=$('#calNetNum');if(elNet){elNet.className='big-num '+(todayCal.net>0?'good':'bad');elNet.textContent=(todayCal.net>=0?'+':'')+todayCal.net;}
-    var elNetTip=$('#calNetTip');if(elNetTip)elNetTip.textContent=todayCal.net>0?'🟢 今天身体“多花了”'+(todayCal.net)+'大卡，攒下来了！':'🔴 今天超了，明天多走两步';
+    var elNetTip=$('#calNetTip');if(elNetTip){elNetTip.innerHTML=todayCal.net>0?'🟢 今天身体“多花了”<b>'+(todayCal.net)+'</b>大卡，攒下来了！':'🔴 今天超了，明天多走两步';}
+    var elSum=$('#calSummary');if(elSum){elSum.className='cal-summary '+(todayCal.net>0?'':'cal-summary-bad');}
     var elBar=$('#calInBar');if(elBar)elBar.style.width=Math.min(100,Math.round(todayCal.in/budget*100))+'%';
     var elPred=$('#calPred');if(elPred)elPred.textContent=pred.text;
     drawDetails();
