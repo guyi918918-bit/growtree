@@ -111,38 +111,6 @@ main{padding:10px}
 .daybar{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--gray);margin-bottom:6px}
 .daybar .total{color:var(--purple);font-weight:700;font-size:13px}
 
-/* ===== 热量账本（v11：吃进去 / 花掉 / 汇总） ===== */
-.cal-ledger-row{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:#fff}
-.cal-ledger-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
-.cal-ledger-label{font-size:11px;color:var(--gray);font-weight:600}
-.cal-ledger-num{font-size:34px;font-weight:800;color:var(--ink);line-height:1;margin-top:2px}
-.cal-ledger-sub{font-size:11px;color:var(--gray);margin-top:2px}
-.cal-ledger-status{font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px;white-space:nowrap}
-.cal-ledger-status.good{background:#eaf7ed;color:var(--green2)}
-.cal-ledger-status.bad{background:#fdeaea;color:var(--red)}
-.cal-ledger-status.warn{background:#fff7e6;color:#d48806}
-.cal-ledger-detail{display:none;margin:8px 0 4px;border-top:1px dashed var(--line);padding-top:8px}
-.cal-ledger-detail.open{display:block}
-.cal-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;font-size:12px;border-bottom:1px dashed var(--line)}
-.cal-item:last-child{border:none}
-.cal-item .nm{flex:1}
-.cal-item .meta{font-size:10px;color:var(--gray)}
-.cal-item .kcal{font-weight:700;color:var(--ink)}
-.cal-item .x{color:var(--red);font-size:11px;cursor:pointer;margin-left:4px}
-.cal-add-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
-.cal-add-row input,.cal-add-row select{flex:1;min-width:60px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12px}
-.cal-summary{background:var(--light);border-radius:12px;padding:12px;margin-top:10px}
-.cal-summary .big-line{display:flex;align-items:baseline;gap:6px;margin-bottom:6px}
-.cal-summary .big-num{font-size:28px;font-weight:800}
-.cal-summary .big-num.good{color:var(--green2)}
-.cal-summary .big-num.bad{color:var(--red)}
-.cal-summary .sub-line{font-size:12px;color:var(--gray);margin-bottom:4px}
-.cal-summary .tips{font-size:11px;color:var(--green2);background:#fff;border-radius:8px;padding:8px;margin-top:8px;line-height:1.6}
-.cal-summary .tips.warn{color:var(--red);background:#fff}
-.bmr-row{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;color:var(--gray);margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
-.bmr-row .val{font-weight:700;color:var(--ink)}
-.bmr-row input{width:80px;text-align:center}
-
 /* 食谱 */
 .recipe-group{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:8px}
 .recipe-group .gh{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--light);font-weight:700;font-size:13px}
@@ -373,7 +341,7 @@ var Store={
 };
 
 /* ============ 与成长小树云端同步 ============ */
-var YJXS_SYNC_KEYS=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','altUsed','delayCount','noPunish','normalDays','profile','weightLog','measures','subOrder','secOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount','breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak','xp','seasonXp','seasonKey','seasons','stopFromStop','bingeState','bingeStop','fatCheckins','fatStages','fatCurStage','calIn','calOut','calBudget','calBmr','calCumGap'];
+var YJXS_SYNC_KEYS=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','altUsed','delayCount','noPunish','normalDays','profile','weightLog','measures','subOrder','secOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount','breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak','xp','seasonXp','seasonKey','seasons','stopFromStop','bingeState','bingeStop','fatCheckins','fatStages','fatCurStage'];
 var __yjxs_notifyTimer=null;
 function yjxsExportAll(){
   var data={};
@@ -570,9 +538,7 @@ var state={
   sub:{},
   rendered:{},
   progressOpen:false,
-  secOrderMode:false,
-  openCalIn:false,
-  openCalOut:false
+  secOrderMode:false
 };
 
 /* ============ 默认数据初始化 ============ */
@@ -640,11 +606,6 @@ function initData(){
   }
   if(!Store.get('weightLog',null))Store.set('weightLog',[]);  // [{date,weight}]
   if(!Store.get('measures',null))Store.set('measures',[]);    // [{date,上臂,腰围,腹围,臀围,大腿,小腿}]
-  // v11 热量账本
-  if(!Store.get('calIn',null))Store.set('calIn',{});         // {日期:[{name,kcal,type,time}]}
-  if(!Store.get('calOut',null))Store.set('calOut',{});       // {日期:[{name,duration,kcal}]}
-  if(!Store.get('calBudget',null))Store.set('calBudget',parseInt((Store.get('profile')||{}).calorie)||1500);
-  if(!Store.get('calBmr',null))Store.set('calBmr',calcBMR(getProfile())||1300);
   if(!Store.get('subOrder',null)){
     var order={};
     for(var i=0;i<NAV.length;i++){order[NAV[i].id]=NAV[i].subs.map(function(s){return s.id})}
@@ -868,169 +829,93 @@ function renderOverview(){
   return done;
 }
 
-/* ============ 每日打卡：v11 热量账本 ============ */
+/* ============ 每日打卡（需求1：一体化，下方建议，不写细节）============ */
 function renderCheckin(){
   var today=todayStr();
-  var budget=getCalBudget();
-  var todayCal=getTodayCal(today);
-  var gs=getGoalStats();
-  var pred=predictDays(todayCal.net);
-
-  function inStatus(){
-    var over=todayCal.in-budget;
-    if(over<=0)return{cls:'good',txt:'✅ 未超标'};
-    return{cls:'bad',txt:'⚠️ 已超 '+over+' 大卡'};
-  }
-
-  var html='<div class="card"><h2>📊 今日热量账本</h2><div class="hint">吃进去的 - 花掉的 = 你今天离目标更近了多少？</div>';
-
-  // 第一行：摄入
-  var st=inStatus();
-  html+='<div class="cal-ledger-row">';
-  html+='<div class="cal-ledger-head"><div><div class="cal-ledger-label">🍽️ 今日摄入（吃进去的）</div><div class="cal-ledger-num" id="calInNum">'+todayCal.in+'</div><div class="cal-ledger-sub">/ 目标 '+budget+' 大卡</div></div><div class="cal-ledger-status '+st.cls+'" id="calInStatus">'+st.txt+'</div></div>';
-  html+='<div class="progress"><i id="calInBar" style="width:'+Math.min(100,Math.round(todayCal.in/budget*100))+'%"></i></div>';
-  html+='<div class="cal-ledger-detail" id="calInDetail"></div>';
-  html+='<div class="cal-add-row"><input id="calInName" placeholder="饮食名称（可选备注）"><select id="calInType"><option>早餐</option><option>上午加餐</option><option>午餐</option><option>下午加餐</option><option>晚餐</option><option>其他</option></select><input id="calInKcal" type="number" placeholder="热量 kcal"></div>';
-  html+='<button class="btn" id="calInAdd" style="margin-top:6px;width:100%">＋ 添加记录</button>';
-  html+='</div>';
-
-  // 第二行：消耗
-  html+='<div class="cal-ledger-row">';
-  html+='<div class="cal-ledger-head"><div><div class="cal-ledger-label">🔥 今日消耗（花掉的）</div><div class="cal-ledger-num" id="calOutNum">'+todayCal.out+'</div><div class="cal-ledger-sub">总消耗 = 静息 '+todayCal.bmr+' ＋ 运动 '+todayCal.exercise+'</div></div></div>';
-  html+='<div class="cal-ledger-detail" id="calOutDetail"></div>';
-  html+='<div class="bmr-row"><span>静息消耗（可手动校正）：</span><span class="val"><input type="number" id="calBmrInput" value="'+todayCal.bmr+'"> kcal</span></div>';
-  html+='<div class="cal-add-row" style="margin-top:6px"><input id="calOutName" placeholder="运动项目"><input id="calOutDuration" placeholder="时长"><input id="calOutKcal" type="number" placeholder="热量 kcal"></div>';
-  html+='<button class="btn" id="calOutAdd" style="margin-top:6px;width:100%">＋ 添加运动</button>';
-  html+='</div>';
-
-  // 汇总
-  var netGood=todayCal.net>0;
-  html+='<div class="cal-summary">';
-  html+='<div class="big-line">今日净差额：<span class="big-num '+(netGood?'good':'bad')+'" id="calNetNum">'+(todayCal.net>=0?'+':'')+todayCal.net+'</span> <span style="font-size:13px;color:var(--gray)">大卡</span></div>';
-  html+='<div class="sub-line" id="calNetTip">'+(netGood?'🟢 今天身体“多花了”'+(todayCal.net)+'大卡，攒下来了！':'🔴 今天超了，明天多走两步')+'</div>';
-  if(gs){
-    html+='<div class="sub-line">🎯 当前 '+gs.curW+'kg → 目标 '+gs.goalW+'kg，还需累积 <b>'+gs.remain+'</b> 大卡缺口</div>';
-    html+='<div class="sub-line" id="calPred">'+pred.text+'</div>';
-    if(pred.days!=null&&pred.days>0){
-      var want=new Date('2026-09-30');
-      var leftDays=Math.max(1,Math.ceil((want.getTime()-new Date().getTime())/86400000));
-      var need=Math.ceil(gs.remain/leftDays);
-      var extra=need-todayCal.net;
-      if(extra>0){
-        html+='<div class="tips'+(netGood?'':' warn')+'">⚡ 若想在 9 月 30 日前完成，每天需再多赚约 <b>'+extra+'</b> 大卡。</div>';
-      }
-    }
-  }else{
-    html+='<div class="sub-line">🎯 在「减脂足迹 → 我的档案」里填好当前体重和目标体重，即可预测达标天数。</div>';
-  }
-  html+='</div>';
-
-  // 保留旧的核心提醒（不破坏其他功能）
+  var meals=Store.get('meals',{});
+  if(!meals[today])meals[today]={};
+  var data=meals[today];
+  var mealsDef=[
+    {id:'breakfast',nm:'早餐',tag:'蛋白质：鸡蛋/牛奶/豆浆',suggest:'例：<span class="ex">鸡蛋2个 + 牛奶1杯 + 全麦面包1片</span> ≈ 400kcal',kcal:'400'},
+    {id:'morning',nm:'上午加餐',tag:'一根香蕉或一小把坚果',suggest:'例：<span class="ex">香蕉1根</span> ≈ 90kcal',kcal:'90'},
+    {id:'lunch',nm:'午餐',tag:'蛋白质+蔬菜+碳水，七八分饱',suggest:'例：<span class="ex">米饭1拳 + 鸡胸/瘦肉 + 蔬菜2拳</span> ≈ 550kcal',kcal:'550'},
+    {id:'afternoon',nm:'下午加餐',tag:'酸奶/水果/无糖饮品',suggest:'例：<span class="ex">无糖酸奶1杯 + 蓝莓一把</span> ≈ 120kcal',kcal:'120'},
+    {id:'dinner',nm:'晚餐',tag:'清淡，别吃撑也别饿着',suggest:'例：<span class="ex">杂粮粥 + 豆腐/鱼 + 蔬菜</span> ≈ 450kcal',kcal:'450'},
+  ];
+  var html='<div class="card"><h2>🍽️ 每日打卡</h2><div class="hint">只点「吃了没」，下方是建议，不用自己写。点到即算完成，<b>不节食</b>。</div>';
+  html+='<div class="daybar"><span>今天 '+fmtDate(today)+'</span><span class="total">已打卡 <b id="dayDone">0</b>/5 · <span id="dayKcal">0</span> kcal</span></div>';
+  html+='<div class="progress"><i id="dayBar" style="width:0%"></i></div><div id="mealList"></div>';
+  html+='<div class="hint" style="margin-top:8px;text-align:center">💡 三餐两点按时吃 → 不容易「太饿 → 必须马上吃」</div>';
   html+='<div class="card"><h2>📌 核心提醒</h2><div class="hint" style="line-height:1.7">• 每餐都吃，<b>不要饿着自己</b>（饿是暴食的最大诱因）<br>• 吃到七八分饱即可<br>• 下面只是<b>参考建议</b>，你有更重要——吃了就是成功</div></div>';
-
   $('#inner-checkin').innerHTML=html;
 
-  function drawDetails(){
-    var inMap=Store.get('calIn',{});
-    var outMap=Store.get('calOut',{});
-    var ins=inMap[today]||[];
-    var outs=outMap[today]||[];
-    // 摄入列表（时间倒序）
-    var ih='<div style="font-size:11px;color:var(--gray);margin-bottom:4px">明细（按时间倒序）</div>';
-    var sortedIn=ins.slice().reverse();
-    if(sortedIn.length===0)ih+='<div class="hint" style="margin:0">今天还没有摄入记录，点上方「+ 添加记录」开始。</div>';
-    for(var i=0;i<sortedIn.length;i++){
-      var x=sortedIn[i];
-      ih+='<div class="cal-item"><span class="nm">'+(x.type?esc(x.type)+' · ':'')+esc(x.name||'未命名')+'</span><span class="meta">'+(x.time||'')+'</span><span class="kcal">'+(x.kcal||0)+' kcal</span><span class="x" data-idx="'+sortedIn.length-1-i+'" data-type="in">✕</span></div>';
-    }
-    $('#calInDetail').innerHTML=ih;
-    // 运动列表
-    var oh='<div style="font-size:11px;color:var(--gray);margin-bottom:4px">运动明细</div>';
-    var sortedOut=outs.slice().reverse();
-    if(sortedOut.length===0)oh+='<div class="hint" style="margin:0">今天还没有运动记录。</div>';
-    for(var j=0;j<sortedOut.length;j++){
-      var y=sortedOut[j];
-      oh+='<div class="cal-item"><span class="nm">'+esc(y.name||'未命名')+(y.duration?' · '+esc(y.duration):'')+'</span><span class="meta">'+(y.time||'')+'</span><span class="kcal">'+(y.kcal||0)+' kcal</span><span class="x" data-idx="'+sortedOut.length-1-j+'" data-type="out">✕</span></div>';
-    }
-    $('#calOutDetail').innerHTML=oh;
-    // 展开状态
-    $('#calInDetail').classList.toggle('open',!!state.openCalIn);
-    $('#calOutDetail').classList.toggle('open',!!state.openCalOut);
+  // 把 drawList 挂到 window，供食谱选择弹窗等外部调用（否则 openRecipePicker 里访问不到）
+  var __drawList=null;
 
-    // 删除绑定
-    var xs=$('#inner-checkin').querySelectorAll('.cal-item .x');
-    for(var k=0;k<xs.length;k++){
-      xs[k].onclick=function(ev){
-        var btn=ev.currentTarget;
-        var type=btn.getAttribute('data-type');
-        var idx=parseInt(btn.getAttribute('data-idx'));
-        var map=type==='in'?Store.get('calIn',{}):Store.get('calOut',{});
-        var arr=map[today]||[];
-        if(idx>=0&&idx<arr.length){arr.splice(idx,1);map[today]=arr;Store.set(type==='in'?'calIn':'calOut',map);}
-        refresh();
+  function drawList(){
+    var mh='';
+    var done=0,totalKcal=0;
+    for(var i=0;i<mealsDef.length;i++){
+      var m=mealsDef[i];
+      var isDone=!!data[m.id];
+      var rec=isDone?(data[m.id].desc||'已打卡'):'';
+      var kcal=isDone?(data[m.id].kcal||0):0;
+      if(isDone){done++;totalKcal+=parseInt(kcal)||0}
+      mh+='<div class="meal-card '+(isDone?'done ':'')+(state.openMeal===m.id?'open':'')+'">';
+      mh+='<div class="mc-head" data-m="'+m.id+'">';
+      mh+='<div class="box">'+(isDone?'\u2713':'')+'</div>';
+      mh+='<div class="mc-name">'+m.nm+'</div>';
+      mh+='<span class="mc-tag">'+(isDone?(rec||'已打卡'):m.tag)+'</span>';
+      mh+='</div>';
+      mh+='<div class="mc-body">';
+      mh+='<div class="mc-label">📷 吃了什么（拍照描述，可选）</div>';
+      mh+='<div class="row"><input class="mc-field" placeholder="例如：鸡蛋+牛奶+面包" value="'+esc(rec)+'" style="flex:1"><button class="btn sm pick-recipe" data-m="'+m.id+'" style="width:auto;margin-left:6px">📖 从食谱选</button></div>';
+      mh+='<div class="mc-label">🔥 约多少 kcal（可选）</div>';
+      mh+='<input class="mc-field" type="number" placeholder="'+m.kcal+'" value="'+esc(kcal)+'">';
+      mh+='<div class="suggest">'+m.suggest+'</div>';
+      mh+='<div class="row" style="margin-top:8px">';
+      mh+='<button class="btn '+(isDone?'danger':'')+'" style="flex:1" data-act="'+(isDone?'undo':'do')+'" data-m="'+m.id+'">'+(isDone?'↩️ 取消打卡':'✅ 确认：我吃了')+'</button>';
+      mh+='</div></div></div>';
+    }
+    $('#mealList').innerHTML=mh;
+    $('#dayDone').textContent=done;
+    $('#dayKcal').textContent=totalKcal;
+    $('#dayBar').style.width=(done/5*100)+'%';
+    // 绑定
+    var heads=$('#mealList').querySelectorAll('.mc-head');
+    for(var h=0;h<heads.length;h++){
+      heads[h].onclick=function(ev){
+        var mid=ev.currentTarget.getAttribute('data-m');
+        state.openMeal=state.openMeal===mid?null:mid;
+        drawList();
+      };
+    }
+    var acts=$('#mealList').querySelectorAll('button[data-act]');
+    for(var a=0;a<acts.length;a++){
+      acts[a].onclick=function(ev){
+        var mid=ev.currentTarget.getAttribute('data-m');
+        var act=ev.currentTarget.getAttribute('data-act');
+        var card=ev.currentTarget.closest('.meal-card');
+        var desc=(card.querySelector('input')||{}).value||'';
+        var kcal=(card.querySelectorAll('input')[1]||{}).value||'0';
+        if(act==='do'){data[mid]={desc:desc,kcal:parseInt(kcal)||0};if(mid==='breakfast')Store.set('breakfastCount',Store.get('breakfastCount',0)+1)}
+        else{delete data[mid]}
+        meals[today]=data;Store.set('meals',meals);
+        if(act==='do'){addXP(2);toast('✅ '+mealsDef.filter(function(x){return x.id===mid})[0].nm+' 已打卡 +2XP');state.openMeal=null}
+        drawList();checkMeal5();saveNormalDay();
+      };
+    }
+    // 「从食谱选」按钮：把食谱搭配里的条目一键填进「吃了什么」
+    var picks=$('#mealList').querySelectorAll('.pick-recipe');
+    for(var p=0;p<picks.length;p++){
+      picks[p].onclick=function(ev){
+        var mid=ev.currentTarget.getAttribute('data-m');
+        openRecipePicker(mid);
       };
     }
   }
-
-  function refresh(){
-    todayCal=getTodayCal(today);
-    budget=getCalBudget();
-    gs=getGoalStats();
-    pred=predictDays(todayCal.net);
-    var s=inStatus();
-    var elSt=$('#calInStatus');if(elSt){elSt.className='cal-ledger-status '+s.cls;elSt.textContent=s.txt;}
-    var elIn=$('#calInNum');if(elIn)elIn.textContent=todayCal.in;
-    var elOut=$('#calOutNum');if(elOut)elOut.textContent=todayCal.out;
-    var elNet=$('#calNetNum');if(elNet){elNet.className='big-num '+(todayCal.net>0?'good':'bad');elNet.textContent=(todayCal.net>=0?'+':'')+todayCal.net;}
-    var elNetTip=$('#calNetTip');if(elNetTip)elNetTip.textContent=todayCal.net>0?'🟢 今天身体“多花了”'+(todayCal.net)+'大卡，攒下来了！':'🔴 今天超了，明天多走两步';
-    var elBar=$('#calInBar');if(elBar)elBar.style.width=Math.min(100,Math.round(todayCal.in/budget*100))+'%';
-    var elPred=$('#calPred');if(elPred)elPred.textContent=pred.text;
-    drawDetails();
-  }
-
-  // 点击大数字展开/收起明细
-  $('#calInNum').onclick=function(){state.openCalIn=!state.openCalIn;drawDetails();};
-  $('#calOutNum').onclick=function(){state.openCalOut=!state.openCalOut;drawDetails();};
-
-  // 添加摄入
-  $('#calInAdd').onclick=function(){
-    var name=$('#calInName').value.trim();
-    var kcal=parseInt($('#calInKcal').value)||0;
-    var type=$('#calInType').value;
-    if(kcal<=0){toast('请输入热量');return;}
-    var map=Store.get('calIn',{});
-    if(!map[today])map[today]=[];
-    map[today].push({name:name||type,kcal:kcal,type:type,time:new Date().toTimeString().slice(0,5)});
-    Store.set('calIn',map);
-    $('#calInName').value='';$('#calInKcal').value='';
-    refresh();toast('✅ 已记录摄入 '+kcal+' kcal');
-  };
-
-  // 添加运动
-  $('#calOutAdd').onclick=function(){
-    var name=$('#calOutName').value.trim();
-    var dur=$('#calOutDuration').value.trim();
-    var kcal=parseInt($('#calOutKcal').value)||0;
-    if(kcal<=0){toast('请输入热量');return;}
-    var map=Store.get('calOut',{});
-    if(!map[today])map[today]=[];
-    map[today].push({name:name||'运动',duration:dur,kcal:kcal,time:new Date().toTimeString().slice(0,5)});
-    Store.set('calOut',map);
-    $('#calOutName').value='';$('#calOutDuration').value='';$('#calOutKcal').value='';
-    refresh();toast('✅ 已记录运动 +'+(kcal)+' kcal');
-  };
-
-  // 校正静息消耗
-  $('#calBmrInput').onchange=function(){
-    var v=parseInt($('#calBmrInput').value);
-    if(v>0){Store.set('calBmr',v);refresh();}
-  };
-
-  // 点击明细行也可以展开
-  $('#calInDetail').onclick=function(ev){if(ev.target.closest('.x'))return;state.openCalIn=true;drawDetails();};
-  $('#calOutDetail').onclick=function(ev){if(ev.target.closest('.x'))return;state.openCalOut=true;drawDetails();};
-
-  drawDetails();
+  __drawList=drawList;
+  drawList();
   state.rendered.checkin=true;
 }
 
@@ -1954,7 +1839,7 @@ function renderSettings(){
   // 备份
   $('#exportBtn').onclick=function(){
     var data={};
-    var keys=['profile','weightLog','measures','meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','seasonNo','seasonKey','seasonXp','xp','normalDays','subOrder','secOrder','delayCount','altUsed','noPunish','maxStreak','stopState','bingeState','calIn','calOut','calBudget','calBmr','calCumGap'];
+    var keys=['profile','weightLog','measures','meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','seasonNo','seasonKey','seasonXp','xp','normalDays','subOrder','secOrder','delayCount','altUsed','noPunish','maxStreak','stopState','bingeState'];
     for(var k=0;k<keys.length;k++){data[keys[k]]=Store.get(keys[k],null)}
     var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
     var a=document.createElement('a');
@@ -2066,74 +1951,6 @@ function getProfile(){return Store.get('profile',{nickname:'',gender:'女',age:'
 function getWeightLog(){return Store.get('weightLog',[])}
 function sortedLog(){return getWeightLog().slice().sort(function(a,b){return a.date<b.date?-1:1})}
 function latestWeight(){var l=sortedLog();return l.length?l[l.length-1].weight:0}
-
-/* ============ 热量账本核心公式 ============ */
-function calcBMR(p){
-  var w=parseFloat(p.startWeight||latestWeight()||0);
-  var h=parseFloat(p.height||0);
-  var a=parseFloat(p.age||0);
-  var g=p.gender||'女';
-  if(!w||!h||!a)return null;
-  if(g==='男')return Math.round(66+13.7*w+5*h-6.8*a);
-  return Math.round(655+9.6*w+1.8*h-4.7*a);
-}
-function getCalBudget(){return parseInt(Store.get('calBudget',1500))||1500}
-function getCalBmr(){return parseInt(Store.get('calBmr',calcBMR(getProfile())||1300))||1300}
-function getTodayCal(d){
-  var today=d||todayStr();
-  var inMap=Store.get('calIn',{});
-  var outMap=Store.get('calOut',{});
-  var bmr=getCalBmr();
-  var ins=inMap[today]||[];
-  var outs=outMap[today]||[];
-  var sumIn=ins.reduce(function(s,x){return s+(parseInt(x.kcal)||0)},0);
-  var sumEx=outs.reduce(function(s,x){return s+(parseInt(x.kcal)||0)},0);
-  var sumOut=bmr+sumEx;
-  return{in:sumIn,out:sumOut,bmr:bmr,exercise:sumEx,net:sumOut-sumIn};
-}
-function getCumulativeGap(){
-  var inMap=Store.get('calIn',{});
-  var outMap=Store.get('calOut',{});
-  var bmr=getCalBmr();
-  var today=todayStr();
-  var dates={};
-  for(var k in inMap)if(inMap.hasOwnProperty(k))dates[k]=true;
-  for(var k in outMap)if(outMap.hasOwnProperty(k))dates[k]=true;
-  var total=0;
-  for(var d in dates){
-    if(!dates.hasOwnProperty(d)||d===today)continue;
-    var ins=inMap[d]||[];
-    var outs=outMap[d]||[];
-    total+=bmr;
-    total-=ins.reduce(function(s,x){return s+(parseInt(x.kcal)||0)},0);
-    total+=outs.reduce(function(s,x){return s+(parseInt(x.kcal)||0)},0);
-  }
-  Store.set('calCumGap',total);
-  return total;
-}
-function getGoalStats(){
-  var p=getProfile();
-  var curW=latestWeight()||parseFloat(p.startWeight||0);
-  var stages=Store.get('fatStages',[]);
-  var cur=Store.get('fatCurStage',0);
-  var goalW=null;
-  if(stages[cur])goalW=parseFloat(stages[cur].target);
-  if(goalW==null||isNaN(goalW))goalW=parseFloat(p.targetWeight||0);
-  if(!curW||!goalW||goalW>=curW)return null;
-  var totalGap=Math.round((curW-goalW)*7700);
-  var cum=getCumulativeGap();
-  var remain=Math.max(0,totalGap-cum);
-  return{curW:curW,goalW:goalW,totalGap:totalGap,cum:cum,remain:remain,nextDate:''};
-}
-function predictDays(net){
-  var gs=getGoalStats();
-  if(!gs)return{text:'填好当前体重和目标体重后即可预测'};
-  if(gs.remain<=0)return{text:'已达到目标 🎉',days:0};
-  if(net<=0)return{text:'今日无盈余，无法预测',days:null};
-  var days=Math.ceil(gs.remain/net);
-  var end=new Date();end.setDate(end.getDate()+days);
-  return{text:'按今日速度，预计 '+days+' 天后达成（约 '+end.toISOString().slice(0,10).replace(/-/g,'.')+'）',days:days};
-}
 
 /* ============ 减脂足迹：阶段目标（体重目标链）============ */
 function getFatStages(){
@@ -2595,7 +2412,7 @@ function renderProfile(){
   html+='<div class="field-row"><span class="lbl">起始体重</span><input class="field" type="number" id="f_startWeight" step="0.1" value="'+esc(p.startWeight||'')+'" placeholder="kg"></div>';
   html+='<div class="field-row"><span class="lbl">目标体重</span><input class="field" type="number" id="f_targetWeight" step="0.1" value="'+esc(p.targetWeight||'')+'" placeholder="kg"></div>';
   html+='<div class="field-row"><span class="lbl">阶梯步长</span><input class="field" type="number" id="f_step" step="0.1" value="'+esc(p.step||'0.2')+'" placeholder="每阶梯 kg 数"></div>';
-  html+='<div class="field-row"><span class="lbl">每日摄入目标</span><input class="field" type="number" id="f_calorie" value="'+esc(p.calorie||'1500')+'" placeholder="千卡（热量账本用）"></div>';
+  html+='<div class="field-row"><span class="lbl">每日热量</span><input class="field" type="number" id="f_calorie" value="'+esc(p.calorie||'1500')+'" placeholder="千卡"></div>';
   html+='<div class="field-row" style="align-items:flex-start"><span class="lbl" style="padding-top:8px">个性签名<br>/目标宣言</span><textarea class="field" id="f_motto" rows="2" placeholder="写下你想对自己说的话…">'+esc(p.motto||'')+'</textarea></div>';
   html+='<button class="btn" id="profileSave" style="margin-top:6px">💾 保存档案</button></div>';
   // 预览
@@ -2609,9 +2426,7 @@ function renderProfile(){
     var st=parseFloat(pp.startWeight),tg=parseFloat(pp.targetWeight);
     var diff=Math.abs(st-tg);var step=parseFloat(pp.step)||0.2;
     var steps=Math.ceil(diff/step);
-    var bmr=calcBMR(pp);
-    var bmrTxt=bmr?('Harris-Benedict 估算静息消耗约 <b>'+bmr+'</b> 大卡/天 · '):'';
-    el.innerHTML='向着 <b>'+tg+' kg</b> 出发 · 一共 <b>'+steps+'</b> 个小阶梯<br>'+bmrTxt+'每日摄入目标 <b>'+(pp.calorie||1500)+'</b> 大卡。';
+    el.innerHTML='向着 <b>'+tg+' kg</b> 出发 · 一共 <b>'+steps+'</b> 个小阶梯<br>每完成一个都是进步，慢一点也没关系。';
   }
   drawPreview();
 
@@ -2628,10 +2443,6 @@ function renderProfile(){
       motto:$('#f_motto').value.trim(),
     };
     Store.set('profile',np);
-    // v11：同步热量账本目标与静息消耗
-    if(np.calorie){Store.set('calBudget',parseInt(np.calorie)||1500)}
-    var newBmr=calcBMR(np);
-    if(newBmr){Store.set('calBmr',newBmr)}
     // 若起始/目标齐全且无体重记录，自动补一条起始体重
     var log=getWeightLog();
     if(np.startWeight&&log.length===0){
@@ -2960,9 +2771,8 @@ function fixExport(){
     var data={};
     var keys=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll',
       'altUsed','delayCount','noPunish','normalDays','profile','weightLog','measures',
-      'subOrder','secOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount',
-      'breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak',
-      'calIn','calOut','calBudget','calBmr','calCumGap'];
+      'subOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount',
+      'breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak'];
     keys.forEach(function(k){data[k]=Store.get(k,null);});
     var json=JSON.stringify({__yueji:'backup',ver:8,time:new Date().toISOString(),data:data},null,2);
     try{
