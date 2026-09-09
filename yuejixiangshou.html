@@ -169,6 +169,10 @@ main{padding:10px}
 .msi-up{color:var(--green)}
 .msi-ok{color:var(--green)}
 .msi-tip{font-size:12px;color:var(--gray);padding:8px 0}
+.msi-meta{font-size:10px;color:var(--gray);margin-bottom:2px}
+.msi-gap{font-size:22px;font-weight:800;line-height:1.2;margin-top:2px}
+.msi-gap.red{color:var(--red)}
+.msi-gap.green{color:var(--green)}
 @media (max-width:480px){.measure-summary-grid{grid-template-columns:repeat(2,1fr)}}
 
 /* 食谱 */
@@ -2818,8 +2822,11 @@ function renderMeasure(){
       var cur=last[f],goal=goals[f];
       if(goal==null||cur==null){ch+='<div class="measure-summary-item empty"><div class="msi-name">'+f+'</div><div class="msi-tip">无目标/无记录</div></div>';continue}
       var diff=cur-goal;
-      var dStr=diff>0?'<span class="msi-down">↓ '+diff.toFixed(1)+' cm</span>':(diff<0?'<span class="msi-up">↑ '+Math.abs(diff).toFixed(1)+' cm</span>':'<span class="msi-ok">已达成 🎉</span>');
-      ch+='<div class="measure-summary-item"><div class="msi-name">'+f+'</div><div class="msi-val">'+cur+'<span class="msi-target">/ '+goal+' cm</span></div><div class="msi-diff">'+dStr+'</div></div>';
+      var dStr, cls;
+      if(diff>0){ dStr='还差 '+diff.toFixed(1)+' cm'; cls='red'; }
+      else if(diff<0){ dStr='已低 '+Math.abs(diff).toFixed(1)+' cm'; cls='green'; }
+      else{ dStr='已达成 🎉'; cls='green'; }
+      ch+='<div class="measure-summary-item"><div class="msi-name">'+f+'</div><div class="msi-meta">当前 '+cur+' / 目标 '+goal+' cm</div><div class="msi-gap '+cls+'">'+dStr+'</div></div>';
     }
     c.innerHTML=ch;
   }
