@@ -157,6 +157,20 @@ main{padding:10px}
 .bmr-row .val{font-weight:700;color:var(--ink)}
 .bmr-row input{width:80px;text-align:center}
 
+/* 围度摘要卡片 */
+.measure-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:8px}
+.measure-summary-item{background:var(--light);border-radius:10px;padding:12px 6px;text-align:center;border:1px solid var(--line)}
+.measure-summary-item.empty{background:#f9fbfa}
+.msi-name{font-size:11px;color:var(--gray);margin-bottom:4px}
+.msi-val{font-size:22px;font-weight:800;color:var(--ink);line-height:1.2}
+.msi-unit,.msi-target{font-size:10px;color:var(--gray);margin-left:2px;font-weight:500}
+.msi-diff{margin-top:5px;font-size:12px;font-weight:700}
+.msi-down{color:var(--green)}
+.msi-up{color:var(--red)}
+.msi-ok{color:var(--green)}
+.msi-tip{font-size:12px;color:var(--gray);padding:8px 0}
+@media (max-width:480px){.measure-summary-grid{grid-template-columns:repeat(2,1fr)}}
+
 /* 食谱 */
 .recipe-group{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:8px}
 .recipe-group .gh{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--light);font-weight:700;font-size:13px}
@@ -356,6 +370,20 @@ main{padding:10px}
 .mini-stat .lb{font-size:10px;color:var(--gray);margin-top:2px}
 .link-chip{font-size:11px;background:var(--light);color:var(--green);padding:5px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--green);display:inline-block;margin:3px}
 .insight{border-left:3px solid var(--green);background:var(--light);padding:8px 12px;border-radius:0 8px 8px 0;font-size:11px;line-height:1.6;margin-top:8px}
+
+/* === 围度：最新/距离目标 摘要卡片（折叠后默认展示） === */
+.measure-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}
+.measure-summary-item{border:1px solid var(--line);border-radius:10px;padding:10px 8px;background:var(--card);text-align:center;display:flex;flex-direction:column;gap:3px;justify-content:center}
+.measure-summary-item.empty{opacity:.6}
+.msi-name{font-size:11px;color:var(--gray);font-weight:600}
+.msi-val{font-size:17px;font-weight:800;color:var(--green2);line-height:1.1}
+.msi-val .msi-unit{font-size:10px;color:var(--gray);font-weight:600;margin-left:2px}
+.msi-val .msi-target{font-size:10px;color:var(--gray);font-weight:600;margin-left:3px}
+.msi-diff{font-size:11px;font-weight:700}
+.msi-down{color:var(--green)}
+.msi-up{color:var(--red)}
+.msi-ok{color:var(--amber)}
+.msi-tip{font-size:10px;color:var(--gray)}
 
 </style>
 </head>
@@ -2721,13 +2749,34 @@ function renderMeasure(){
   var list=Store.get('measures',[]);
   var goals=Store.get('measureGoals',{});
   var fields=[['上臂','cm'],['腰围','cm'],['腹围','cm'],['臀围','cm'],['大腿','cm'],['小腿','cm']];
+  var open=!!Store.get('measureFormOpen',false);
+
   var html='<div class="motd"><div class="big">📏 围度测量</div><div class="sub">体重会波动，围度更能反映真实的身体变化</div></div>';
+
+  // 最新围度摘要
+  html+='<div class="fat-card"><h2>📊 最新围度</h2><div class="measure-summary-grid" id="msLatest"></div></div>';
+
+  // 距离目标
+  html+='<div class="fat-card"><h2>🎯 距离目标</h2><div class="measure-summary-grid" id="msGoalGap"></div></div>';
+
+  // 展开/折叠按钮
+  html+='<div style="text-align:center;margin:16px 0 8px"><button class="btn" id="msToggleForm" style="min-width:170px">'+(open?'🔼 收起录入面板':'📝 录入/修改围度')+'</button></div>';
+
+  // 折叠录入区域
+  html+='<div id="msFormArea" style="display:'+(open?'block':'none')+'">';
   html+='<div class="fat-card"><h2>🎯 目标围度</h2><div class="hint">先设定你想达到的围度，系统会自动帮你算距离。</div><div class="measure-grid" id="msGoalGrid"></div><button class="btn ghost" id="msSaveGoal" style="margin-top:8px">💾 保存目标</button></div>';
   html+='<div class="fat-card"><h2>＋ 记录一次围度</h2><div class="hint">不用每次都全填，有空就记。保存时会自动带上时间。</div><div class="measure-grid" id="measureGrid"></div><button class="btn" id="msSave" style="margin-top:8px">💾 保存这次测量</button></div>';
-  html+='<div class="fat-card"><h2>📊 最新一次 vs 首次</h2><div class="measure-grid" id="msCompare"></div></div>';
-  html+='<div class="fat-card"><h2>🎯 距离目标还有多远</h2><div class="measure-grid" id="msGoalGap"></div></div>';
+  html+='</div>';
+
+  // 历史记录
   html+='<div class="fat-card"><h2>🗂️ 历史记录</h2><div style="overflow-x:auto"><table class="measure-table" id="msTable"></table></div></div>';
   $('#inner-measure').innerHTML=html;
+
+  // 展开/折叠
+  $('#msToggleForm').onclick=function(){
+    Store.set('measureFormOpen',!Store.get('measureFormOpen',false));
+    renderMeasure();
+  };
 
   // 目标围度输入
   var gg='';
@@ -2742,18 +2791,16 @@ function renderMeasure(){
     toast('目标围度已保存');renderMeasure();
   };
 
-  // 输入网格
+  // 记录输入
   var gh='';
   for(var i=0;i<fields.length;i++){
     gh+='<div class="measure-item"><div class="mi-lbl">'+fields[i][0]+' ('+fields[i][1]+')</div><input type="number" step="0.1" id="ms_'+i+'" placeholder="-"></div>';
   }
   $('#measureGrid').innerHTML=gh;
-  // 预填最新一次
   if(list.length){
     var last=list[list.length-1];
     for(var li=0;li<fields.length;li++){var inp=$('#ms_'+li);if(inp&&last[fields[li][0]]!=null)inp.value=last[fields[li][0]]}
   }
-
   $('#msSave').onclick=function(){
     var rec={date:todayStr(),time:nowHM()};var filled=false;
     for(var fi=0;fi<fields.length;fi++){var v=parseFloat($('#ms_'+fi).value);if(v>0){rec[fields[fi][0]]=v;filled=true}}
@@ -2762,35 +2809,31 @@ function renderMeasure(){
     addXP(2);toast('📏 围度已记录 +2XP');renderMeasure();checkBadges();
   };
 
-  // 对比
-  function drawCompare(){
-    var c=$('#msCompare');if(!c)return;
-    if(list.length<1){c.innerHTML='<div class="empty-tip">记录两次以上就能看到对比啦～</div>';return}
-    var first=list[0],last=list[list.length-1];var ch='';
+  // 最新摘要
+  function drawLatest(){
+    var c=$('#msLatest');if(!c)return;
+    if(!list.length){c.innerHTML='<div class="empty-tip">还没有记录，点击上方「录入/修改围度」开始记录～</div>';return}
+    var last=list[list.length-1];var ch='';
     for(var i=0;i<fields.length;i++){
-      var f=fields[i][0];
-      var a=first[f],b=last[f];
-      var diff=(a!=null&&b!=null)?(a-b):null;
-      var dStr=diff==null?'—':(diff>0?'<span style="color:var(--green)">↓'+diff.toFixed(1)+'</span>':(diff<0?'<span style="color:var(--red)">↑'+Math.abs(diff).toFixed(1)+'</span>':'→0'));
-      ch+='<div class="measure-item"><div class="mi-lbl">'+f+'</div><div class="mi-val">'+(b!=null?b:'—')+' <span style="font-size:9px;color:var(--gray)">'+(diff==null?'':diff>0?'↓':'')+'</span></div><div class="mi-lbl">'+dStr+'</div></div>';
+      var f=fields[i][0];var v=last[f];
+      ch+='<div class="measure-summary-item"><div class="msi-name">'+f+'</div><div class="msi-val">'+(v!=null?v:'—')+'<span class="msi-unit">cm</span></div></div>';
     }
     c.innerHTML=ch;
   }
-  drawCompare();
+  drawLatest();
 
-  // 距离目标
+  // 距离目标（无百分比）
   function drawGoalGap(){
     var c=$('#msGoalGap');if(!c)return;
-    if(list.length<1){c.innerHTML='<div class="empty-tip">记录一次围度后，即可看到距离目标的进度～</div>';return}
+    if(!list.length){c.innerHTML='<div class="empty-tip">记录一次围度后，即可看到距离目标的进度～</div>';return}
     var last=list[list.length-1];var ch='';
     for(var i=0;i<fields.length;i++){
       var f=fields[i][0];
       var cur=last[f],goal=goals[f];
-      if(goal==null||cur==null){ch+='<div class="measure-item"><div class="mi-lbl">'+f+'</div><div class="mi-val">—</div><div class="mi-lbl">无目标/无记录</div></div>';continue}
+      if(goal==null||cur==null){ch+='<div class="measure-summary-item empty"><div class="msi-name">'+f+'</div><div class="msi-tip">无目标/无记录</div></div>';continue}
       var diff=cur-goal;
-      var pct=goal>0?Math.round(diff/goal*1000)/10:0;
-      var dStr=diff>0?'<span style="color:var(--green)">↓'+diff.toFixed(1)+'cm</span>':(diff<0?'<span style="color:var(--red)">↑'+Math.abs(diff).toFixed(1)+'cm</span>':'已达成');
-      ch+='<div class="measure-item"><div class="mi-lbl">'+f+'</div><div class="mi-val">'+cur+' <span style="font-size:9px;color:var(--gray)">目标 '+goal+'</span></div><div class="mi-lbl">'+dStr+' · '+pct+'%</div></div>';
+      var dStr=diff>0?'<span class="msi-down">↓ '+diff.toFixed(1)+' cm</span>':(diff<0?'<span class="msi-up">↑ '+Math.abs(diff).toFixed(1)+' cm</span>':'<span class="msi-ok">已达成 🎉</span>');
+      ch+='<div class="measure-summary-item"><div class="msi-name">'+f+'</div><div class="msi-val">'+cur+'<span class="msi-target">/ '+goal+' cm</span></div><div class="msi-diff">'+dStr+'</div></div>';
     }
     c.innerHTML=ch;
   }
