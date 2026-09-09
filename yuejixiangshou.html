@@ -392,7 +392,7 @@ var Store={
 };
 
 /* ============ 与成长小树云端同步 ============ */
-var YJXS_SYNC_KEYS=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','altUsed','delayCount','noPunish','normalDays','profile','weightLog','measures','subOrder','secOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount','breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak','xp','seasonXp','seasonKey','seasons','stopFromStop','bingeState','bingeStop','fatCheckins','fatStages','fatCurStage','calIn','calOut','calBudget','calBmr','calCumGap'];
+var YJXS_SYNC_KEYS=['meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','altUsed','delayCount','noPunish','normalDays','profile','weightLog','measures','measureGoals','subOrder','secOrder','seasonNo','totalXp','permaLvl','stopState','stopFull','waterCount','breakfastCount','nightAlt','observerCount','phoenixCount','openDays','maxStreak','xp','seasonXp','seasonKey','seasons','stopFromStop','bingeState','bingeStop','fatCheckins','fatStages','fatCurStage','calIn','calOut','calBudget','calBmr','calCumGap'];
 var __yjxs_notifyTimer=null;
 function yjxsExportAll(){
   var data={};
@@ -659,7 +659,8 @@ function initData(){
     Store.set('profile',{nickname:'',gender:'女',age:'',height:'',startWeight:'',targetWeight:'',step:'0.2',calorie:'1500',motto:''});
   }
   if(!Store.get('weightLog',null))Store.set('weightLog',[]);  // [{date,weight}]
-  if(!Store.get('measures',null))Store.set('measures',[]);    // [{date,上臂,腰围,腹围,臀围,大腿,小腿}]
+  if(!Store.get('measures',null))Store.set('measures',[]);    // [{date,time,上臂,腰围,腹围,臀围,大腿,小腿}]
+  if(!Store.get('measureGoals',null))Store.set('measureGoals',{}); // {上臂,腰围,腹围,臀围,大腿,小腿}
   // v11 热量账本
   if(!Store.get('calIn',null))Store.set('calIn',{});         // {日期:[{name,kcal,type,time}]}
   if(!Store.get('calOut',null))Store.set('calOut',{});       // {日期:[{name,duration,kcal}]}
@@ -2024,7 +2025,7 @@ function renderSettings(){
   // 备份
   $('#exportBtn').onclick=function(){
     var data={};
-    var keys=['profile','weightLog','measures','meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','seasonNo','seasonKey','seasonXp','xp','normalDays','subOrder','secOrder','delayCount','altUsed','noPunish','maxStreak','stopState','bingeState','calIn','calOut','calBudget','calBmr','calCumGap'];
+    var keys=['profile','weightLog','measures','measureGoals','meals','alts','recipes','impulses','binges','seasonBadges','badgesAll','seasonNo','seasonKey','seasonXp','xp','normalDays','subOrder','secOrder','delayCount','altUsed','noPunish','maxStreak','stopState','bingeState','calIn','calOut','calBudget','calBmr','calCumGap'];
     for(var k=0;k<keys.length;k++){data[keys[k]]=Store.get(keys[k],null)}
     var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
     var a=document.createElement('a');
@@ -2718,12 +2719,28 @@ function renderProfile(){
 /* ============ 围度测量 ============ */
 function renderMeasure(){
   var list=Store.get('measures',[]);
+  var goals=Store.get('measureGoals',{});
   var fields=[['上臂','cm'],['腰围','cm'],['腹围','cm'],['臀围','cm'],['大腿','cm'],['小腿','cm']];
   var html='<div class="motd"><div class="big">📏 围度测量</div><div class="sub">体重会波动，围度更能反映真实的身体变化</div></div>';
-  html+='<div class="fat-card"><h2>＋ 记录一次围度</h2><div class="hint">不用每次都全填，有空就记。</div><div class="measure-grid" id="measureGrid"></div><button class="btn" id="msSave" style="margin-top:8px">💾 保存这次测量</button></div>';
+  html+='<div class="fat-card"><h2>🎯 目标围度</h2><div class="hint">先设定你想达到的围度，系统会自动帮你算距离。</div><div class="measure-grid" id="msGoalGrid"></div><button class="btn ghost" id="msSaveGoal" style="margin-top:8px">💾 保存目标</button></div>';
+  html+='<div class="fat-card"><h2>＋ 记录一次围度</h2><div class="hint">不用每次都全填，有空就记。保存时会自动带上时间。</div><div class="measure-grid" id="measureGrid"></div><button class="btn" id="msSave" style="margin-top:8px">💾 保存这次测量</button></div>';
   html+='<div class="fat-card"><h2>📊 最新一次 vs 首次</h2><div class="measure-grid" id="msCompare"></div></div>';
+  html+='<div class="fat-card"><h2>🎯 距离目标还有多远</h2><div class="measure-grid" id="msGoalGap"></div></div>';
   html+='<div class="fat-card"><h2>🗂️ 历史记录</h2><div style="overflow-x:auto"><table class="measure-table" id="msTable"></table></div></div>';
   $('#inner-measure').innerHTML=html;
+
+  // 目标围度输入
+  var gg='';
+  for(var i=0;i<fields.length;i++){
+    gg+='<div class="measure-item"><div class="mi-lbl">'+fields[i][0]+' ('+fields[i][1]+')</div><input type="number" step="0.1" id="ms_goal_'+i+'" placeholder="未设定" value="'+(goals[fields[i][0]]!=null?goals[fields[i][0]]:'')+'"></div>';
+  }
+  $('#msGoalGrid').innerHTML=gg;
+  $('#msSaveGoal').onclick=function(){
+    var g={};
+    for(var fi=0;fi<fields.length;fi++){var v=parseFloat($('#ms_goal_'+fi).value);if(v>0)g[fields[fi][0]]=v}
+    Store.set('measureGoals',g);
+    toast('目标围度已保存');renderMeasure();
+  };
 
   // 输入网格
   var gh='';
@@ -2738,7 +2755,7 @@ function renderMeasure(){
   }
 
   $('#msSave').onclick=function(){
-    var rec={date:todayStr()};var filled=false;
+    var rec={date:todayStr(),time:nowHM()};var filled=false;
     for(var fi=0;fi<fields.length;fi++){var v=parseFloat($('#ms_'+fi).value);if(v>0){rec[fields[fi][0]]=v;filled=true}}
     if(!filled){toast('至少填一项～');return}
     list.push(rec);Store.set('measures',list);
@@ -2761,26 +2778,44 @@ function renderMeasure(){
   }
   drawCompare();
 
+  // 距离目标
+  function drawGoalGap(){
+    var c=$('#msGoalGap');if(!c)return;
+    if(list.length<1){c.innerHTML='<div class="empty-tip">记录一次围度后，即可看到距离目标的进度～</div>';return}
+    var last=list[list.length-1];var ch='';
+    for(var i=0;i<fields.length;i++){
+      var f=fields[i][0];
+      var cur=last[f],goal=goals[f];
+      if(goal==null||cur==null){ch+='<div class="measure-item"><div class="mi-lbl">'+f+'</div><div class="mi-val">—</div><div class="mi-lbl">无目标/无记录</div></div>';continue}
+      var diff=cur-goal;
+      var pct=goal>0?Math.round(diff/goal*1000)/10:0;
+      var dStr=diff>0?'<span style="color:var(--green)">↓'+diff.toFixed(1)+'cm</span>':(diff<0?'<span style="color:var(--red)">↑'+Math.abs(diff).toFixed(1)+'cm</span>':'已达成');
+      ch+='<div class="measure-item"><div class="mi-lbl">'+f+'</div><div class="mi-val">'+cur+' <span style="font-size:9px;color:var(--gray)">目标 '+goal+'</span></div><div class="mi-lbl">'+dStr+' · '+pct+'%</div></div>';
+    }
+    c.innerHTML=ch;
+  }
+  drawGoalGap();
+
   // 历史表格
   function drawTable(){
     var t=$('#msTable');if(!t)return;
     if(!list.length){t.innerHTML='<div class="empty-tip">还没有记录～</div>';return}
-    var th='<tr><th>日期</th>';for(var i=0;i<fields.length;i++)th+='<th>'+fields[i][0]+'</th>';th+='<th>操作</th></tr>';
+    var th='<tr><th>日期</th><th>时间</th>';for(var i=0;i<fields.length;i++)th+='<th>'+fields[i][0]+'</th>';th+='<th>操作</th></tr>';
     var rows='';
     var rev=list.slice().reverse();
     for(var r=0;r<rev.length;r++){
       var rec=rev[r];
-      rows+='<tr><td>'+fmtDate(rec.date)+'</td>';
+      rows+='<tr><td>'+fmtDate(rec.date)+'</td><td>'+(rec.time||'—')+'</td>';
       for(var i=0;i<fields.length;i++){rows+='<td>'+(rec[fields[i][0]]!=null?rec[fields[i][0]]:'-')+'</td>'}
-      rows+='<td><a style="color:var(--red);cursor:pointer" data-d="'+rec.date+'">删除</a></td></tr>';
+      rows+='<td><a style="color:var(--red);cursor:pointer" data-idx="'+(list.length-1-r)+'">删除</a></td></tr>';
     }
     t.innerHTML=th+rows;
-    var dels=t.querySelectorAll('[data-d]');
+    var dels=t.querySelectorAll('[data-idx]');
     for(var d=0;d<dels.length;d++){
       dels[d].onclick=function(ev){
-        var dd=ev.currentTarget.getAttribute('data-d');
+        var idx=parseInt(ev.currentTarget.getAttribute('data-idx'));
         openConfirmModal('删除这次围度？','删除后不可恢复',function(ok){
-          if(ok){var nl=Store.get('measures',[]).filter(function(x){return x.date!==dd});Store.set('measures',nl);renderMeasure();checkBadges();toast('已删除')}
+          if(ok){var nl=Store.get('measures',[]);if(idx>=0&&idx<nl.length){nl.splice(idx,1);Store.set('measures',nl)}renderMeasure();checkBadges();toast('已删除')}
         });
       };
     }
