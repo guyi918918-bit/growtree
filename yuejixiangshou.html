@@ -451,6 +451,7 @@ function toast(msg){
 }
 function todayStr(){return new Date().toISOString().slice(0,10)}
 function fmtDate(s){return (s||'').slice(5).replace('-','/')}
+function nowHM(){var d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}
 
 /* ============ 鼓励文案 ============ */
 var ENCOURAGEMENTS=[
