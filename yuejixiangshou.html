@@ -16,7 +16,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 input,select,textarea{font-family:inherit}
 
 /* 顶栏 */
-#topbar{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid var(--line)}
+#topbar{position:sticky;top:0;z-index:50;background:var(--card);border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:8px;padding:10px 14px 4px}
 .brand .logo{font-size:20px}
 .brand h1{font-size:15px;font-weight:700}
@@ -53,12 +53,12 @@ input,select,textarea{font-family:inherit}
 .lr-dot{width:18px;text-align:center;color:var(--green)}
 .lr-date{width:70px;text-align:right;color:var(--gray);font-size:11px}
 .ladder-hint{font-size:11px;color:var(--amber);padding:8px 14px 12px;text-align:center}
-#bootError{display:none;position:fixed;left:10px;right:10px;bottom:10px;z-index:999;background:#fff3f3;color:var(--red);border:1px solid var(--red);border-radius:10px;padding:10px;font-size:11px;line-height:1.5;max-height:40vh;overflow:auto}
+#bootError{display:none;position:fixed;left:10px;right:10px;bottom:10px;z-index:999;background:var(--card)3f3;color:var(--red);border:1px solid var(--red);border-radius:10px;padding:10px;font-size:11px;line-height:1.5;max-height:40vh;overflow:auto}
 #bootError:before{content:'⚠️ 页面报错（可截图反馈）：\A';white-space:pre}
 #bootError:empty{display:none}
 
 /* 二级导航（横向） */
-#secNav{display:flex;gap:6px;padding:4px 12px 6px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line);background:#fff}
+#secNav{display:flex;gap:6px;padding:4px 12px 6px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line);background:var(--card)}
 #secNav::-webkit-scrollbar{display:none}
 .secBtn{flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:7px 14px;border-radius:10px;font-size:12px;color:var(--gray);background:var(--card);border:1px solid var(--line);white-space:nowrap;transition:.2s}
 .secBtn .ic{font-size:15px}
@@ -85,7 +85,7 @@ main{padding:10px}
 
 .btn{background:var(--green);color:#fff;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:5px;width:100%}
 .btn.ghost{background:var(--card);color:var(--green2);border:1px solid var(--green)}
-.btn.danger{background:#fff;color:var(--red);border:1px solid var(--red)}
+.btn.danger{background:var(--card);color:var(--red);border:1px solid var(--red)}
 .btn.sm{padding:5px 9px;font-size:11px;border-radius:7px;width:auto}
 .btn.purple{background:var(--purple)}
 .btn.amber{background:var(--amber)}
@@ -93,7 +93,7 @@ main{padding:10px}
 .row.between{justify-content:space-between}
 
 /* ===== 每日打卡（一体化：吃了+拍照+卡路里，下方建议） ===== */
-.meal-card{border:1px solid var(--line);border-radius:11px;margin-bottom:7px;background:#fff;overflow:hidden}
+.meal-card{border:1px solid var(--line);border-radius:11px;margin-bottom:7px;background:var(--card);overflow:hidden}
 .meal-card .mc-head{display:flex;align-items:center;gap:10px;padding:11px 12px;cursor:pointer}
 .meal-card .box{width:26px;height:26px;border-radius:7px;border:2px solid var(--green);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;font-weight:700}
 .meal-card.done .box{background:var(--green)}
@@ -112,8 +112,8 @@ main{padding:10px}
 .daybar .total{color:var(--purple);font-weight:700;font-size:13px}
 
 /* ===== 热量账本（v11：吃进去 / 花掉 / 汇总） ===== */
-.cal-ledger-row{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:#fff;transition:border-color .2s,background .2s,box-shadow .2s}
-.cal-ledger-row.cal-ledger-row-over{border:2px solid var(--red);background:#fff0f0;box-shadow:0 2px 8px rgba(220,38,38,.08)}
+.cal-ledger-row{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--card);transition:border-color .2s,background .2s,box-shadow .2s}
+.cal-ledger-row.cal-ledger-row-over{border:2px solid var(--red);background:var(--card)0f0;box-shadow:0 2px 8px rgba(220,38,38,.08)}
 .cal-ledger-row.cal-ledger-row-good{border:2px solid var(--green);background:#f0fff4}
 .cal-ledger-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
 .cal-ledger-label{font-size:11px;color:var(--gray);font-weight:600}
@@ -124,7 +124,7 @@ main{padding:10px}
 .cal-ledger-status{font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px;white-space:nowrap}
 .cal-ledger-status.good{background:#eaf7ed;color:var(--green2)}
 .cal-ledger-status.bad{background:#fdeaea;color:var(--red)}
-.cal-ledger-status.warn{background:#fff7e6;color:#d48806}
+.cal-ledger-status.warn{background:var(--card)7e6;color:#d48806}
 .cal-alert-banner{display:none;align-items:center;gap:8px;margin:8px -4px 4px;padding:10px 12px;border-radius:10px;font-size:13px;font-weight:700;line-height:1.5;animation:calAlertPop .3s ease}
 .cal-alert-banner.show{display:flex}
 .cal-alert-banner.stop{background:#fdeaea;color:#c0392b;border:1px solid #f5b7b1}
@@ -144,15 +144,15 @@ main{padding:10px}
 .cal-add-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .cal-add-row input,.cal-add-row select{flex:1;min-width:60px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12px}
 .cal-summary{background:var(--light);border-radius:12px;padding:12px;margin-top:10px;border:1px solid transparent;transition:border-color .2s,background .2s}
-.cal-summary.cal-summary-bad{background:#fff0f0;border:2px solid var(--red)}
+.cal-summary.cal-summary-bad{background:var(--card)0f0;border:2px solid var(--red)}
 .cal-summary .big-line{display:flex;align-items:baseline;gap:6px;margin-bottom:6px}
 .cal-summary .big-num{font-size:28px;font-weight:800}
 .cal-summary .big-num.good{color:var(--green2)}
 .cal-summary .big-num.bad{color:var(--red)}
 .cal-summary .sub-line{font-size:12px;color:var(--gray);margin-bottom:4px}
 .cal-summary.cal-summary-bad .sub-line{color:#5d4037}
-.cal-summary .tips{font-size:11px;color:var(--green2);background:#fff;border-radius:8px;padding:8px;margin-top:8px;line-height:1.6}
-.cal-summary .tips.warn{color:var(--red);background:#fff}
+.cal-summary .tips{font-size:11px;color:var(--green2);background:var(--card);border-radius:8px;padding:8px;margin-top:8px;line-height:1.6}
+.cal-summary .tips.warn{color:var(--red);background:var(--card)}
 .bmr-row{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;color:var(--gray);margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
 .bmr-row .val{font-weight:700;color:var(--ink)}
 .bmr-row input{width:80px;text-align:center}
@@ -210,7 +210,7 @@ main{padding:10px}
 .stop-hero{background:linear-gradient(135deg,#34a853,#2e8b46);color:#fff;border-radius:14px;padding:16px;margin-bottom:10px;text-align:center}
 .stop-hero .big{font-size:20px;font-weight:800;letter-spacing:1px}
 .stop-hero .sub{font-size:11px;opacity:.9;margin-top:4px}
-.stop-step{border:1px solid var(--line);border-radius:11px;margin-bottom:8px;overflow:hidden;background:#fff}
+.stop-step{border:1px solid var(--line);border-radius:11px;margin-bottom:8px;overflow:hidden;background:var(--card)}
 .stop-step .ss-head{padding:12px;font-weight:700;font-size:13px;display:flex;align-items:center;gap:8px}
 .stop-step .ss-letter{width:28px;height:28px;border-radius:8px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex:0 0 auto}
 .stop-step.active{border:2px solid var(--green)}
@@ -220,7 +220,7 @@ main{padding:10px}
 .stop-letter-xl{font-size:32px;font-weight:900;color:var(--green)}
 .stop-flow{display:flex;align-items:center;justify-content:center;gap:6px;font-size:18px;color:var(--green);margin:6px 0 10px;font-weight:800}
 .emotion-pick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
-.emotion-pick .em{flex:0 0 auto;padding:8px 4px;border:1px solid var(--line);border-radius:8px;font-size:11px;text-align:center;background:#fff}
+.emotion-pick .em{flex:0 0 auto;padding:8px 4px;border:1px solid var(--line);border-radius:8px;font-size:11px;text-align:center;background:var(--card)}
 .emotion-pick .em .eic{font-size:18px;display:block;margin-bottom:2px}
 .emotion-pick .em.on{background:var(--light);border-color:var(--green);font-weight:700}
 .intensity{display:flex;gap:4px;margin:8px 0;align-items:center}
@@ -233,12 +233,12 @@ main{padding:10px}
 .proceed-btns .btn{flex:1}
 
 /* 欲望分组 & 替代方案 */
-.craving-group{border:1px solid var(--line);border-radius:10px;margin-bottom:7px;overflow:hidden;background:#fff}
+.craving-group{border:1px solid var(--line);border-radius:10px;margin-bottom:7px;overflow:hidden;background:var(--card)}
 .craving-group .cg-head{padding:10px 12px;background:var(--light);font-weight:600;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px}
 .craving-group.open .cg-head{background:#d9efdf}
 .cg-body{padding:9px 12px;display:none}
 .craving-group.open .cg-body{display:block}
-.alt-item{display:flex;align-items:center;gap:7px;padding:9px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;font-size:12px;background:#fff}
+.alt-item{display:flex;align-items:center;gap:7px;padding:9px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;font-size:12px;background:var(--card)}
 .alt-item .ai-ic{font-size:16px;flex:0 0 auto}
 .alt-item .ai-nm{flex:1}
 .alt-item .ai-xp{font-size:10px;color:var(--purple);font-weight:700}
@@ -250,7 +250,7 @@ main{padding:10px}
 .empty-tip{text-align:center;color:var(--gray);font-size:11px;padding:14px}
 
 /* 冲动记录 */
-.rec{display:flex;align-items:flex-start;gap:8px;padding:9px;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;background:#fff}
+.rec{display:flex;align-items:flex-start;gap:8px;padding:9px;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;background:var(--card)}
 .rec .body{flex:1;font-size:12px}
 .rec .body .t{font-size:10px;color:var(--gray)}
 .rec .acts{display:flex;gap:4px}
@@ -258,7 +258,7 @@ main{padding:10px}
 .rec .acts .del-btn{color:var(--red)}
 
 /* 暴食止损 */
-.step-card{border:1px solid var(--line);border-radius:10px;margin-bottom:6px;overflow:hidden;background:#fff}
+.step-card{border:1px solid var(--line);border-radius:10px;margin-bottom:6px;overflow:hidden;background:var(--card)}
 .step-card .sc-head{padding:10px 12px;font-weight:700;font-size:12px;display:flex;align-items:center;gap:6px}
 .step-card.active{border:2px solid var(--green)}
 .step-card.done .sc-head{background:var(--light)}
@@ -289,11 +289,11 @@ main{padding:10px}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150;display:none;align-items:flex-end}
 #modal.show{display:flex}
-#modal .panel{background:#fff;width:100%;border-radius:14px 14px 0 0;padding:14px;max-height:82vh;overflow:auto}
+#modal .panel{background:var(--card);width:100%;border-radius:14px 14px 0 0;padding:14px;max-height:82vh;overflow:auto}
 #modal h3{margin-bottom:8px;font-size:14px}
 .field{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px;margin-bottom:7px;font-size:13px}
 .modal-actions{display:flex;gap:7px;margin-top:5px}
-.sort-item{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:9px;margin-bottom:5px;background:#fff}
+.sort-item{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:9px;margin-bottom:5px;background:var(--card)}
 .sort-item .drag{color:var(--gray);font-size:14px;cursor:pointer}
 .sort-item .nm{flex:1;font-size:13px}
 .rule-box{background:var(--light);border-radius:9px;padding:10px 12px}
@@ -301,11 +301,11 @@ main{padding:10px}
 .rule-t{font-size:12px;font-weight:800;margin-bottom:3px;color:var(--ink)}
 .rule-li{font-size:11px;color:#4a5c51;line-height:1.7;padding-left:2px}
 .rule-li b{color:var(--green2)}
-.rule-note{margin-top:7px;background:#fff;border:1px dashed var(--green);border-radius:7px;padding:8px;font-size:11px;color:var(--green2);line-height:1.5}
+.rule-note{margin-top:7px;background:var(--card);border:1px dashed var(--green);border-radius:7px;padding:8px;font-size:11px;color:var(--green2);line-height:1.5}
 .chip{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:var(--light);border-radius:10px;font-size:11px;margin:2px}
 
 /* ===== 减脂足迹：体重打卡 + 档案 + 围度 ===== */
-.fat-card{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:#fff}
+.fat-card{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:var(--card)}
 .fat-card h2{font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
 .fat-card .hint{font-size:11px;color:var(--gray);margin-bottom:8px;line-height:1.5}
 .goal-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:8px}
@@ -375,7 +375,46 @@ main{padding:10px}
 .link-chip{font-size:11px;background:var(--light);color:var(--green);padding:5px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--green);display:inline-block;margin:3px}
 .insight{border-left:3px solid var(--green);background:var(--light);padding:8px 12px;border-radius:0 8px 8px 0;font-size:11px;line-height:1.6;margin-top:8px}
 
+/* ===== 夜间模式（跟随父应用主题切换，postMessage 同步） ===== */
+html[data-theme="dark"]{
+  --green:#30d158;--green2:#5be584;--light:#232b26;--ink:#f5f5f7;
+  --gray:#98989d;--line:#38383a;--red:#ff7a6e;--amber:#f5b04d;--purple:#b199ff;
+  --card:#1c1c1e;--bg:#000000;--surface2:#2c2c2e;
+  --shadow:0 2px 10px rgba(0,0,0,.5);
+}
+html[data-theme="dark"] body{background:var(--bg);color:var(--ink)}
+html[data-theme="dark"] input,html[data-theme="dark"] select,html[data-theme="dark"] textarea{background:var(--surface2);color:var(--ink);border-color:var(--line)}
+html[data-theme="dark"] #topbar,html[data-theme="dark"] #secNav{background:#16181a}
+html[data-theme="dark"] #subNav{background:#0f1210}
+html[data-theme="dark"] .weight-hero{background:linear-gradient(135deg,#16301f,#0d1f14)}
+html[data-theme="dark"] .btn.danger{background:var(--card)}
+html[data-theme="dark"] .meal-card,html[data-theme="dark"] .stop-step,html[data-theme="dark"] .alt-item,
+html[data-theme="dark"] .rec,html[data-theme="dark"] .step-card,html[data-theme="dark"] .fat-card,
+html[data-theme="dark"] .emotion-pick .em,html[data-theme="dark"] .craving-group,html[data-theme="dark"] .sort-item{background:var(--card)}
+html[data-theme="dark"] .cal-ledger-row{background:var(--card)}
+html[data-theme="dark"] .cal-ledger-row.cal-ledger-row-over{background:#2a1a1a}
+html[data-theme="dark"] .cal-ledger-row.cal-ledger-row-good{background:#15271b}
+html[data-theme="dark"] .cal-ledger-status.good{background:#22402c}
+html[data-theme="dark"] .cal-ledger-status.bad{background:#3d2222}
+html[data-theme="dark"] .cal-ledger-status.warn{background:#3a2f1a;color:#f0b429}
+html[data-theme="dark"] .cal-alert-banner.stop{background:#2a1515;color:#ff9a8f;border-color:#5a3030}
+html[data-theme="dark"] .cal-alert-banner.go{background:#15271b;color:#5be584;border-color:#2f5c3d}
+html[data-theme="dark"] .progress{background:#2c2c2e}
+html[data-theme="dark"] .cal-summary.cal-summary-bad{background:#2a1a1a}
+html[data-theme="dark"] .cal-summary .tips,html[data-theme="dark"] .cal-summary .tips.warn{background:var(--card)}
+html[data-theme="dark"] .measure-summary-item.empty{background:#161b18}
+html[data-theme="dark"] .calCell{background:#1a1f1c}
+html[data-theme="dark"] .calCell.has{background:#1d3a26}
+html[data-theme="dark"] .calCell.today{background:#22402c}
+html[data-theme="dark"] .calCell.binged{background:#3d2222}
+html[data-theme="dark"] .craving-group.open .cg-head{background:#1f3327}
+html[data-theme="dark"] #modal .panel{background:var(--card)}
+html[data-theme="dark"] .rule-note{background:transparent}
+html[data-theme="dark"] #bootError{background:#2a1515}
+
 </style>
+<script>/* 夜间模式预应用：首屏渲染前恢复上次主题，避免闪白 */
+try{(function(){var t=JSON.parse(localStorage.getItem('rw5_theme'));if(t==='dark')document.documentElement.setAttribute('data-theme','dark')})()}catch(e){}</script>
 </head>
 <body>
 
@@ -457,8 +496,16 @@ window.addEventListener('message',function(ev){
         if(typeof renderLvl==='function')renderLvl();
       }
     }catch(e){window.__yjxs_importing=false;}
+  }else if(ev.data.type==='yjxs-theme'){
+    // 跟随父应用日间/夜间模式
+    try{applyYjxsTheme(ev.data.theme)}catch(e){}
   }
 });
+function applyYjxsTheme(theme){
+  var t=theme==='dark'?'dark':'light';
+  document.documentElement.setAttribute('data-theme',t);
+  try{localStorage.setItem('rw5_theme',JSON.stringify(t))}catch(e){}
+}
 
 /* ============ 工具 ============ */
 var $=function(s){return document.querySelector(s)};
@@ -1284,9 +1331,9 @@ function showDayDetail(ds){
   var isToday=ds===todayStr();
   var html='<h2>📅 '+fmtDate(ds)+' · 热量账本</h2>';
   html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0">';
-  html+='<div style="text-align:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px"><div style="font-size:10px;color:var(--gray)">摄入</div><div style="font-size:16px;font-weight:800;color:var(--purple)">'+cals.in+'</div></div>';
-  html+='<div style="text-align:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px"><div style="font-size:10px;color:var(--gray)">消耗</div><div style="font-size:16px;font-weight:800;color:var(--amber)">'+cals.out+'</div></div>';
-  html+='<div style="text-align:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px"><div style="font-size:10px;color:var(--gray)">缺口</div><div style="font-size:16px;font-weight:800;color:'+(cals.net>=0?'var(--green2)':'var(--red)')+'">'+(cals.net>=0?'+':'')+cals.net+'</div></div>';
+  html+='<div style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px"><div style="font-size:10px;color:var(--gray)">摄入</div><div style="font-size:16px;font-weight:800;color:var(--purple)">'+cals.in+'</div></div>';
+  html+='<div style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px"><div style="font-size:10px;color:var(--gray)">消耗</div><div style="font-size:16px;font-weight:800;color:var(--amber)">'+cals.out+'</div></div>';
+  html+='<div style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px"><div style="font-size:10px;color:var(--gray)">缺口</div><div style="font-size:16px;font-weight:800;color:'+(cals.net>=0?'var(--green2)':'var(--red)')+'">'+(cals.net>=0?'+':'')+cals.net+'</div></div>';
   html+='</div>';
 
   // 摄入记录
