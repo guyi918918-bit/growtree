@@ -4386,3 +4386,50 @@ select.input {
     .ec-ach-grid { grid-template-columns: repeat(2, 1fr); }
     .ec-recite-actions { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ============ v20261025c 新增 ============ */
+/* 课程名下方的灰色语法要点小字 */
+.ec-lesson-note {
+    font-size: 12px; color: var(--text-secondary); line-height: 1.55;
+    margin: 2px 0 4px; padding: 5px 10px;
+    background: var(--surface-2); border-radius: 8px;
+    word-break: break-word;
+}
+.ec-lesson-note-lg { margin: 0 16px 10px; font-size: 13px; }
+/* 任务完成时间（精确到分钟 + 星期几） */
+.ec-task-time { font-size: 12px; color: #1a7f37; font-weight: 600; margin: 0 0 8px; }
+[data-theme="dark"] .ec-task-time { color: #7ee2a8; }
+/* 批量删除：选择框与高亮 */
+.ec-sel-cb {
+    position: absolute; top: 10px; left: 10px; z-index: 2;
+    width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface); border: 1.5px solid var(--border);
+    font-size: 15px; cursor: pointer;
+}
+.ec-book-card, .ec-lesson-card { position: relative; }
+.ec-book-card.ec-sel, .ec-lesson-card.ec-sel { outline: 2px solid var(--primary); outline-offset: -2px; }
+.ec-book-card.ec-selmode .ec-book-main, .ec-lesson-card.ec-selmode .ec-lesson-main { padding-left: 48px; }
+/* 批量工具条 */
+.ec-sel-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 12px; padding: 10px 12px;
+    border-radius: var(--radius-sm); background: rgba(217,48,37,0.06);
+    border: 1px dashed rgba(217,48,37,0.35);
+}
+.ec-sel-count { font-size: 13px; font-weight: 700; color: #d93025; }
+[data-theme="dark"] .ec-sel-count { color: #ff8a80; }
+/* 卡片头部按钮组 */
+.ec-head-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+/* 每本书的打卡任务管理面板 */
+.ec-task-man { border-top: 1px solid var(--border); padding: 12px 16px 14px; background: var(--surface-2); }
+.ec-tm-title { font-size: 13px; font-weight: 800; color: var(--text); margin-bottom: 10px; }
+.ec-tm-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border); margin-bottom: 8px; }
+.ec-tm-icon { font-size: 18px; flex-shrink: 0; }
+.ec-tm-info { flex: 1; min-width: 0; }
+.ec-tm-name { font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ec-tm-tag { font-size: 10px; font-weight: 600; color: var(--text-secondary); background: var(--surface-2); border-radius: 999px; padding: 1px 8px; }
+.ec-tm-desc { font-size: 11px; color: var(--text-secondary); margin-top: 2px; line-height: 1.4; }
+.ec-tm-add { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+/* 复习中心：提前复习按钮行 */
+.ec-due-btns { display: flex; gap: 8px; padding: 8px 0 2px; flex-wrap: wrap; }

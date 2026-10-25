@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261025b';
+const APP_BUILD = '20261025c';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -2648,6 +2648,14 @@ const state = {
     _checkInModule: 'basic',
     _ecBookId: null,
     _ecLessonId: null,
+    _ecEditBookId: null,
+    _ecEditLessonId: null,
+    _ecBookSelMode: false,
+    _ecBookSel: {},
+    _ecLessonSelMode: false,
+    _ecLessonSel: {},
+    _ecEarlyId: null,
+    _loadingHot: false,
     _waterMode: null,
     _waterSelected: new Set(),
     settings: {
@@ -6734,6 +6742,122 @@ function renderBookShelf() {
 
 
 
+function renderHotList(groupId) {
+    const types = HOT_GROUPS[groupId] || HOT_GROUPS['mixed'];
+    const cached = state.data.hotCache;
+    const tabs = types.map(t => `
+        <button class="hot-tab ${state.currentSubTab[`hot_${groupId}`] === t ? 'active' : ''}" data-action="hot-platform" data-group="${groupId}" data-type="${t}">${HOT_TYPES[t] || t}</button>
+    `).join('');
+    const currentType = state.currentSubTab[`hot_${groupId}`] || types[0];
+    const data = cached[currentType];
+    const list = data && data.list ? data.list : [];
+    const updated = data && data.update_time ? new Date(data.update_time).toLocaleString('zh-CN') : (state._loadingHot ? '加载中' : '未获取');
+    const emptyState = state._loadingHot
+        ? '<div class="empty-state"><span class="emoji">🔥</span>正在加载热榜...</div>'
+        : `<div class="empty-state"><span class="emoji">🔥</span>暂无数据，<button class="btn btn-primary btn-sm" data-action="hot-refresh" data-group="${groupId}" style="margin-left:6px">点击刷新</button></div>`;
+    return `
+        <div class="card-header">
+            <div class="card-title">🔥 ${{ mixed: '综合热榜', politics: '时事新闻', international: '国际热点' }[groupId] || '综合热榜'}</div>
+            <button class="btn btn-secondary" data-action="hot-refresh" data-group="${groupId}" style="font-size:12px">刷新</button>
+        </div>
+        <div class="hot-tabs">${tabs}</div>
+        <div class="hot-update">更新于 ${updated}</div>
+        <div class="news-list">
+            ${list.length ? list.slice(0, 20).map((n, i) => `
+                <div class="news-item" data-action="open-link" data-link="${n.url || '#'}" style="cursor:pointer">
+                    <div class="news-num">${n.index || i + 1}</div>
+                    <div>
+                        <div>${escapeHtml(n.title)}</div>
+                        <div class="news-category">${HOT_TYPES[currentType] || currentType} · 热度 ${n.hot_value || '-'}</div>
+                    </div>
+                </div>
+            `).join('') : emptyState}
+        </div>
+    `;
+}
+
+async function loadHotData() {
+    if (state._loadingHot) return;
+    state._loadingHot = true;
+    const groupId = state.currentSubTab.hot || 'mixed';
+    const types = HOT_GROUPS[groupId] || HOT_GROUPS['mixed'];
+    await loadHotJson();
+    await fetchHotForTypes(types);
+    const currentType = state.currentSubTab[`hot_${groupId}`] || types[0];
+    // 如果当前类型还没选，默认
+    if (!state.currentSubTab[`hot_${groupId}`]) state.currentSubTab[`hot_${groupId}`] = currentType;
+    state._loadingHot = false;
+    renderHotDOM();
+}
+
+function renderHotDOM() {
+    const wrap = document.getElementById('hotListWrap');
+    if (!wrap) return;
+    const groupId = state.currentSubTab.hot || 'mixed';
+    wrap.innerHTML = renderHotList(groupId);
+}
+
+async function loadHotJson() {
+    try {
+        const res = await fetch('./hot.json?t=' + Date.now());
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || !data.list) return;
+        const fileAge = data.updatedAt ? Date.now() - new Date(data.updatedAt).getTime() : 0;
+        if (fileAge > 2 * 60 * 60 * 1000) return; // hot.json 超过 2 小时忽略
+        data.list.forEach(group => {
+            if (group && group.type && group.list) {
+                state.data.hotCache[group.type] = { ...group, ts: Date.now() };
+            }
+        });
+    } catch (e) {
+        console.log('hot.json 不存在或不可用，使用实时 API');
+    }
+}
+
+async function fetchHotForTypes(types) {
+    const stale = 10; // 缓存 10 分钟，点击刷新可强制更新
+    for (const type of types) {
+        const cached = state.data.hotCache[type];
+        if (cached && cached.ts && (Date.now() - cached.ts < stale * 60 * 1000)) continue;
+        try {
+            if (HOT_INTERNATIONAL_FEEDS[type]) {
+                // 国际热点走 RSS（rss2json 转 JSON，免 key 且带 CORS），与国内源（uapis）隔离
+                const data = await fetchInternationalHot(type);
+                if (data && data.list) {
+                    state.data.hotCache[type] = { ...data, ts: Date.now() };
+                }
+            } else {
+                const res = await fetch(`${API.hot}?type=${type}&limit=20`);
+                const data = await res.json();
+                if (data && data.list) {
+                    state.data.hotCache[type] = { ...data, ts: Date.now() };
+                }
+            }
+        } catch (e) {
+            console.warn('热榜获取失败', type, e);
+        }
+    }
+    saveState();
+}
+
+// 国际热点：拉取 RSS 并规范成与国内热榜一致的结构 { type, update_time, list:[{index,title,url,hot_value}] }
+async function fetchInternationalHot(type) {
+    const feed = HOT_INTERNATIONAL_FEEDS[type];
+    if (!feed) return null;
+    const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.feed)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data || data.status !== 'ok') return null;
+    const list = (data.items || []).slice(0, 20).map((it, i) => ({
+        index: i + 1,
+        title: (it.title || '').replace(/<!\[CDATA\[|\]\]>/g, '').trim(),
+        url: it.link || '#',
+        hot_value: '',
+        source: feed.name
+    }));
+    return { type, update_time: (data.feed && data.feed.modified) || new Date().toISOString(), list };
+}
 // ==================== 变美情报局模块 ====================
 const BEAUTY_TREND_TYPES = ['xiaohongshu', 'douyin'];
 const BEAUTY_TREND_KEYWORDS = ['妆', '穿搭', '发型', '护肤', '美甲', '变美', '口红', '眼影', '睫毛', '眉毛', '腮红', '高光', '遮瑕', '粉底液', 'ootd', '韩系', '日系', '法式', '千金', '纯欲', '清冷', '氛围感', '多巴胺', '美拉德', '通勤', '约会', '聚会', '新手'];
@@ -10059,14 +10183,16 @@ function toggleTheme() {
 
 // ==================== 英语打卡（三级目录 + FSRS 背诵复习 + 积分成就） ====================
 // 数据结构（state.data.engcheck，随云端同步，跨设备一致）：
-//   books:   一级目录（书）   [{id, name, order, createdAt}]
-//   lessons: 二级目录（课）   [{id, bookId, name, order, createdAt}]
+//   books:   一级目录（书）   [{id, name, order, createdAt, tasks:[任务定义]}]
+//             tasks = 每本书独立的打卡任务模板（输入/输出板块可自由增删改，默认 5 项）
+//   lessons: 二级目录（课）   [{id, bookId, name, note, order, createdAt}]
+//             note = 显示在课程名下方的灰色小字（语法要点/备注，可选）
 //   tasks:   三级任务记录     key = `${lessonId}|${taskId}` → { at: epochMs }
-//             泛听/精听/跟读/说译/练题：完成即可，不设复习曲线
+//             完成即可打卡，不设复习曲线；完成时间精确到分钟展示
 //   fsrs:    背书复习记录     key = lessonId → { s, d, n, lapses, last, due, grade }
-//             FSRS 简化版（整篇课文背书）：每次复习对整篇四选一自评
-//             （Again/Hard/Good/Easy）→ 更新难度 D、稳定性 S → 推算下次复习时间。
-//             目标留存 0.9，初始 S=1 天 / D=5，最大间隔 120 天。
+//             FSRS 简化版（整篇课文背书）：初学即可四选一自评入池（Again/Hard/Good/Easy），
+//             之后每次复习对整篇四选一打分 → 更新难度 D、稳定性 S → 推算下次复习时间；
+//             没到时间也可提前复习。目标留存 0.9，初始 S=1 天 / D=5，最大间隔 120 天。
 //   score / achievements / days / streak / bestStreak / lastStudyDate：
 //             积分 · 成就 · 每日学习 · 连续学习（继承自原探索英语的积分成就体系）
 
@@ -10075,6 +10201,7 @@ const EC_TASK_GROUPS = [
     { id: 'output', name: '输出板块', icon: '📤', sub: '说 · 写', cls: 'ec-group-output' }
 ];
 
+// 默认任务模板（新建书时克隆进去；每本书之后可自由增删改）
 const EC_TASKS = [
     { id: 'listen-broad', group: 'input', icon: '🎧', name: '泛听', desc: '听音 Familiar —— 不停顿，抓大意', points: 2 },
     { id: 'listen-close', group: 'input', icon: '🎯', name: '精听', desc: '听音 Detail —— 逐句听写，弄懂每句话', points: 2 },
@@ -10082,6 +10209,7 @@ const EC_TASKS = [
     { id: 'speak-trans', group: 'output', icon: '🗣️', name: '说译', desc: '说 Output —— 看图说英文 / 看中文说英文', points: 2 },
     { id: 'write-drill', group: 'output', icon: '✍️', name: '练题', desc: '写 Output —— 课后习题 / 考试卷子 / 小作文', points: 2 }
 ];
+function ecCloneDefaultTasks() { return EC_TASKS.map(t => Object.assign({}, t)); }
 
 // 背书四档自评（看整篇背诵的流畅度，不是单个词）
 const EC_GRADES = [
@@ -10116,6 +10244,8 @@ function ecData() {
     if (!d.fsrs || typeof d.fsrs !== 'object') d.fsrs = {};
     if (!d.achievements || typeof d.achievements !== 'object') d.achievements = {};
     if (!d.days || typeof d.days !== 'object') d.days = {};
+    // 老书补默认任务模板（v20261025c 起每本书可自定义打卡任务）
+    d.books.forEach(b => { if (!b || !Array.isArray(b.tasks) || !b.tasks.length) b.tasks = ecCloneDefaultTasks(); });
     // 旧版 tasks 记录 {startedAt, reviews} → 新版 { at }
     Object.keys(d.tasks).forEach(k => {
         const rec = d.tasks[k];
@@ -10139,6 +10269,18 @@ function ecLessonsOf(bookId) {
 }
 function ecTaskKey(lessonId, taskId) { return lessonId + '|' + taskId; }
 function ecGetTask(lessonId, taskId) { return ecData().tasks[ecTaskKey(lessonId, taskId)] || null; }
+// 每本书独立的打卡任务模板（老书自动补默认 5 项）
+function ecBookTasks(bookId) {
+    const b = ecBookById(bookId);
+    if (b && Array.isArray(b.tasks) && b.tasks.length) return b.tasks;
+    return EC_TASKS;
+}
+// 由课程反查任务定义（用于取名称/积分）
+function ecFindTaskDef(lessonId, taskId) {
+    const l = ecLessonById(lessonId);
+    const defs = l ? ecBookTasks(l.bookId) : EC_TASKS;
+    return defs.find(t => t.id === taskId) || null;
+}
 
 // ---------- 等级 / 积分 / 连续学习 ----------
 function ecGetLevel(score) { return Math.min(Math.floor((score || 0) / 10) + 1, 1999); }
@@ -10188,7 +10330,10 @@ function ecUnlock(id) {
 }
 function ecLessonsFullyDone() {
     const d = ecData();
-    return d.lessons.filter(l => EC_TASKS.every(t => d.tasks[ecTaskKey(l.id, t.id)])).length;
+    return d.lessons.filter(l => {
+        const defs = ecBookTasks(l.bookId);
+        return defs.length > 0 && defs.every(t => d.tasks[ecTaskKey(l.id, t.id)]);
+    }).length;
 }
 function ecReciteMasteredCount() {
     const d = ecData();
@@ -10278,14 +10423,22 @@ function ecRelText(ts) {
     else s = Math.floor(abs / 86400000) + '天';
     return diff < 0 ? ('已逾期' + s) : (s + '后');
 }
+// 完成时间/复习时间展示：10-25 14:32 周六（精确到分钟 + 星期几）
+function ecFmtWeek(ts) {
+    const d = new Date(ts);
+    const p = n => String(n).padStart(2, '0');
+    const wk = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()];
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())} 周${wk}`;
+}
 function ecSDays(s) {
     if (s >= 30) return (s / 30).toFixed(1).replace(/\.0$/, '') + ' 个月';
     return (Math.round(s * 10) / 10) + ' 天';
 }
 function ecLessonProgress(lessonId) {
-    const d = ecData();
-    const done = EC_TASKS.filter(t => d.tasks[ecTaskKey(lessonId, t.id)]).length;
-    return { done, total: EC_TASKS.length };
+    const l = ecLessonById(lessonId);
+    const defs = l ? ecBookTasks(l.bookId) : EC_TASKS;
+    const done = defs.filter(t => ecGetTask(lessonId, t.id)).length;
+    return { done, total: defs.length };
 }
 
 // ---------- 统计 ----------
@@ -10323,9 +10476,10 @@ function ecDueRecites() {
 function ecBookStats(bookId) {
     const lessons = ecLessonsOf(bookId);
     const d = ecData();
-    let tasksDone = 0, taskTotal = lessons.length * EC_TASKS.length, recited = 0, mastered = 0;
+    const defs = ecBookTasks(bookId);
+    let tasksDone = 0, taskTotal = lessons.length * defs.length, recited = 0, mastered = 0;
     lessons.forEach(l => {
-        EC_TASKS.forEach(t => { if (d.tasks[ecTaskKey(l.id, t.id)]) tasksDone++; });
+        defs.forEach(t => { if (d.tasks[ecTaskKey(l.id, t.id)]) tasksDone++; });
         const rec = d.fsrs[l.id];
         if (rec && rec.last) { recited++; if ((rec.s || 0) >= EC_FSRS.masteredS) mastered++; }
     });
@@ -10342,8 +10496,28 @@ async function ecAddBook() {
     if (!name) { toast('请输入书本名称'); return; }
     const d = ecData();
     if (d.books.some(b => b.name === name)) { toast('这本书已在书单里'); return; }
-    d.books.push({ id: uuid(), name, order: ecNextOrder(d.books), createdAt: now() });
+    d.books.push({ id: uuid(), name, order: ecNextOrder(d.books), createdAt: now(), tasks: ecCloneDefaultTasks() });
+    if (input) input.value = '';
     ecAfterAction('📚 已添加《' + name + '》，去添加课程吧');
+}
+// 批量新增书单：每行一个书名
+async function ecBatchBooks() {
+    const ta = document.getElementById('ecBookBatchNames');
+    const names = ((ta && ta.value) || '').split('\n').map(s => s.trim()).filter(Boolean);
+    if (!names.length) { toast('请先输入书名，每行一个'); return; }
+    if (names.length > 50) { toast('一次最多添加 50 本，请分批'); return; }
+    const d = ecData();
+    const exist = new Set(d.books.map(b => b.name));
+    let added = 0, skipped = 0;
+    names.forEach(name => {
+        const n = name.slice(0, 30);
+        if (exist.has(n)) { skipped++; return; }
+        d.books.push({ id: uuid(), name: n, order: ecNextOrder(d.books), createdAt: now(), tasks: ecCloneDefaultTasks() });
+        exist.add(n);
+        added++;
+    });
+    if (ta) ta.value = '';
+    ecAfterAction(added ? `✅ 已添加 ${added} 本书${skipped ? `（${skipped} 个重名已跳过）` : ''}` : '都已存在，没有新增');
 }
 async function ecRenameBook(id) {
     const book = ecBookById(id);
@@ -10355,12 +10529,8 @@ async function ecRenameBook(id) {
     book.name = v;
     ecAfterAction('已重命名');
 }
-async function ecDeleteBook(id) {
-    const book = ecBookById(id);
-    if (!book) return;
-    const cnt = ecLessonsOf(id).length;
-    const ok = await uiConfirm(`将删除《${book.name}》及其 ${cnt} 节课程的全部打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
-    if (!ok) return;
+// 无确认删除（内部使用；调用方需自行确认）
+function ecRemoveBook(id) {
     const d = ecData();
     const lessonIds = d.lessons.filter(l => l.bookId === id).map(l => l.id);
     d.lessons = d.lessons.filter(l => l.bookId !== id);
@@ -10370,18 +10540,62 @@ async function ecDeleteBook(id) {
     });
     d.books = d.books.filter(b => b.id !== id);
     if (state._ecBookId === id) { state._ecBookId = null; state._ecLessonId = null; }
+    if (state._ecEditBookId === id) state._ecEditBookId = null;
+    if (state._ecBookSel) delete state._ecBookSel[id];
+}
+async function ecDeleteBook(id) {
+    const book = ecBookById(id);
+    if (!book) return;
+    const cnt = ecLessonsOf(id).length;
+    const ok = await uiConfirm(`将删除《${book.name}》及其 ${cnt} 节课程的全部打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
+    if (!ok) return;
+    ecRemoveBook(id);
     ecAfterAction('🗑️ 已删除《' + book.name + '》');
+}
+// ---------- 书单：批量删除模式 ----------
+function ecBookSelMode(on) {
+    state._ecBookSelMode = on === undefined ? !state._ecBookSelMode : !!on;
+    state._ecBookSel = {};
+    render();
+}
+function ecBookSelToggle(id) {
+    const sel = state._ecBookSel || (state._ecBookSel = {});
+    sel[id] = !sel[id];
+    render();
+}
+function ecBookSelAll() {
+    const sel = state._ecBookSel || (state._ecBookSel = {});
+    const all = ecData().books;
+    const allOn = all.length > 0 && all.every(b => sel[b.id]);
+    all.forEach(b => { sel[b.id] = !allOn; });
+    render();
+}
+async function ecDelSelBooks() {
+    const sel = state._ecBookSel || {};
+    const ids = Object.keys(sel).filter(k => sel[k] && ecBookById(k));
+    if (!ids.length) { toast('还没有选择任何书'); return; }
+    const names = ids.map(id => (ecBookById(id) || {}).name).filter(Boolean);
+    const ok = await uiConfirm(`将删除 ${ids.length} 本书（${names.join('、')}）及其全部课程和打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '全部删除' });
+    if (!ok) return;
+    ids.forEach(id => ecRemoveBook(id));
+    state._ecBookSel = {};
+    state._ecBookSelMode = false;
+    ecAfterAction(`🗑️ 已删除 ${ids.length} 本书`);
 }
 async function ecAddLesson() {
     const bookId = state._ecBookId;
     const input = document.getElementById('ecLessonNameInput');
+    const noteInput = document.getElementById('ecLessonNoteInput');
     const name = (input && input.value ? input.value : '').trim();
+    const note = (noteInput && noteInput.value ? noteInput.value : '').trim().slice(0, 200);
     if (!bookId) return;
     if (!name) { toast('请输入课程名称，如 Lesson 1'); return; }
     const d = ecData();
     if (d.lessons.some(l => l.bookId === bookId && l.name === name)) { toast('该课程已存在'); return; }
-    d.lessons.push({ id: uuid(), bookId, name, order: ecNextOrder(d.lessons), createdAt: now() });
-    ecAfterAction('✅ 已添加「' + name + '」');
+    d.lessons.push({ id: uuid(), bookId, name, note, order: ecNextOrder(d.lessons), createdAt: now() });
+    if (input) input.value = '';
+    if (noteInput) noteInput.value = '';
+    ecAfterAction(note ? `✅ 已添加「${name}」和语法要点` : '✅ 已添加「' + name + '」');
 }
 async function ecBatchLessons() {
     const bookId = state._ecBookId;
@@ -10404,7 +10618,7 @@ async function ecBatchLessons() {
     }
     ecAfterAction(added ? `✅ 已批量生成 ${added} 节课程` : '这些课程都已存在，没有新增');
 }
-// 批量导入名称：每行一个课程名（可带编号/标题），直接粘贴导入
+// 批量导入名称：每行一个课程名；支持「课程名 || 语法要点」一行带备注
 async function ecImportLessons() {
     const bookId = state._ecBookId;
     if (!bookId) return;
@@ -10416,15 +10630,38 @@ async function ecImportLessons() {
     const d = ecData();
     const existNames = new Set(d.lessons.filter(l => l.bookId === bookId).map(l => l.name));
     let added = 0, skipped = 0;
-    names.forEach(name => {
-        const n = name.slice(0, 60);
+    names.forEach(line => {
+        const idx = line.indexOf('||');
+        const n = (idx >= 0 ? line.slice(0, idx) : line).trim().slice(0, 60);
+        const note = idx >= 0 ? line.slice(idx + 2).trim().slice(0, 200) : '';
+        if (!n) return;
         if (existNames.has(n)) { skipped++; return; }
-        d.lessons.push({ id: uuid(), bookId, name: n, order: ecNextOrder(d.lessons), createdAt: now() });
+        d.lessons.push({ id: uuid(), bookId, name: n, note, order: ecNextOrder(d.lessons), createdAt: now() });
         existNames.add(n);
         added++;
     });
     if (ta) ta.value = '';
     ecAfterAction(added ? `✅ 已导入 ${added} 节课${skipped ? `（${skipped} 个重名已跳过）` : ''}` : '都已存在，没有新增');
+}
+// 编辑课程的语法要点 / 备注（多行弹窗）
+function ecEditLessonNote(id) {
+    const lesson = ecLessonById(id);
+    if (!lesson) return;
+    uiModal({
+        title: '📝 语法要点 / 备注',
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">显示在「${escapeHtml(lesson.name)}」目录下方的灰色小字，例如：be 动词（am/is/are）；含 be 动词的一般疑问句；Yes/No 回答</div>
+               <textarea id="ecNoteTA" rows="3" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.6" placeholder="语法：be 动词（am/is/are）；一般疑问句；Yes/No 回答">${escapeHtml(lesson.note || '')}</textarea>`,
+        getValue: () => {
+            const v = (document.getElementById('ecNoteTA') || {}).value || '';
+            return v.trim().slice(0, 200);
+        },
+        okText: '保存'
+    }).then(v => {
+        if (v == null) return;
+        lesson.note = v;
+        state._ecEditLessonId = null;
+        ecAfterAction(v ? '已保存语法要点' : '已清空语法要点');
+    });
 }
 async function ecRenameLesson(id) {
     const lesson = ecLessonById(id);
@@ -10437,25 +10674,103 @@ async function ecRenameLesson(id) {
     state._ecEditLessonId = null;
     ecAfterAction('已重命名');
 }
-async function ecDeleteLesson(id) {
-    const lesson = ecLessonById(id);
-    if (!lesson) return;
-    const ok = await uiConfirm(`将删除「${lesson.name}」及其全部打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
-    if (!ok) return;
+// 无确认删除（内部使用；调用方需自行确认）
+function ecRemoveLesson(id) {
     const d = ecData();
     d.lessons = d.lessons.filter(l => l.id !== id);
     Object.keys(d.tasks).forEach(k => { if (k.startsWith(id + '|')) delete d.tasks[k]; });
     delete d.fsrs[id];
     if (state._ecLessonId === id) state._ecLessonId = null;
-    state._ecEditLessonId = null;
+    if (state._ecEditLessonId === id) state._ecEditLessonId = null;
+    if (state._ecEarlyId === id) state._ecEarlyId = null;
+    if (state._ecLessonSel) delete state._ecLessonSel[id];
+}
+async function ecDeleteLesson(id) {
+    const lesson = ecLessonById(id);
+    if (!lesson) return;
+    const ok = await uiConfirm(`将删除「${lesson.name}」及其全部打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
+    if (!ok) return;
+    ecRemoveLesson(id);
     ecAfterAction('🗑️ 已删除「' + lesson.name + '」');
+}
+// ---------- 课程：批量删除模式 ----------
+function ecLessonSelMode(on) {
+    state._ecLessonSelMode = on === undefined ? !state._ecLessonSelMode : !!on;
+    state._ecLessonSel = {};
+    render();
+}
+function ecLessonSelToggle(id) {
+    const sel = state._ecLessonSel || (state._ecLessonSel = {});
+    sel[id] = !sel[id];
+    render();
+}
+function ecLessonSelAll() {
+    const sel = state._ecLessonSel || (state._ecLessonSel = {});
+    const all = ecLessonsOf(state._ecBookId);
+    const allOn = all.length > 0 && all.every(l => sel[l.id]);
+    all.forEach(l => { sel[l.id] = !allOn; });
+    render();
+}
+async function ecDelSelLessons() {
+    const sel = state._ecLessonSel || {};
+    const ids = Object.keys(sel).filter(k => sel[k] && ecLessonById(k));
+    if (!ids.length) { toast('还没有选择任何课程'); return; }
+    const names = ids.map(id => (ecLessonById(id) || {}).name).filter(Boolean);
+    const ok = await uiConfirm(`将删除 ${ids.length} 节课（${names.join('、')}）及其全部打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '全部删除' });
+    if (!ok) return;
+    ids.forEach(id => ecRemoveLesson(id));
+    state._ecLessonSel = {};
+    state._ecLessonSelMode = false;
+    ecAfterAction(`🗑️ 已删除 ${ids.length} 节课`);
+}
+// ---------- 每本书自定义打卡任务 ----------
+function ecAddTaskToBook() {
+    const bookId = state._ecEditBookId;
+    const book = ecBookById(bookId);
+    if (!book) { toast('请先点书单里的 ✏️ 编辑按钮'); return; }
+    const name = ((document.getElementById('ecNewTaskName') || {}).value || '').trim();
+    if (!name) { toast('请输入任务名称'); return; }
+    const group = (document.getElementById('ecNewTaskGroup') || {}).value === 'output' ? 'output' : 'input';
+    const icon = ((document.getElementById('ecNewTaskIcon') || {}).value || '').trim() || (group === 'input' ? '🎧' : '🗣️');
+    const desc = ((document.getElementById('ecNewTaskDesc') || {}).value || '').trim();
+    if (!Array.isArray(book.tasks)) book.tasks = ecCloneDefaultTasks();
+    if (book.tasks.some(t => t.name === name)) { toast('这本书已有同名任务'); return; }
+    if (book.tasks.length >= 12) { toast('每本书最多 12 个打卡任务'); return; }
+    book.tasks.push({
+        id: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        group, icon: icon.slice(0, 4), name: name.slice(0, 20), desc: desc.slice(0, 60), points: 2
+    });
+    ecAfterAction('✅ 已添加任务「' + name.slice(0, 20) + '」');
+}
+async function ecRenameBookTask(bookId, taskId) {
+    const book = ecBookById(bookId);
+    const def = book ? ecBookTasks(bookId).find(t => t.id === taskId) : null;
+    if (!book || !def) return;
+    const name = await uiPrompt('修改任务名称', def.name, { title: '✏️ 重命名任务', placeholder: '任务名称' });
+    if (name == null) return;
+    const v = String(name).trim();
+    if (!v) { toast('名称不能为空'); return; }
+    def.name = v.slice(0, 20);
+    ecAfterAction('已重命名任务');
+}
+async function ecDelBookTask(bookId, taskId) {
+    const book = ecBookById(bookId);
+    const def = book ? ecBookTasks(bookId).find(t => t.id === taskId) : null;
+    if (!book || !def) return;
+    const d = ecData();
+    const cnt = d.lessons.filter(l => l.bookId === bookId && d.tasks[ecTaskKey(l.id, taskId)]).length;
+    const ok = await uiConfirm(`将删除《${book.name}》的任务「${def.name}」及 ${cnt} 条完成记录（积分不扣回），且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
+    if (!ok) return;
+    book.tasks = (Array.isArray(book.tasks) ? book.tasks : ecCloneDefaultTasks()).filter(t => t.id !== taskId);
+    d.lessons.forEach(l => { if (l.bookId === bookId) delete d.tasks[ecTaskKey(l.id, taskId)]; });
+    ecAfterAction('🗑️ 已删除任务「' + def.name + '」');
 }
 // 普通任务打卡（完成/取消完成，可反复）
 function ecToggleTask(lessonId, taskId) {
     const d = ecData();
     const key = ecTaskKey(lessonId, taskId);
-    const taskDef = EC_TASKS.find(t => t.id === taskId);
-    const pts = taskDef ? taskDef.points : 2;
+    const taskDef = ecFindTaskDef(lessonId, taskId);
+    const pts = taskDef ? (taskDef.points || 2) : 2;
     if (d.tasks[key]) {
         delete d.tasks[key];
         ecAddScore(-pts);
@@ -10467,7 +10782,7 @@ function ecToggleTask(lessonId, taskId) {
         ecAfterAction('🎯 「' + (taskDef ? taskDef.name : '') + '」完成！+' + pts + ' 分');
     }
 }
-// 背诵：mode = 'learn'（新课入库）或 1/2/3/4（四档自评）
+// 背诵：mode = 'learn'（旧入口，默认 Good 入库）或 1/2/3/4（四档自评；无记录时=初学入池）
 function ecReciteAction(lessonId, mode) {
     const d = ecData();
     const nowTs = Date.now();
@@ -10479,18 +10794,26 @@ function ecReciteAction(lessonId, mode) {
         ecAfterAction('📖 已入库！首次复习安排在 1 天后，+5 分');
         return;
     }
-    const rec = d.fsrs[lessonId];
-    if (!rec || !rec.last) { toast('请先点「开始背诵」入库'); return; }
     const grade = parseInt(mode, 10);
     if (isNaN(grade) || grade < 1 || grade > 4) return;
+    const isFirst = !d.fsrs[lessonId] || !d.fsrs[lessonId].last;
+    if (isFirst) {
+        // 初学四选一：直接入库并按该档首评
+        d.fsrs[lessonId] = ecFsrsLearn(nowTs);
+    }
+    const rec = d.fsrs[lessonId];
     ecFsrsReview(rec, grade, nowTs);
-    if (grade === 1) ecAddScore(0);
+    if (isFirst) {
+        ecAddScore(5);
+    } else if (grade === 1) ecAddScore(0);
     else if (grade === 2) ecAddScore(1);
     else if (grade === 3) ecAddScore(2);
     else ecAddScore(3);
     ecLogStudy();
     const g = EC_GRADES.find(x => x.id === grade);
-    let msg = `「${g ? g.name : ''}」${rec.s >= EC_FSRS.masteredS ? ' 🏆 这一课已掌握！' : '下次复习：' + ecRelText(rec.due)}`;
+    const msg = isFirst
+        ? `🌟 初学自评「${g ? g.name : ''}」已加入复习池，+5 分${rec.s >= EC_FSRS.masteredS ? ' 🏆' : '，下次复习：' + ecRelText(rec.due)}`
+        : `「${g ? g.name : ''}」${rec.s >= EC_FSRS.masteredS ? ' 🏆 这一课已掌握！' : '下次复习：' + ecRelText(rec.due)}`;
     ecAfterAction(msg);
 }
 
@@ -10529,9 +10852,45 @@ function ecFsrsCard() {
         <div class="card-header"><div class="card-title">🧠 背诵复习 · FSRS 算法</div></div>
         <div class="ec-fsrs-flow">${grades}</div>
         <div class="ec-curve-tip">
-            只对「背书」这一项走复习曲线：每学完一课就入库一条记录，到复习时间合上书尝试<b>独立背诵整篇</b>，
-            按流畅度四选一打分 → 系统自动更新难度 D / 稳定性 S → 推算下次复习日期。<br>
+            只对「背书」这一项走复习曲线：<b>初学这一课时就可以按流畅度四选一入池</b>（Again/Hard/Good/Easy），
+            到复习时间合上书尝试<b>独立背诵整篇</b>再打一次分 → 系统自动更新难度 D / 稳定性 S → 推算下次复习日期；
+            没到时间觉得遗忘了，也可以提前复习。<br>
             难得越多刷、越熟越少刷；迟到几天再背也能识别遗忘程度，不会一下子排到几个月后（最大间隔 120 天）。
+        </div>
+    </div>`;
+}
+
+// 书单页：每本书的打卡任务管理面板（✏️ 编辑时展开）
+function ecTaskManageHTML(book) {
+    const tasks = ecBookTasks(book.id);
+    const rows = tasks.map(t => `
+        <div class="ec-tm-row">
+            <span class="ec-tm-icon">${t.icon}</span>
+            <div class="ec-tm-info">
+                <div class="ec-tm-name">${escapeHtml(t.name)}<span class="ec-tm-tag">${t.group === 'input' ? '📥 输入 · 听读' : '📤 输出 · 说写'}</span></div>
+                <div class="ec-tm-desc">${escapeHtml(t.desc || '')}</div>
+            </div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-rename-task" data-book="${book.id}" data-task="${t.id}" title="改名">✏️</button>
+            <button class="btn btn-sm btn-danger" data-action="ec-del-task" data-book="${book.id}" data-task="${t.id}" title="删除任务">🗑️</button>
+        </div>`).join('');
+    return `
+    <div class="ec-task-man">
+        <div class="ec-tm-title">🎯 打卡任务管理（每本书独立设置，默认 5 项）</div>
+        ${rows || '<div class="ec-hint">这本书还没有任务，在下方添加</div>'}
+        <div class="ec-tm-add">
+            <div class="ec-add-row">
+                <input type="text" class="input" id="ecNewTaskIcon" placeholder="图标" maxlength="4" style="flex:0 0 58px;min-width:0;text-align:center">
+                <input type="text" class="input" id="ecNewTaskName" placeholder="任务名，如：shadowing 影子跟读" maxlength="20">
+                <select class="input" id="ecNewTaskGroup" style="flex:0 0 96px;min-width:0">
+                    <option value="input">📥 输入</option>
+                    <option value="output">📤 输出</option>
+                </select>
+            </div>
+            <div class="ec-add-row">
+                <input type="text" class="input" id="ecNewTaskDesc" placeholder="说明（可选），如：不看文本纯听写" maxlength="60">
+                <button class="btn btn-primary" data-action="ec-add-task">添加任务</button>
+            </div>
+            <div class="ec-hint">输入板块 = 听 · 读，输出板块 = 说 · 写；删除任务会清掉所有课该任务的打卡记录（积分不扣回）。</div>
         </div>
     </div>`;
 }
@@ -10539,12 +10898,17 @@ function ecFsrsCard() {
 function ecRenderBooks() {
     const d = ecData();
     const books = [...d.books].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const selMode = !!state._ecBookSelMode;
+    const sel = state._ecBookSel || {};
+    const selCount = Object.keys(sel).filter(k => sel[k]).length;
     const list = books.map(b => {
         const st = ecBookStats(b.id);
         const pct = st.taskTotal ? Math.round(st.tasksDone / st.taskTotal * 100) : 0;
         const editing = state._ecEditBookId === b.id;
+        const checked = !!sel[b.id];
         return `
-        <div class="card ec-book-card">
+        <div class="card ec-book-card${checked ? ' ec-sel' : ''}${selMode ? ' ec-selmode' : ''}">
+            ${selMode ? `<div class="ec-sel-cb" data-action="ec-book-sel" data-id="${b.id}">${checked ? '☑️' : '⬜'}</div>` : ''}
             <div class="ec-book-main" data-action="ec-open-book" data-id="${b.id}">
                 <div class="ec-book-icon">📚</div>
                 <div class="ec-book-info">
@@ -10560,22 +10924,42 @@ function ecRenderBooks() {
                     <button class="btn btn-sm btn-danger" data-action="ec-delete-book" data-id="${b.id}">🗑️ 删除</button>
                     <button class="btn btn-sm btn-secondary" data-action="ec-edit-book" data-id="${b.id}">✕ 收起</button>
                 ` : `
-                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-book" data-id="${b.id}" title="编辑">✏️</button>
+                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-book" data-id="${b.id}" title="编辑 / 管理打卡任务">✏️</button>
                 `}
             </div>
+            ${editing ? ecTaskManageHTML(b) : ''}
         </div>`;
     }).join('');
     return `
     ${ecHeaderHTML()}
     <div class="card">
-        <div class="card-header"><div class="card-title">📚 我的书单（一级目录）</div></div>
+        <div class="card-header">
+            <div class="card-title">📚 我的书单（一级目录）</div>
+            ${books.length ? `<button class="btn btn-sm ${selMode ? 'btn-secondary' : 'btn-secondary'}" data-action="ec-book-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
+        </div>
         <div class="ec-add-row">
             <input type="text" class="input" id="ecBookNameInput" placeholder="书本名称，如：新概念英语一" maxlength="30">
             <button class="btn btn-primary" data-action="ec-add-book">添加</button>
         </div>
-        <div class="ec-hint">先建一本书，再在书里添加课程（二级目录），每节课按听 / 读 / 说 / 写打卡 + 背书复习（三级目录）。</div>
+        <div class="ec-batch">
+            <div class="ec-batch-title">⚡ 批量新增书单（每行一个书名）</div>
+            <div class="ec-add-row" style="align-items:flex-start">
+                <textarea class="input" id="ecBookBatchNames" rows="3" placeholder="每行一个书名：&#10;新概念英语一&#10;新概念英语二"></textarea>
+            </div>
+            <div class="ec-add-row">
+                <button class="btn btn-secondary" data-action="ec-batch-books">📥 批量添加</button>
+                <span class="ec-hint" style="margin:0">重名会自动跳过</span>
+            </div>
+        </div>
+        <div class="ec-hint">先建一本书，再在书里添加课程（二级目录）；每节课的打卡任务可以在书的 ✏️ 编辑里单独设置，再加背书复习（三级目录）。</div>
+        ${selMode ? `
+        <div class="ec-sel-bar">
+            <span class="ec-sel-count">已选 ${selCount} 本</span>
+            <button class="btn btn-sm btn-secondary" data-action="ec-sel-all-books">全选 / 反选</button>
+            <button class="btn btn-sm btn-danger" data-action="ec-del-sel-books">删除所选</button>
+        </div>` : ''}
     </div>
-    ${books.length ? list : `<div class="card ec-empty"><div class="ec-empty-icon">📚</div><div>还没有书单</div><div class="ec-hint">在上方输入书名，添加第一本书吧</div></div>`}
+    ${books.length ? list : `<div class="card ec-empty"><div class="ec-empty-icon">📚</div><div>还没有书单</div><div class="ec-hint">在上方输入书名，或批量粘贴添加第一本书吧</div></div>`}
     ${ecFsrsCard()}`;
 }
 
@@ -10583,22 +10967,29 @@ function ecRenderLessons() {
     const book = ecBookById(state._ecBookId);
     if (!book) { state._ecBookId = null; return ecRenderBooks(); }
     const lessons = ecLessonsOf(book.id);
+    const selMode = !!state._ecLessonSelMode;
+    const sel = state._ecLessonSel || {};
+    const selCount = Object.keys(sel).filter(k => sel[k]).length;
     const list = lessons.map(l => {
         const pg = ecLessonProgress(l.id);
         const rec = ecData().fsrs[l.id];
         const rs = ecReciteStatus(rec, Date.now());
         const reciteTag = rs === 'new' ? '未背诵' : rs === 'mastered' ? '🏆 已掌握' : rs === 'due' ? '⏰ 待背诵' : `📖 ${ecSDays(rec.s || 0)}后`;
         const editing = state._ecEditLessonId === l.id;
+        const checked = !!sel[l.id];
         return `
-        <div class="card ec-lesson-card">
+        <div class="card ec-lesson-card${checked ? ' ec-sel' : ''}${selMode ? ' ec-selmode' : ''}">
+            ${selMode ? `<div class="ec-sel-cb" data-action="ec-lesson-sel" data-id="${l.id}">${checked ? '☑️' : '⬜'}</div>` : ''}
             <div class="ec-lesson-main" data-action="ec-open-lesson" data-id="${l.id}">
                 <div class="ec-lesson-name">${escapeHtml(l.name)}</div>
+                ${l.note ? `<div class="ec-lesson-note">${escapeHtml(l.note)}</div>` : ''}
                 <div class="ec-lesson-meta">任务 ${pg.done}/${pg.total} · ${reciteTag}</div>
                 <div class="ec-book-go">›</div>
             </div>
             <div class="ec-row-actions">
                 ${editing ? `
                     <button class="btn btn-sm btn-secondary" data-action="ec-rename-lesson" data-id="${l.id}">✏️ 重命名</button>
+                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-note" data-id="${l.id}">📝 语法要点</button>
                     <button class="btn btn-sm btn-danger" data-action="ec-delete-lesson" data-id="${l.id}">🗑️ 删除</button>
                     <button class="btn btn-sm btn-secondary" data-action="ec-edit-lesson" data-id="${l.id}">✕ 收起</button>
                 ` : `
@@ -10611,12 +11002,19 @@ function ecRenderLessons() {
     <div class="card">
         <div class="card-header">
             <div class="card-title">📖 ${escapeHtml(book.name)}</div>
-            <button class="btn btn-sm btn-secondary" data-action="ec-back-books">‹ 返回书单</button>
+            <div class="ec-head-btns">
+                <button class="btn btn-sm btn-secondary" data-action="ec-back-books">‹ 返回书单</button>
+                ${lessons.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-lesson-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
+            </div>
         </div>
         <div class="ec-add-row">
             <input type="text" class="input" id="ecLessonNameInput" placeholder="添加课程，如 Lesson 1" maxlength="40">
             <button class="btn btn-primary" data-action="ec-add-lesson">添加</button>
         </div>
+        <div class="ec-add-row">
+            <input type="text" class="input" id="ecLessonNoteInput" placeholder="语法要点（可选），如：be 动词；一般疑问句；Yes/No 回答" maxlength="200">
+        </div>
+        <div class="ec-hint">语法要点会以灰色小字显示在课程名下方；也可以添加后点课程 ✏️ →「📝 语法要点」补写。</div>
         <div class="ec-batch">
             <div class="ec-batch-title">⚡ 批量生成（如新概念英语一 144 课）</div>
             <div class="ec-add-row">
@@ -10630,13 +11028,19 @@ function ecRenderLessons() {
         <div class="ec-batch">
             <div class="ec-batch-title">📋 批量导入名称（每行一个，可直接粘贴整本书的目录）</div>
             <div class="ec-add-row" style="align-items:flex-start">
-                <textarea class="input" id="ecImportNames" rows="4" placeholder="每行一个课程名，例如：&#10;Lesson 1 Excuse me&#10;Lesson 2 Is this your&#10;Unit 3 复习课"></textarea>
+                <textarea class="input" id="ecImportNames" rows="4" placeholder="每行一个课程名，例如：&#10;Lesson 1 Excuse me&#10;Lesson 2 Is this your&#10;Unit 3 复习课 || 语法：不定冠词 a/an；选择疑问句"></textarea>
             </div>
             <div class="ec-add-row">
                 <button class="btn btn-secondary" data-action="ec-import-lessons">📥 导入</button>
-                <span class="ec-hint" style="margin:0">支持中英文混排；重名会自动跳过</span>
+                <span class="ec-hint" style="margin:0">支持中英文混排；重名自动跳过；用「||」可同时带语法要点</span>
             </div>
         </div>
+        ${selMode ? `
+        <div class="ec-sel-bar">
+            <span class="ec-sel-count">已选 ${selCount} 节</span>
+            <button class="btn btn-sm btn-secondary" data-action="ec-sel-all-lessons">全选 / 反选</button>
+            <button class="btn btn-sm btn-danger" data-action="ec-del-sel-lessons">删除所选</button>
+        </div>` : ''}
     </div>
     ${lessons.length ? list : `<div class="card ec-empty"><div class="ec-empty-icon">📖</div><div>还没有课程</div><div class="ec-hint">用上方表单添加，或批量生成 / 批量导入整本书的课程</div></div>`}`;
 }
@@ -10648,14 +11052,16 @@ function ecTaskRow(lessonId, taskDef) {
     const btn = done
         ? `<button class="btn btn-sm btn-secondary" data-action="ec-task" data-lesson="${lessonId}" data-task="${taskDef.id}">↩️ 取消完成</button>`
         : `<button class="btn btn-sm btn-primary" data-action="ec-task" data-lesson="${lessonId}" data-task="${taskDef.id}">🎯 打卡完成</button>`;
+    const timeLine = done && rec.at ? `<div class="ec-task-time">✅ 完成于 ${ecFmtWeek(rec.at)}</div>` : '';
     return `
     <div class="ec-task${done ? ' ec-task-done' : ''}">
         <div class="ec-task-head">
             <span class="ec-task-icon">${taskDef.icon}</span>
             <span class="ec-task-name">${taskDef.name}</span>
-            ${done ? '<span class="ec-badge ec-badge-ok">已完成 ✅</span>' : `<span class="ec-badge ec-badge-new">未完成 · ${taskDef.points} 分</span>`}
+            ${done ? '<span class="ec-badge ec-badge-ok">已完成 ✅</span>' : `<span class="ec-badge ec-badge-new">未完成 · ${taskDef.points || 2} 分</span>`}
         </div>
         <div class="ec-task-desc">${taskDef.desc}</div>
+        ${timeLine}
         <div class="ec-task-btn">${btn}</div>
     </div>`;
 }
@@ -10669,8 +11075,12 @@ function ecRecitePanel(lessonId) {
     if (st === 'new') {
         body = `
             <div class="ec-recite-new">
-                <div class="ec-task-desc">学完这一课后，把整篇课文加入背诵复习池：系统按 FSRS 曲线安排复习，难的课多刷、熟的课少刷。</div>
-                <button class="btn btn-primary" data-action="ec-recite" data-lesson="${lessonId}" data-mode="learn">📖 学完这一课，开始背诵（+5 分）</button>
+                <div class="ec-task-desc">初学这一课：跟着书本读顺 / 试着背一遍，按流畅度选一档 → 立即加入 FSRS 复习池（+5 分）。难的课多刷、熟的课少刷；之后随时可以改判。</div>
+                <div class="ec-recite-actions">${EC_GRADES.map(g => `
+                    <button class="ec-grade-btn ${g.cls}" data-action="ec-recite" data-lesson="${lessonId}" data-mode="${g.id}" title="${g.desc}">
+                        <span class="ec-grade-name">${g.name} · ${g.label}</span>
+                        <span class="ec-grade-desc">${g.desc}</span>
+                    </button>`).join('')}</div>
             </div>`;
     } else if (st === 'mastered') {
         body = `
@@ -10697,9 +11107,14 @@ function ecRecitePanel(lessonId) {
         body = `
             <div class="ec-recite-meta">
                 <span class="ec-badge ec-badge-doing">学习中</span>
-                <span>下次复习：${ecFmtDT(rec.due)}（${ecRelText(rec.due)}） · 稳定性 ${ecSDays(rec.s)} · 难度 D=${rec.d.toFixed(1)} · 已成功 ${rec.n} 次</span>
+                <span>下次复习：${ecFmtWeek(rec.due)}（${ecRelText(rec.due)}） · 稳定性 ${ecSDays(rec.s)} · 难度 D=${rec.d.toFixed(1)} · 已成功 ${rec.n} 次</span>
             </div>
-            <div class="ec-hint">还没到复习时间，到时再来背这一课。</div>`;
+            <div class="ec-hint">还没到复习时间。如果觉得遗忘了，可以直接在下面提前自评打分（系统会按提前量少涨一点）：</div>
+            <div class="ec-recite-actions">${EC_GRADES.map(g => `
+                <button class="ec-grade-btn ${g.cls}" data-action="ec-recite" data-lesson="${lessonId}" data-mode="${g.id}" title="${g.desc}">
+                    <span class="ec-grade-name">${g.name} · ${g.label}</span>
+                    <span class="ec-grade-desc">提前复习</span>
+                </button>`).join('')}</div>`;
     }
     return `
     <div class="card ec-group-recite">
@@ -10715,15 +11130,18 @@ function ecRenderLesson() {
     const lesson = ecLessonById(state._ecLessonId);
     if (!lesson) { state._ecLessonId = null; return ecRenderLessons(); }
     const book = ecBookById(lesson.bookId);
+    const bookTasks = ecBookTasks(lesson.bookId);
     const groups = EC_TASK_GROUPS.map(g => {
-        const rows = EC_TASKS.filter(t => t.group === g.id).map(t => ecTaskRow(lesson.id, t)).join('');
+        const defs = bookTasks.filter(t => t.group === g.id);
+        const rows = defs.map(t => ecTaskRow(lesson.id, t)).join('');
+        const body = rows || `<div class="ec-hint" style="padding:12px 16px">这个板块还没有任务。返回书单，点本书的 ✏️ 编辑 →「打卡任务管理」里添加。</div>`;
         return `
         <div class="card ${g.cls}">
             <div class="ec-group-head">
                 <span class="ec-group-title">${g.icon} ${g.name} · ${g.sub}</span>
                 <span class="ec-group-sub">完成即可，不设复习</span>
             </div>
-            <div class="ec-group-body">${rows}</div>
+            <div class="ec-group-body">${body}</div>
         </div>`;
     }).join('');
     return `
@@ -10732,6 +11150,7 @@ function ecRenderLesson() {
             <div class="card-title">${escapeHtml(book ? book.name : '')} › ${escapeHtml(lesson.name)}</div>
             <button class="btn btn-sm btn-secondary" data-action="ec-back-lessons">‹ 返回课程</button>
         </div>
+        ${lesson.note ? `<div class="ec-lesson-note ec-lesson-note-lg">${escapeHtml(lesson.note)}</div>` : ''}
         <div class="ec-hint">三级目录：每节课按「听 / 读 / 说 / 写」打卡，再加一整篇课文背诵（FSRS 复习）。</div>
     </div>
     ${ecRecitePanel(lesson.id)}
@@ -10741,18 +11160,57 @@ function ecRenderLesson() {
 function ecRenderReview() {
     const stats = ecGlobalStats();
     const dueList = ecDueRecites();
-    const rows = dueList.map(it => {
+    const earlyId = state._ecEarlyId;
+    const gradeMini = (lessonId) => EC_GRADES.map(g => `<button class="ec-grade-btn ${g.cls} ec-grade-mini" data-action="ec-recite" data-lesson="${lessonId}" data-mode="${g.id}" title="${g.desc}">${g.name}</button>`).join('');
+    // ① 待背诵清单（已到时间，含逾期）
+    const dueRows = dueList.map(it => {
         const late = (it.rec.due || 0) < new Date().setHours(0, 0, 0, 0);
         return `
         <div class="ec-due-row${late ? ' late' : ''}">
             <div class="ec-due-info">
                 <div class="ec-due-title">📖 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span></div>
-                <div class="ec-due-meta">应复习：${ecFmtDT(it.rec.due)}（${ecRelText(it.rec.due)}） · 稳定性 ${ecSDays(it.rec.s)} · D=${it.rec.d.toFixed(1)}</div>
-                <div class="ec-recite-actions ec-recite-inline">${EC_GRADES.map(g => `<button class="ec-grade-btn ${g.cls} ec-grade-mini" data-action="ec-recite" data-lesson="${it.lesson.id}" data-mode="${g.id}" title="${g.desc}">${g.name}</button>`).join('')}</div>
+                <div class="ec-due-meta">应复习：${ecFmtWeek(it.rec.due)}（${ecRelText(it.rec.due)}） · 稳定性 ${ecSDays(it.rec.s)} · D=${it.rec.d.toFixed(1)} · 已成功 ${it.rec.n} 次</div>
+                <div class="ec-recite-actions ec-recite-inline">${gradeMini(it.lesson.id)}</div>
             </div>
         </div>`;
     }).join('');
+    // ② 学习中（未到复习时间，可提前自评）
     const d = ecData();
+    const waiting = [];
+    d.books.forEach(b => ecLessonsOf(b.id).forEach(l => {
+        const rec = d.fsrs[l.id];
+        if (!rec || !rec.last) return;
+        if ((rec.s || 0) >= EC_FSRS.masteredS) return;
+        if (Date.now() < (rec.due || 0)) waiting.push({ book: b, lesson: l, rec });
+    }));
+    waiting.sort((a, b) => (a.rec.due || 0) - (b.rec.due || 0));
+    const waitRows = waiting.map(it => `
+        <div class="ec-due-row">
+            <div class="ec-due-info">
+                <div class="ec-due-title">📖 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span></div>
+                <div class="ec-due-meta">下次复习：${ecFmtWeek(it.rec.due)}（${ecRelText(it.rec.due)}） · 稳定性 ${ecSDays(it.rec.s)} · D=${it.rec.d.toFixed(1)} · 已成功 ${it.rec.n} 次</div>
+                ${earlyId === it.lesson.id
+                    ? `<div class="ec-recite-actions ec-recite-inline">${gradeMini(it.lesson.id)}</div>`
+                    : `<div class="ec-due-btns"><button class="btn btn-sm btn-secondary" data-action="ec-early-review" data-lesson="${it.lesson.id}">⚡ 提前复习（觉得遗忘了就点这里）</button></div>`}
+            </div>
+        </div>`).join('');
+    // ③ 已掌握
+    const mastered = [];
+    d.books.forEach(b => ecLessonsOf(b.id).forEach(l => {
+        const rec = d.fsrs[l.id];
+        if (rec && rec.last && (rec.s || 0) >= EC_FSRS.masteredS) mastered.push({ book: b, lesson: l, rec });
+    }));
+    mastered.sort((a, b) => (b.rec.s || 0) - (a.rec.s || 0));
+    const masterRows = mastered.map(it => `
+        <div class="ec-due-row">
+            <div class="ec-due-info">
+                <div class="ec-due-title">🏆 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span></div>
+                <div class="ec-due-meta">稳定性 ${ecSDays(it.rec.s)} · 成功复习 ${it.rec.n} 次 · D=${it.rec.d.toFixed(1)}${earlyId === it.lesson.id ? '' : ''}</div>
+                ${earlyId === it.lesson.id
+                    ? `<div class="ec-recite-actions ec-recite-inline">${gradeMini(it.lesson.id)}</div>`
+                    : `<div class="ec-due-btns"><button class="btn btn-sm btn-secondary" data-action="ec-early-review" data-lesson="${it.lesson.id}">🔁 再背一次自检</button></div>`}
+            </div>
+        </div>`).join('');
     return `
     ${ecHeaderHTML()}
     <div class="card">
@@ -10760,15 +11218,25 @@ function ecRenderReview() {
         <div class="ec-stats">
             <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">待背诵</div></div>
             <div class="ec-stat"><div class="ec-stat-num ec-stat-late">${stats.overdue}</div><div class="ec-stat-label">已逾期</div></div>
-            <div class="ec-stat"><div class="ec-stat-num">${stats.todayDone}</div><div class="ec-stat-label">今日完成</div></div>
+            <div class="ec-stat"><div class="ec-stat-num">${waiting.length}</div><div class="ec-stat-label">学习中</div></div>
             <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.mastered}</div><div class="ec-stat-label">已掌握</div></div>
         </div>
+        <div class="ec-hint">在池课程共 ${dueList.length + waiting.length + mastered.length} 节：初学四选一入池后，到这里看每节课的下次复习时间；觉得遗忘了可以提前复习。</div>
     </div>
     ${ecFsrsCard()}
     <div class="card">
-        <div class="card-header"><div class="card-title">📋 待背诵清单</div><span style="font-size:12px;color:var(--text-secondary)">按应复习时间排序</span></div>
-        ${dueList.length ? rows : `<div class="ec-empty"><div class="ec-empty-icon">🎉</div><div>当前没有待背诵的课文</div><div class="ec-hint">去「书单课目」学新课，到这里按时复习</div></div>`}
-    </div>`;
+        <div class="card-header"><div class="card-title">⏰ 待背诵清单</div><span style="font-size:12px;color:var(--text-secondary)">按应复习时间排序</span></div>
+        ${dueList.length ? dueRows : `<div class="ec-empty"><div class="ec-empty-icon">🎉</div><div>当前没有到点的课文</div><div class="ec-hint">去「书单课目」学新课，或看看下面的「学习中」</div></div>`}
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">📖 学习中（未到复习时间）</div><span style="font-size:12px;color:var(--text-secondary)">可提前自评</span></div>
+        ${waiting.length ? waitRows : `<div class="ec-empty"><div class="ec-empty-icon">🌱</div><div>还没有在学的课文</div><div class="ec-hint">学新课时选一档难度，就会加入这里</div></div>`}
+    </div>
+    ${mastered.length ? `
+    <div class="card">
+        <div class="card-header"><div class="card-title">🏆 已掌握</div><span style="font-size:12px;color:var(--text-secondary)">稳定性 ≥ 60 天</span></div>
+        ${masterRows}
+    </div>` : ''}`;
 }
 
 // 成就榜 Tab
@@ -10834,21 +11302,35 @@ document.addEventListener('click', async e => {
     if (!action || action.indexOf('ec-') !== 0) return;
 
     if (action === 'ec-add-book') { ecAddBook(); return; }
+    if (action === 'ec-batch-books') { ecBatchBooks(); return; }
     if (action === 'ec-rename-book') { ecRenameBook(el.dataset.id); return; }
     if (action === 'ec-delete-book') { ecDeleteBook(el.dataset.id); return; }
     if (action === 'ec-edit-book') { state._ecEditBookId = state._ecEditBookId === el.dataset.id ? null : el.dataset.id; render(); return; }
-    if (action === 'ec-open-book') { state._ecBookId = el.dataset.id; state._ecLessonId = null; state._ecEditBookId = null; render(); return; }
-    if (action === 'ec-back-books') { state._ecBookId = null; render(); return; }
+    if (action === 'ec-book-sel-mode') { ecBookSelMode(); return; }
+    if (action === 'ec-book-sel') { ecBookSelToggle(el.dataset.id); return; }
+    if (action === 'ec-sel-all-books') { ecBookSelAll(); return; }
+    if (action === 'ec-del-sel-books') { ecDelSelBooks(); return; }
+    if (action === 'ec-add-task') { ecAddTaskToBook(); return; }
+    if (action === 'ec-rename-task') { ecRenameBookTask(el.dataset.book, el.dataset.task); return; }
+    if (action === 'ec-del-task') { ecDelBookTask(el.dataset.book, el.dataset.task); return; }
+    if (action === 'ec-open-book') { state._ecBookId = el.dataset.id; state._ecLessonId = null; state._ecEditBookId = null; state._ecBookSelMode = false; state._ecBookSel = {}; render(); return; }
+    if (action === 'ec-back-books') { state._ecBookId = null; state._ecLessonSelMode = false; state._ecLessonSel = {}; render(); return; }
     if (action === 'ec-add-lesson') { ecAddLesson(); return; }
     if (action === 'ec-batch-lessons') { ecBatchLessons(); return; }
     if (action === 'ec-import-lessons') { ecImportLessons(); return; }
     if (action === 'ec-rename-lesson') { ecRenameLesson(el.dataset.id); return; }
+    if (action === 'ec-edit-note') { ecEditLessonNote(el.dataset.id); return; }
     if (action === 'ec-delete-lesson') { ecDeleteLesson(el.dataset.id); return; }
     if (action === 'ec-edit-lesson') { state._ecEditLessonId = state._ecEditLessonId === el.dataset.id ? null : el.dataset.id; render(); return; }
-    if (action === 'ec-open-lesson') { state._ecLessonId = el.dataset.id; state._ecEditLessonId = null; render(); return; }
+    if (action === 'ec-lesson-sel-mode') { ecLessonSelMode(); return; }
+    if (action === 'ec-lesson-sel') { ecLessonSelToggle(el.dataset.id); return; }
+    if (action === 'ec-sel-all-lessons') { ecLessonSelAll(); return; }
+    if (action === 'ec-del-sel-lessons') { ecDelSelLessons(); return; }
+    if (action === 'ec-open-lesson') { state._ecLessonId = el.dataset.id; state._ecEditLessonId = null; state._ecLessonSelMode = false; state._ecLessonSel = {}; render(); return; }
     if (action === 'ec-back-lessons') { state._ecLessonId = null; render(); return; }
     if (action === 'ec-task') { ecToggleTask(el.dataset.lesson, el.dataset.task); return; }
     if (action === 'ec-recite') { ecReciteAction(el.dataset.lesson, el.dataset.mode); return; }
+    if (action === 'ec-early-review') { state._ecEarlyId = state._ecEarlyId === el.dataset.lesson ? null : el.dataset.lesson; render(); return; }
 });
 
 
