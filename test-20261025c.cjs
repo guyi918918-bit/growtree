@@ -119,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizBankById, ecQuizQById, ecQuizBankProgress, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAfterAnswer, ecRenderQuizPage, ecQuizHomeHTML, ecQuizPlayHTML, ecQuizBanksHTML, ecQuizManageHTML, ecQuizListHTML, ecQuizStatsHTML, ecQuizStart, ecQuizPick, ecQuizSubmit, ecQuizSelf, ecQuizNext, ecQuizExit, ecQuizToggleFav, ecQuizSetMastered, ecQuizUnfav, ecQuizUseBank, ecQuizDelBank, ecQuizDelQuestion, ecQuizExport, ecQuizNormType, ecQuizNormQuestion, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizBankById, ecQuizQById, ecQuizBankProgress, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAfterAnswer, ecRenderQuizPage, ecQuizHomeHTML, ecQuizPlayHTML, ecQuizBanksHTML, ecQuizManageHTML, ecQuizListHTML, ecQuizStatsHTML, ecQuizStart, ecQuizPick, ecQuizSubmit, ecQuizSelf, ecQuizNext, ecQuizExit, ecQuizToggleFav, ecQuizSetMastered, ecQuizUnfav, ecQuizUseBank, ecQuizDelBank, ecQuizDelQuestion, ecQuizExport, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
@@ -823,6 +823,58 @@ function makeZip(files) {
     // F. 续行拼接
     const tqs4 = EC.ecQuizLinesToQuestions(['1. 这是题干第一行', '续的第二行', 'A. 选项一', 'B. 选项二', '答案：A']);
     ok('题干续行自动拼接', tqs4.length === 1 && tqs4[0].stem.includes('续的第二行'));
+
+    // F2. v20261026b：题型多样化识别
+    ok('全角转半角：字母/数字/冒号', EC.ecFullToHalf('ＡＢ：１') === 'AB:1');
+    ok('题型别名：单选族', ['单选', '单项选择', '单项选择题', '单选题', '四选一', 'A型题', 'single', 'Single', 'radio'].every(t => EC.ecQuizNormType(t) === 'single'));
+    ok('题型别名：多选族', ['多选', '多项选择', '多项选择题', '多选题', '不定项选择', '不定项', 'X型题', 'multi', 'Multiple'].every(t => EC.ecQuizNormType(t) === 'multi'));
+    ok('题型别名：判断族', ['判断', '判断题', '判断是非', '是非题', '对错题', '辨析题', 'T-F', 'truefalse', 'judge'].every(t => EC.ecQuizNormType(t) === 'judge'));
+    ok('题型别名：主观族', ['简答', '简答题', '问答', '问答题', '论述', '论述题', '名词解释', '填空', '填空题', '翻译', '作文', '案例分析', 'essay', 'qa'].every(t => EC.ecQuizNormType(t) === 'essay'));
+    ok('题型干扰清理：「（2分）」', EC.ecQuizNormType('单选（2分）') === 'single');
+    ok('题型干扰清理：「1、」序号', EC.ecQuizNormType('1、单选题') === 'single');
+    ok('题型干扰清理：「题型：」前缀', EC.ecQuizNormType('题型：多选') === 'multi');
+    ok('题型干扰清理：全角括号+空格', EC.ecQuizNormType('【判断题】（2分）') === 'judge');
+    ok('非题型返回空', EC.ecQuizNormType('题干一') === '' && EC.ecQuizNormType('') === '' && EC.ecQuizNormType('其他') === '');
+    // 题干内嵌标记
+    const tk1 = EC.ecQuizTypeFromStem('（单选）Tom ___ a student.');
+    ok('题干标记：（单选）识别并剥离', tk1.type === 'single' && tk1.stem === 'Tom ___ a student.');
+    const tk2 = EC.ecQuizTypeFromStem('【多选题】下列哪些正确？');
+    ok('题干标记：【多选题】识别并剥离', tk2.type === 'multi' && tk2.stem === '下列哪些正确？');
+    const tk3 = EC.ecQuizTypeFromStem('(判断)He is a boy.');
+    ok('题干标记：半角括号+判断', tk3.type === 'judge' && tk3.stem === 'He is a boy.');
+    ok('无标记题干原样返回', EC.ecQuizTypeFromStem('普通题干').type === '' && EC.ecQuizTypeFromStem('普通题干').stem === '普通题干');
+    const nq5 = EC.ecQuizNormQuestion({ stem: '（判断题）He don\'t like coffee.', options: [], answer: 'T' });
+    ok('题干标记+答案 T → 判断题', nq5 && nq5.type === 'judge' && nq5.answer === 0 && nq5.stem === 'He don\'t like coffee.');
+    ok('判断题新答案：√/是/Y/正确 → 0', ['√', '是', 'Y', '正确', 'true'].every(a => { const q = EC.ecQuizNormQuestion({ stem: 'x', options: [], answer: a }); return q && q.type === 'judge' && q.answer === 0; }));
+    ok('判断题新答案：×/否/N/错误 → 1', ['×', '否', 'N', '错误', 'false'].every(a => { const q = EC.ecQuizNormQuestion({ stem: 'x', options: [], answer: a }); return q && q.type === 'judge' && q.answer === 1; }));
+    ok('全角答案 Ａ → 索引 0', (EC.ecQuizNormQuestion({ stem: 'x', options: ['a', 'b'], answer: 'Ａ' }) || {}).answer === 0);
+    // 行解析新变体
+    const tqs5 = EC.ecQuizLinesToQuestions([
+        '1. My sister ____ a nurse.',
+        'A. be  B. is  C. are  D. am',
+        '【答案】B',
+        '答案解析：三单用 is。'
+    ]);
+    ok('行解析：【答案】+答案解析', tqs5.length === 1 && tqs5[0].answer === 1 && tqs5[0].analysis.includes('三单'));
+    const tqs6 = EC.ecQuizLinesToQuestions([
+        '（单选题）Tom ___ a student.',
+        'A. is  B. are',
+        '正确答案：A'
+    ]);
+    ok('行解析：题干内嵌（单选题）标记', tqs6.length === 1 && tqs6[0].type === 'single' && tqs6[0].stem === 'Tom ___ a student.' && tqs6[0].answer === 0);
+    const tqs7 = EC.ecQuizLinesToQuestions([
+        '题型：判断题',
+        'He has gone to Beijing.',
+        '答案：×'
+    ]);
+    ok('行解析：题型行变体 + × 答案', tqs7.length === 1 && tqs7[0].type === 'judge' && tqs7[0].answer === 1);
+    const tqs8 = EC.ecQuizLinesToQuestions(['１．全角题号题干', 'Ａ. 甲  Ｂ. 乙', '答案：Ａ']);
+    ok('行解析：全角题号/选项/答案', tqs8.length === 1 && tqs8[0].options.length === 2 && tqs8[0].answer === 0);
+    const tqs9 = EC.ecQuizLinesToQuestions(['题型\t题干\t选项A\t选项B\t答案\t解析', '单选（2分）\tTom ___ a student.\tis\tare\tA\t主三单', '判断题\tHe has gone.\t\t\t对\t现在完成时']);
+    ok('表格行：题型列带干扰（2分）+ 判断答案「对」', tqs9.length === 2 && tqs9[0].type === 'single' && tqs9[1].type === 'judge' && tqs9[1].answer === 0);
+    // 中文逗号正文不应被误判为表格行（回归全角转换引入的风险）
+    const tqs10 = EC.ecQuizLinesToQuestions(['1. 下列说法正确的是：', '苹果，香蕉，梨子都是水果。', 'A. 对  B. 错', '答案：A']);
+    ok('中文逗号续行不被误判为表格', tqs10.length === 1 && tqs10[0].options.length === 2 && tqs10[0].answer === 0);
 
     // G. ZIP 解包（store + deflate-raw）
     (async () => {

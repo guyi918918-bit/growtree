@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261026a';
+const APP_BUILD = '20261026b';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -11597,13 +11597,19 @@ async function ecQuizImportOpen(bankId) {
         html: `<div class="ec-hint" style="line-height:1.8">选择题库文件，<b>本地解析、不上传</b>。<br>
                支持：<b>xlsx / xls / csv / txt / docx / pdf</b><br><br>
                <b>表格列顺序</b>（Excel/CSV，第一行表头会自动跳过）：<br>
-               题型（可省）→ 题干 → 选项A → 选项B → 选项C → 选项D → 答案 → 解析（可省）<br>
-               答案写法：单选 <b>A</b>；多选 <b>AC</b>；判断 <b>对/错</b> 或 <b>T/F</b>；主观题留空或写参考要点。<br><br>
+               题型（可省）→ 题干 → 选项A → 选项B → 选项C → 选项D → 答案 → 解析（可省）<br><br>
+               <b>题型写法很宽松</b>，以下都能认：<br>
+               单选 / 单项选择 / 单选题 / 四选一 / A型题 / Single → 单选题<br>
+               多选 / 多项选择 / 不定项 / X型题 / Multi → 多选题<br>
+               判断 / 判断题 / 是非题 / 对错题 / 辨析题 / T-F → 判断题<br>
+               简答 / 问答 / 论述 / 名词解释 / 填空 / 翻译 / 作文 → 主观题<br>
+               <span style="color:var(--text-secondary)">也可以不写题型列，系统会按选项和答案自动判断；题干里写「（单选）」「【多选题】」「（判断题）」标记也能识别并自动去掉。</span><br><br>
+               <b>答案写法</b>：单选 <b>A</b>；多选 <b>AC</b> 或 <b>A,C</b>；判断 <b>对/错</b>、<b>正确/错误</b>、<b>T/F</b>、<b>√/×</b>；主观题留空或写参考要点。<br><br>
                <b>文本排版</b>（Word/PDF/TXT，按行识别）：<br>
                1. 题干内容……<br>
                A. 选项一&nbsp;&nbsp;B. 选项二&nbsp;&nbsp;C. 选项三<br>
-               答案：A<br>
-               解析：……<br><br>
+               答案：A（也认「正确答案 / 参考答案 / 【答案】」）<br>
+               解析：……（也认「答案解析 / 分析」）<br><br>
                <span style="color:var(--text-secondary)">提示：扫描版 PDF 无法提取文字，请用文字版 PDF 或 Excel/Word 导入。</span></div>
                <input type="file" id="ecQuizFile" accept=".xlsx,.xls,.csv,.txt,.docx,.pdf" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:13px;margin-top:10px">`,
         getValue: () => {
@@ -11644,23 +11650,57 @@ async function ecQuizImportOpen(bankId) {
 }
 
 // ---------- 导入解析器 ----------
+// 全角 → 半角（字母/数字/标点），兼容「Ａ」「，」等全角输入
+function ecFullToHalf(s) {
+    return String(s == null ? '' : s).replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/\u3000/g, ' ');
+}
+// 题型识别：先剥干扰（「（2分）」「1、」「题型：」等），再按别名表精确匹配
+// 兼容：单选/单项选择/单选题/四选一/A型题/single，多选/多项选择/不定项/X型题/multi，
+//       判断/判断题/是非题/对错题/辨析题/T-F，简答/问答/论述/名词解释/填空/翻译/作文/essay
 function ecQuizNormType(t) {
-    const s = String(t || '').trim();
-    if (/^(单选|单项选择|单选题|single|radio)$/i.test(s)) return 'single';
-    if (/^(多选|多项选择|多选题|multi|multiple)$/i.test(s)) return 'multi';
-    if (/^(判断|判断题|judge|truefalse|torf|对错题)$/i.test(s)) return 'judge';
-    if (/^(主观|主观题|简答|简答题|填空|essay|text|qa)$/i.test(s)) return 'essay';
+    let s = ecFullToHalf(String(t == null ? '' : t)).trim();
+    if (!s) return '';
+    // 去掉「（2分）」「【】」等备注括号；括号内是题型关键字（如「【判断题】」）时保留内容
+    s = s.replace(/[（(【\[][^）)】\]]{0,16}[）)】\]]/g, m => {
+        const inner = m.replace(/^[（(【\[]/, '').replace(/[）)】\]]$/, '');
+        return (/[0-9０-９]/.test(inner) || !inner.trim() || /^[易中难适中]+$/.test(inner.trim())) ? ' ' : m;
+    });
+    s = s.replace(/^(?:题型|类型|题目类型)\s*[:：]?\s*/, '');      // 去掉「题型：」前缀
+    // 去掉「1、」「一、」序号（必须后接分隔符，避免误吃「四选一」这类首字）
+    s = s.replace(/^[0-9一二三四五六七八九十]{1,3}\s*(?=[\.、．,，:：\-\s])/, '');
+    s = s.replace(/[\s。.、,，:：;；!！?？'"‘’“”\-【】\[\]（）()]/g, ''); // 去空白、标点与括号本体
+    if (!s) return '';
+    const S = s.toLowerCase();
+    if (/^(?:单选|单项选择|单项选择题|单选题|四选一|a型题|a型|single|singlechoice|radio|choice)$/.test(S)) return 'single';
+    if (/^(?:多选|多项选择|多项选择题|多选题|不定项选择|不定项|x型题|x型|multi|multiple|multiplechoice|multichoice)$/.test(S)) return 'multi';
+    if (/^(?:判断|判断题|判断是非|是非题|对错题|对错|辨析题|辨析|truefalse|torf|tf|trueorfalse|judge|judgment)$/.test(S)) return 'judge';
+    if (/^(?:简答|简答题|问答|问答题|主观|主观题|论述|论述题|名词解释|填空|填空题|翻译|作文|计算|证明|案例分析|改错|essay|text|qa|shortanswer|fill|blank)$/.test(S)) return 'essay';
     return '';
+}
+// 题干内嵌题型标记：「（单选）……」「【多选题】……」「（判断题）……」→ 取出类型并剥掉标记
+// 注意：只在归一化副本上匹配标记，题干内容按原文切片，保留全角标点
+function ecQuizTypeFromStem(stem) {
+    const raw = String(stem == null ? '' : stem).trim();
+    const s = ecFullToHalf(raw);
+    const m = /^[（(【\[]\s*(单选|单项选择|单选题|多选|多项选择|多选题|不定项|判断|判断题|是非题|对错题|辨析|简答|简答题|问答|问答题|论述|名词解释|填空|翻译|作文|案例分析)\s*(?:题|型)?\s*[）)】\]]/.exec(s);
+    if (!m) return { type: '', stem: raw };
+    return { type: ecQuizNormType(m[1]), stem: raw.slice(m[0].length).trim() };
 }
 // 行数据 → 标准题目（选项不足/无题干返回 null）
 function ecQuizNormQuestion(raw) {
-    const stem = String(raw.stem == null ? '' : raw.stem).trim();
+    let stem = String(raw.stem == null ? '' : raw.stem).trim();
     if (!stem) return null;
     let type = ecQuizNormType(raw.type);
-    const options = (raw.options || []).map(o => String(o == null ? '' : o).trim()).filter(o => o !== '');
-    const ansRaw = String(raw.answer == null ? '' : raw.answer).trim();
+    // 题干内嵌「（单选）」「【多选题】」标记 → 取类型并剥掉标记
     if (!type) {
-        if (options.length === 0 && /^(?:[对错]|正确|错误|[TF])$/i.test(ansRaw)) type = 'judge';
+        const tk = ecQuizTypeFromStem(stem);
+        if (tk.type) { type = tk.type; stem = tk.stem; }
+    }
+    if (!stem) return null;
+    const options = (raw.options || []).map(o => String(o == null ? '' : o).trim()).filter(o => o !== '');
+    const ansRaw = ecFullToHalf(String(raw.answer == null ? '' : raw.answer)).trim();
+    if (!type) {
+        if (options.length === 0 && /^(?:对|错|正确|错误|是|否|√|×|✓|✗|t|f|true|false|y|n)$/i.test(ansRaw)) type = 'judge';
         else if (/^[A-Ha-h](?:[,，、\s]*[A-Ha-h])+$/.test(ansRaw)) type = 'multi';
         else if (/^[A-Ha-h]$/.test(ansRaw) && options.length >= 1) type = 'single';
         else if (options.length >= 2) type = 'single';
@@ -11671,7 +11711,7 @@ function ecQuizNormQuestion(raw) {
     if (type === 'essay') {
         answer = ansRaw;
     } else if (type === 'judge') {
-        answer = /^(?:对|正确|T|true|1|是)$/i.test(ansRaw) ? 0 : 1;
+        answer = /^(?:对|正确|是|√|✓|t|true|y|yes|1)$/i.test(ansRaw) ? 0 : 1;
     } else {
         const letters = ansRaw.toUpperCase().match(/[A-H]/g) || [];
         if (!letters.length && /^\d{1,2}$/.test(ansRaw)) {
@@ -11700,22 +11740,23 @@ function ecQuizLinesToQuestions(rawLines) {
     (rawLines || []).forEach(raw => {
         const line = String(raw == null ? '' : raw).replace(/\r$/, '').trim();
         if (!line) return;
+        const lineF = ecFullToHalf(line); // 全角字母/数字/冒号归一，仅供「1.」「A.」「答案：」等标记匹配用
         // 表头行：某列内容精确等于列名（题型/类型/题干/题目），且整行至少 3 列
         {
             const sep = line.includes('\t') ? '\t' : null;
             const headCells = (sep ? line.split(sep) : line.split(/[,，|]/)).map(s => s.trim().toLowerCase());
-            if (headCells.length >= 3 && headCells.some(c => /^(?:题型|类型|题干|题目|stem)$/.test(c))) return;
+            if (headCells.length >= 3 && headCells.some(c => /^(?:题型|类型|题目类型|题干|题目|stem)$/.test(c))) return;
         }
-        // 表格分隔行（Tab 或中文逗号分隔，且不是题号行）
+        // 表格分隔行（Tab 或逗号分隔，且不是题号行）
         if ((line.includes('\t') || (line.includes(',') && !/^\d{1,3}\s*[\.、．]/.test(line))) && line.split(line.includes('\t') ? '\t' : /,|，/).filter(s => s.trim()).length >= 3) {
             const cols = line.split(line.includes('\t') ? '\t' : /,|，/).map(s => s.trim()).filter((s, i, a) => s !== '' || (i > 0 && i < a.length));
             const nq = ecQuizTableRow(cols);
             if (nq) { push(); nq.__normed = true; list.push(nq); return; }
         }
-        let m = /^(\d{1,3})\s*[\.、．]\s*(.+)$/.exec(line);
+        let m = /^(\d{1,3})\s*[\.、．]\s*(.+)$/.exec(lineF);
         if (m) { push(); cur = { stem: m[2].trim(), options: [], answer: '', analysis: '', type: '' }; return; }
-        if (!cur) { cur = { stem: line, options: [], answer: '', analysis: '', type: '' }; return; }
-        m = /^([A-Ha-h])\s*[\.、．]\s*(.+)$/.exec(line);
+        if (!cur) { cur = { stem: lineF, options: [], answer: '', analysis: '', type: '' }; return; }
+        m = /^([A-Ha-h])\s*[\.、．]\s*(.+)$/.exec(lineF);
         if (m) {
             // 一行可能并列多个选项（A. 甲 B. 乙 / A. be  B. is  C. are）——按递增字母标记切分
             const parts = [];
@@ -11732,11 +11773,11 @@ function ecQuizLinesToQuestions(rawLines) {
             parts.forEach(p => { const t = p.trim(); if (t) cur.options.push(t); });
             return;
         }
-        m = /^答案\s*[:：]?\s*(.+)$/.exec(line);
-        if (m) { cur.answer = m[1].trim(); return; }
-        m = /^解析\s*[:：]?\s*(.+)$/.exec(line);
+        m = /^[【\[（(]?\s*(?:题目解析|答案解析|专家解析|解析|分析|explanation)\s*[】\]）)]?\s*[:：]?\s*(.+)$/i.exec(lineF);
         if (m) { cur.analysis = m[1].trim(); return; }
-        m = /^(?:题型|类型)\s*[:：]?\s*(.+)$/.exec(line);
+        m = /^[【\[（(]?\s*(?:正确答案|参考答案|答案|answer)\s*[】\]）)]?\s*[:：]?\s*(.+)$/i.exec(lineF);
+        if (m) { cur.answer = m[1].trim(); return; }
+        m = /^[【\[（(]?\s*(?:题型|类型|题目类型)\s*[】\]）)]?\s*[:：]?\s*(.+)$/i.exec(lineF);
         if (m) { cur.type = m[1].trim(); return; }
         // 续行：拼到上一个字段
         if (cur.options.length && !cur.answer) cur.options[cur.options.length - 1] += line;
@@ -11750,6 +11791,7 @@ function ecQuizLinesToQuestions(rawLines) {
 }
 function ecQuizTableRow(cols) {
     if (!cols || cols.length < 2) return null;
+    cols = cols.map(c => ecFullToHalf(c).trim());
     let type = '';
     let rest = cols;
     if (ecQuizNormType(cols[0])) { type = ecQuizNormType(cols[0]); rest = cols.slice(1); }
@@ -11757,7 +11799,7 @@ function ecQuizTableRow(cols) {
     const stem = rest[0];
     let ansIdx = -1;
     for (let i = rest.length - 1; i >= 1; i--) {
-        if (/^(?:[A-Ha-h](?:[,，、\s]*[A-Ha-h])*|[对错]|T|F|正确|错误|\d{1,2})$/.test(rest[i])) { ansIdx = i; break; }
+        if (/^(?:[A-Ha-h](?:[,，、\s]*[A-Ha-h])*|[对错]|正确|错误|是|否|√|×|✓|✗|t|f|true|false|\d{1,2})$/i.test(rest[i])) { ansIdx = i; break; }
     }
     let answer = '', analysis = '', optCols;
     if (ansIdx >= 0) {
