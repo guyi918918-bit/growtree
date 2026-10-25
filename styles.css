@@ -4248,6 +4248,22 @@ select.input {
 .ec-batch-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
 .ec-batch .ec-add-row { margin-bottom: 6px; }
 
+/* 新增折叠面板：默认只显示「➕ 新增」小按钮，展开才出现表单，避免页面过长影响打卡 */
+.ec-add-panel { margin-top: 12px; padding: 12px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px dashed var(--border); }
+.ec-add-panel .ec-add-row { margin-bottom: 8px; }
+.ec-add-panel .ec-batch { margin-top: 8px; }
+
+/* 复习行 info 区（v20261025b 误删导致布局塌陷） */
+.ec-due-info { flex: 1; min-width: 0; }
+
+/* 复习评价即时反馈条：点完四档后行内显示加分/下次复习时间，几秒后随下次操作消失 */
+.ec-review-feedback { margin-top: 8px; padding: 8px 12px; border-radius: var(--radius-sm); background: rgba(52,199,89,0.12); border: 1px solid rgba(52,199,89,0.35); color: var(--text); font-size: 12px; font-weight: 600; line-height: 1.6; }
+[data-theme="dark"] .ec-review-feedback { background: rgba(52,199,89,0.18); border-color: rgba(52,199,89,0.4); }
+
+/* 悦己享瘦模块（iframe 嵌入成长小树）——v20261025b 误删导致 iframe 高度塌陷只剩默认 150px，板块显示空白 */
+.yjxs-host { position: absolute; inset: 0; overflow: hidden; background: #fff; }
+.yjxs-host iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+
 /* 任务行 */
 .ec-task { padding: 13px 16px; border-bottom: 1px solid var(--border); }
 .ec-task:last-child { border-bottom: none; }

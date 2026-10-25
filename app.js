@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261025c';
+const APP_BUILD = '20261025d';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -2655,6 +2655,8 @@ const state = {
     _ecLessonSelMode: false,
     _ecLessonSel: {},
     _ecEarlyId: null,
+    _ecLastReview: null,
+    _ecAddOpen: false,
     _loadingHot: false,
     _waterMode: null,
     _waterSelected: new Set(),
@@ -3472,6 +3474,13 @@ async function _syncFromCloudCore(force = false) {
                 const localYjxsAt = localYjxs.exportedAt || '';
                 const cloudYjxs = cloudPayload.yjxs || {};
                 const cloudYjxsAt = cloudYjxs.exportedAt || '';
+                // 英语打卡数据：同上，本地新做的打卡/书单/课程不能被云端旧快照整组替换。
+                // engcheck 是对象型数据，此前不在合并保护名单：每次 syncToCloud 上传前都会
+                // 先拉取合并，点击打卡 2 秒后拉到的旧快照会把新打卡/新书单整体冲掉
+                // （用户反馈「显示成功一秒后又变回未完成」的根因）。
+                const localEc = state.data.engcheck;
+                const localEcAt = (localEc && localEc.updatedAt) || '';
+                const cloudEcAt = (cloudPayload.engcheck && cloudPayload.engcheck.updatedAt) || '';
 
                 // 主题是设备本地 UI 偏好：先暂存，云端整组 settings 覆盖后立即还原，
                 // 否则云端旧快照（theme=light）会把本地夜间模式冲掉，
@@ -3551,6 +3560,10 @@ async function _syncFromCloudCore(force = false) {
                 if (shouldPushYjxs) {
                     pushYjxsToIframe();
                 }
+                // 英语打卡合并保护：本地 updatedAt 更新 → 整组保留本地（覆盖刚做的打卡/新增）；
+                // 云端更新 → 用云端（3480 已替换）；时间戳都缺（旧数据首次升级）→ 按键/按 id 并集兜底，
+                // 本地新增的 tasks 键、books/lessons id 绝不丢，fsrs 取 last 较新的一条。
+                state.data.engcheck = ecMergeEngcheck(localEc, state.data.engcheck, localEcAt, cloudEcAt);
                 const after = syncDataSnapshot(state.data);
                 if (before !== after) {
                     if (isUserTyping()) {
@@ -10358,9 +10371,47 @@ function ecCheckAchievements() {
 }
 // 完成一次学习动作后的统一收尾：积分/连续/成就/保存/同步/重绘
 function ecAfterAction(msg) {
+    // 标记本地修改时间：云端同步拉取时若本地更新，整组保留本地，防止旧快照冲掉刚做的打卡/新增
+    try { ecData().updatedAt = now(); } catch (e) { /* ignore */ }
     ecCheckAchievements();
     saveState(); queueSync(); render();
     if (msg) toast(msg);
+}
+
+// 英语打卡同步合并（_syncFromCloudCore 拉取后调用，防「点击成功一秒后又变回未完成」）：
+// - 本地 updatedAt 更新 → 整组保留本地（刚做的打卡/书单/课程优先）
+// - 云端更新 → 用云端
+// - 时间戳都缺（旧数据首次升级）→ 按键/按 id 并集兜底：本地新增的 tasks 键、books/lessons id
+//   绝不丢；fsrs 同课取 last 较新的一条；score/streak 取大者防倒退
+function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
+    if (!localEc) return cloudEc;
+    if (!cloudEc) return localEc;
+    if (localEcAt && (!cloudEcAt || String(localEcAt) >= String(cloudEcAt))) return localEc;
+    // 云端更新、或时间戳都缺（旧数据首次升级）：以云端为基底，本地新增键/id 并集保留
+    const merged = { ...cloudEc, ...localEc };
+    merged.tasks = { ...(cloudEc.tasks || {}) };
+    Object.keys(localEc.tasks || {}).forEach(k => { merged.tasks[k] = localEc.tasks[k]; });
+    merged.fsrs = { ...(cloudEc.fsrs || {}) };
+    Object.keys(localEc.fsrs || {}).forEach(k => {
+        const lr = localEc.fsrs[k], cr = merged.fsrs[k];
+        if (!cr || (lr.last || 0) >= (cr.last || 0)) merged.fsrs[k] = lr;
+    });
+    const byId = (arr) => { const m = new Map(); (arr || []).forEach(x => { if (x && x.id != null) m.set(x.id, x); }); return m; };
+    const bMap = byId(cloudEc.books), lMap = byId(cloudEc.lessons);
+    (localEc.books || []).forEach(b => { if (b && b.id != null && !bMap.has(b.id)) bMap.set(b.id, b); });
+    (localEc.lessons || []).forEach(l => { if (l && l.id != null && !lMap.has(l.id)) lMap.set(l.id, l); });
+    merged.books = Array.from(bMap.values());
+    merged.lessons = Array.from(lMap.values());
+    merged.score = Math.max(cloudEc.score || 0, localEc.score || 0);
+    merged.achievements = { ...(cloudEc.achievements || {}), ...(localEc.achievements || {}) };
+    if ((localEc.lastStudyDate || '') > (cloudEc.lastStudyDate || '')) {
+        merged.lastStudyDate = localEc.lastStudyDate;
+        merged.streak = Math.max(cloudEc.streak || 0, localEc.streak || 0);
+        merged.bestStreak = Math.max(cloudEc.bestStreak || 0, localEc.bestStreak || 0);
+        merged.days = { ...(cloudEc.days || {}), ...(localEc.days || {}) };
+    }
+    merged.updatedAt = (localEcAt && cloudEcAt && String(localEcAt) > String(cloudEcAt)) ? localEcAt : (cloudEcAt || localEcAt || '');
+    return merged;
 }
 
 // ---------- FSRS 简化版（整篇课文背书） ----------
@@ -10810,10 +10861,19 @@ function ecReciteAction(lessonId, mode) {
     else if (grade === 3) ecAddScore(2);
     else ecAddScore(3);
     ecLogStudy();
+    // 收起行内展开并记录即时反馈：用户点完四档必须立刻看到"发生了什么"，
+    // 否则会以为按钮没反应（旧版只弹一个短 toast，行内状态不变，观感像卡住）。
+    state._ecEarlyId = null;
     const g = EC_GRADES.find(x => x.id === grade);
+    const gain = isFirst ? 5 : (grade === 1 ? 0 : grade === 2 ? 1 : grade === 3 ? 2 : 3);
+    const dueText = rec.s >= EC_FSRS.masteredS
+        ? `🏆 稳定性 ${ecSDays(rec.s)}，已掌握！`
+        : `下次复习 ${ecFmtWeek(rec.due)}（${ecRelText(rec.due)}）`;
+    const feedback = `✅ 已评价「${g ? g.name : ''}」${gain ? ` +${gain} 分` : '（不加分）'} · ${dueText}`;
+    state._ecLastReview = { id: lessonId, text: feedback, at: nowTs };
     const msg = isFirst
         ? `🌟 初学自评「${g ? g.name : ''}」已加入复习池，+5 分${rec.s >= EC_FSRS.masteredS ? ' 🏆' : '，下次复习：' + ecRelText(rec.due)}`
-        : `「${g ? g.name : ''}」${rec.s >= EC_FSRS.masteredS ? ' 🏆 这一课已掌握！' : '下次复习：' + ecRelText(rec.due)}`;
+        : feedback;
     ecAfterAction(msg);
 }
 
@@ -10930,27 +10990,34 @@ function ecRenderBooks() {
             ${editing ? ecTaskManageHTML(b) : ''}
         </div>`;
     }).join('');
+    const addOpen = !!state._ecAddOpen;
     return `
     ${ecHeaderHTML()}
     <div class="card">
         <div class="card-header">
             <div class="card-title">📚 我的书单（一级目录）</div>
-            ${books.length ? `<button class="btn btn-sm ${selMode ? 'btn-secondary' : 'btn-secondary'}" data-action="ec-book-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
-        </div>
-        <div class="ec-add-row">
-            <input type="text" class="input" id="ecBookNameInput" placeholder="书本名称，如：新概念英语一" maxlength="30">
-            <button class="btn btn-primary" data-action="ec-add-book">添加</button>
-        </div>
-        <div class="ec-batch">
-            <div class="ec-batch-title">⚡ 批量新增书单（每行一个书名）</div>
-            <div class="ec-add-row" style="align-items:flex-start">
-                <textarea class="input" id="ecBookBatchNames" rows="3" placeholder="每行一个书名：&#10;新概念英语一&#10;新概念英语二"></textarea>
+            <div class="ec-head-btns">
+                ${books.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-book-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
+                <button class="btn btn-sm ${addOpen ? 'btn-secondary' : 'btn-primary'}" data-action="ec-toggle-add">${addOpen ? '✕ 收起' : '➕ 新增'}</button>
             </div>
+        </div>
+        ${addOpen ? `
+        <div class="ec-add-panel">
             <div class="ec-add-row">
-                <button class="btn btn-secondary" data-action="ec-batch-books">📥 批量添加</button>
-                <span class="ec-hint" style="margin:0">重名会自动跳过</span>
+                <input type="text" class="input" id="ecBookNameInput" placeholder="书本名称，如：新概念英语一" maxlength="30">
+                <button class="btn btn-primary" data-action="ec-add-book">添加</button>
             </div>
-        </div>
+            <div class="ec-batch">
+                <div class="ec-batch-title">⚡ 批量新增书单（每行一个书名）</div>
+                <div class="ec-add-row" style="align-items:flex-start">
+                    <textarea class="input" id="ecBookBatchNames" rows="3" placeholder="每行一个书名：&#10;新概念英语一&#10;新概念英语二"></textarea>
+                </div>
+                <div class="ec-add-row">
+                    <button class="btn btn-secondary" data-action="ec-batch-books">📥 批量添加</button>
+                    <span class="ec-hint" style="margin:0">重名会自动跳过</span>
+                </div>
+            </div>
+        </div>` : ''}
         <div class="ec-hint">先建一本书，再在书里添加课程（二级目录）；每节课的打卡任务可以在书的 ✏️ 编辑里单独设置，再加背书复习（三级目录）。</div>
         ${selMode ? `
         <div class="ec-sel-bar">
@@ -10998,6 +11065,7 @@ function ecRenderLessons() {
             </div>
         </div>`;
     }).join('');
+    const addOpen = !!state._ecAddOpen;
     return `
     <div class="card">
         <div class="card-header">
@@ -11005,36 +11073,40 @@ function ecRenderLessons() {
             <div class="ec-head-btns">
                 <button class="btn btn-sm btn-secondary" data-action="ec-back-books">‹ 返回书单</button>
                 ${lessons.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-lesson-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
+                <button class="btn btn-sm ${addOpen ? 'btn-secondary' : 'btn-primary'}" data-action="ec-toggle-add">${addOpen ? '✕ 收起' : '➕ 新增'}</button>
             </div>
         </div>
-        <div class="ec-add-row">
-            <input type="text" class="input" id="ecLessonNameInput" placeholder="添加课程，如 Lesson 1" maxlength="40">
-            <button class="btn btn-primary" data-action="ec-add-lesson">添加</button>
-        </div>
-        <div class="ec-add-row">
-            <input type="text" class="input" id="ecLessonNoteInput" placeholder="语法要点（可选），如：be 动词；一般疑问句；Yes/No 回答" maxlength="200">
-        </div>
-        <div class="ec-hint">语法要点会以灰色小字显示在课程名下方；也可以添加后点课程 ✏️ →「📝 语法要点」补写。</div>
-        <div class="ec-batch">
-            <div class="ec-batch-title">⚡ 批量生成（如新概念英语一 144 课）</div>
+        ${addOpen ? `
+        <div class="ec-add-panel">
             <div class="ec-add-row">
-                <input type="text" class="input" id="ecBatchPrefix" placeholder="前缀，如 Lesson" maxlength="20" style="flex:1.2;min-width:0">
-                <input type="number" class="input" id="ecBatchFrom" placeholder="起始" min="1" style="flex:0.8;min-width:64px">
-                <input type="number" class="input" id="ecBatchTo" placeholder="结束" min="1" style="flex:0.8;min-width:64px">
-                <button class="btn btn-secondary" data-action="ec-batch-lessons">生成</button>
-            </div>
-            <div class="ec-hint">例：前缀 Lesson + 1 ~ 144 → 生成 Lesson 1 到 Lesson 144；前缀留空则只生成数字。</div>
-        </div>
-        <div class="ec-batch">
-            <div class="ec-batch-title">📋 批量导入名称（每行一个，可直接粘贴整本书的目录）</div>
-            <div class="ec-add-row" style="align-items:flex-start">
-                <textarea class="input" id="ecImportNames" rows="4" placeholder="每行一个课程名，例如：&#10;Lesson 1 Excuse me&#10;Lesson 2 Is this your&#10;Unit 3 复习课 || 语法：不定冠词 a/an；选择疑问句"></textarea>
+                <input type="text" class="input" id="ecLessonNameInput" placeholder="添加课程，如 Lesson 1" maxlength="40">
+                <button class="btn btn-primary" data-action="ec-add-lesson">添加</button>
             </div>
             <div class="ec-add-row">
-                <button class="btn btn-secondary" data-action="ec-import-lessons">📥 导入</button>
-                <span class="ec-hint" style="margin:0">支持中英文混排；重名自动跳过；用「||」可同时带语法要点</span>
+                <input type="text" class="input" id="ecLessonNoteInput" placeholder="语法要点（可选），如：be 动词；一般疑问句；Yes/No 回答" maxlength="200">
             </div>
-        </div>
+            <div class="ec-hint">语法要点会以灰色小字显示在课程名下方；也可以添加后点课程 ✏️ →「📝 语法要点」补写。</div>
+            <div class="ec-batch">
+                <div class="ec-batch-title">⚡ 批量生成（如新概念英语一 144 课）</div>
+                <div class="ec-add-row">
+                    <input type="text" class="input" id="ecBatchPrefix" placeholder="前缀，如 Lesson" maxlength="20" style="flex:1.2;min-width:0">
+                    <input type="number" class="input" id="ecBatchFrom" placeholder="起始" min="1" style="flex:0.8;min-width:64px">
+                    <input type="number" class="input" id="ecBatchTo" placeholder="结束" min="1" style="flex:0.8;min-width:64px">
+                    <button class="btn btn-secondary" data-action="ec-batch-lessons">生成</button>
+                </div>
+                <div class="ec-hint">例：前缀 Lesson + 1 ~ 144 → 生成 Lesson 1 到 Lesson 144；前缀留空则只生成数字。</div>
+            </div>
+            <div class="ec-batch">
+                <div class="ec-batch-title">📋 批量导入名称（每行一个，可直接粘贴整本书的目录）</div>
+                <div class="ec-add-row" style="align-items:flex-start">
+                    <textarea class="input" id="ecImportNames" rows="4" placeholder="每行一个课程名，例如：&#10;Lesson 1 Excuse me&#10;Lesson 2 Is this your&#10;Unit 3 复习课 || 语法：不定冠词 a/an；选择疑问句"></textarea>
+                </div>
+                <div class="ec-add-row">
+                    <button class="btn btn-secondary" data-action="ec-import-lessons">📥 导入</button>
+                    <span class="ec-hint" style="margin:0">支持中英文混排；重名自动跳过；用「||」可同时带语法要点</span>
+                </div>
+            </div>
+        </div>` : ''}
         ${selMode ? `
         <div class="ec-sel-bar">
             <span class="ec-sel-count">已选 ${selCount} 节</span>
@@ -11071,6 +11143,8 @@ function ecRecitePanel(lessonId) {
     const d = ecData();
     const rec = d.fsrs[lessonId];
     const st = ecReciteStatus(rec, Date.now());
+    const rv = state._ecLastReview;
+    const rvHtml = (rv && rv.id === lessonId) ? `<div class="ec-review-feedback">${escapeHtml(rv.text)}</div>` : '';
     let body;
     if (st === 'new') {
         body = `
@@ -11122,7 +11196,7 @@ function ecRecitePanel(lessonId) {
             <span class="ec-group-title">📖 背诵板块 · 整篇课文</span>
             <span class="ec-group-sub">FSRS 复习曲线</span>
         </div>
-        <div class="ec-group-body">${body}</div>
+        <div class="ec-group-body">${body}${rvHtml}</div>
     </div>`;
 }
 
@@ -11161,6 +11235,8 @@ function ecRenderReview() {
     const stats = ecGlobalStats();
     const dueList = ecDueRecites();
     const earlyId = state._ecEarlyId;
+    const lastRv = state._ecLastReview;
+    const rvFeedback = (lessonId) => (lastRv && lastRv.id === lessonId ? `<div class="ec-review-feedback">${escapeHtml(lastRv.text)}</div>` : '');
     const gradeMini = (lessonId) => EC_GRADES.map(g => `<button class="ec-grade-btn ${g.cls} ec-grade-mini" data-action="ec-recite" data-lesson="${lessonId}" data-mode="${g.id}" title="${g.desc}">${g.name}</button>`).join('');
     // ① 待背诵清单（已到时间，含逾期）
     const dueRows = dueList.map(it => {
@@ -11170,6 +11246,7 @@ function ecRenderReview() {
             <div class="ec-due-info">
                 <div class="ec-due-title">📖 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span></div>
                 <div class="ec-due-meta">应复习：${ecFmtWeek(it.rec.due)}（${ecRelText(it.rec.due)}） · 稳定性 ${ecSDays(it.rec.s)} · D=${it.rec.d.toFixed(1)} · 已成功 ${it.rec.n} 次</div>
+                ${rvFeedback(it.lesson.id)}
                 <div class="ec-recite-actions ec-recite-inline">${gradeMini(it.lesson.id)}</div>
             </div>
         </div>`;
@@ -11189,6 +11266,7 @@ function ecRenderReview() {
             <div class="ec-due-info">
                 <div class="ec-due-title">📖 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span></div>
                 <div class="ec-due-meta">下次复习：${ecFmtWeek(it.rec.due)}（${ecRelText(it.rec.due)}） · 稳定性 ${ecSDays(it.rec.s)} · D=${it.rec.d.toFixed(1)} · 已成功 ${it.rec.n} 次</div>
+                ${rvFeedback(it.lesson.id)}
                 ${earlyId === it.lesson.id
                     ? `<div class="ec-recite-actions ec-recite-inline">${gradeMini(it.lesson.id)}</div>`
                     : `<div class="ec-due-btns"><button class="btn btn-sm btn-secondary" data-action="ec-early-review" data-lesson="${it.lesson.id}">⚡ 提前复习（觉得遗忘了就点这里）</button></div>`}
@@ -11206,6 +11284,7 @@ function ecRenderReview() {
             <div class="ec-due-info">
                 <div class="ec-due-title">🏆 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span></div>
                 <div class="ec-due-meta">稳定性 ${ecSDays(it.rec.s)} · 成功复习 ${it.rec.n} 次 · D=${it.rec.d.toFixed(1)}${earlyId === it.lesson.id ? '' : ''}</div>
+                ${rvFeedback(it.lesson.id)}
                 ${earlyId === it.lesson.id
                     ? `<div class="ec-recite-actions ec-recite-inline">${gradeMini(it.lesson.id)}</div>`
                     : `<div class="ec-due-btns"><button class="btn btn-sm btn-secondary" data-action="ec-early-review" data-lesson="${it.lesson.id}">🔁 再背一次自检</button></div>`}
@@ -11313,8 +11392,8 @@ document.addEventListener('click', async e => {
     if (action === 'ec-add-task') { ecAddTaskToBook(); return; }
     if (action === 'ec-rename-task') { ecRenameBookTask(el.dataset.book, el.dataset.task); return; }
     if (action === 'ec-del-task') { ecDelBookTask(el.dataset.book, el.dataset.task); return; }
-    if (action === 'ec-open-book') { state._ecBookId = el.dataset.id; state._ecLessonId = null; state._ecEditBookId = null; state._ecBookSelMode = false; state._ecBookSel = {}; render(); return; }
-    if (action === 'ec-back-books') { state._ecBookId = null; state._ecLessonSelMode = false; state._ecLessonSel = {}; render(); return; }
+    if (action === 'ec-open-book') { state._ecBookId = el.dataset.id; state._ecLessonId = null; state._ecEditBookId = null; state._ecBookSelMode = false; state._ecBookSel = {}; state._ecAddOpen = false; render(); return; }
+    if (action === 'ec-back-books') { state._ecBookId = null; state._ecLessonSelMode = false; state._ecLessonSel = {}; state._ecAddOpen = false; render(); return; }
     if (action === 'ec-add-lesson') { ecAddLesson(); return; }
     if (action === 'ec-batch-lessons') { ecBatchLessons(); return; }
     if (action === 'ec-import-lessons') { ecImportLessons(); return; }
@@ -11326,11 +11405,12 @@ document.addEventListener('click', async e => {
     if (action === 'ec-lesson-sel') { ecLessonSelToggle(el.dataset.id); return; }
     if (action === 'ec-sel-all-lessons') { ecLessonSelAll(); return; }
     if (action === 'ec-del-sel-lessons') { ecDelSelLessons(); return; }
-    if (action === 'ec-open-lesson') { state._ecLessonId = el.dataset.id; state._ecEditLessonId = null; state._ecLessonSelMode = false; state._ecLessonSel = {}; render(); return; }
-    if (action === 'ec-back-lessons') { state._ecLessonId = null; render(); return; }
+    if (action === 'ec-open-lesson') { state._ecLessonId = el.dataset.id; state._ecEditLessonId = null; state._ecLessonSelMode = false; state._ecLessonSel = {}; state._ecAddOpen = false; render(); return; }
+    if (action === 'ec-back-lessons') { state._ecLessonId = null; state._ecAddOpen = false; render(); return; }
     if (action === 'ec-task') { ecToggleTask(el.dataset.lesson, el.dataset.task); return; }
     if (action === 'ec-recite') { ecReciteAction(el.dataset.lesson, el.dataset.mode); return; }
     if (action === 'ec-early-review') { state._ecEarlyId = state._ecEarlyId === el.dataset.lesson ? null : el.dataset.lesson; render(); return; }
+    if (action === 'ec-toggle-add') { state._ecAddOpen = !state._ecAddOpen; render(); return; }
 });
 
 

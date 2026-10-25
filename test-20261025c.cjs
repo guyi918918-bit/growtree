@@ -57,6 +57,24 @@ ok('_loadingHot 瞬态字段在 state', /_loadingHot: false/.test(APP));
 ok('热榜初始化调用仍在', /if \(state\.currentModule === 'hot'\) loadHotData\(\);/.test(APP));
 ok('热榜事件 handler 仍在', /if \(action === 'hot-platform'\)/.test(APP) && /if \(action === 'hot-refresh'\)/.test(APP));
 ok('热榜依赖符号齐全', ['HOT_GROUPS', 'HOT_TYPES', 'HOT_INTERNATIONAL_FEEDS', 'API.hot'].every(s => APP.includes(s)));
+// ============ v20261025d：4 项新需求 + 2 个 bug 修复 ============
+// ① 新增折叠
+ok('CSS 有折叠面板样式', /\.ec-add-panel/.test(CSS) && /\.ec-head-btns/.test(CSS));
+ok('书单/课程页有新增折叠按钮', /data-action="ec-toggle-add"/.test(APP) && /_ecAddOpen/.test(APP));
+ok('翻页时收起新增面板', APP.includes("state._ecAddOpen = false"));
+// ② 悦己享瘦样式修复（v20261025b 误删 .yjxs-host 导致 iframe 高度塌陷、板块空白）
+ok('CSS 有 yjxs-host（iframe 高度修复）', /\.yjxs-host \{/.test(CSS) && /\.yjxs-host iframe \{/.test(CSS));
+ok('CSS 有 ec-due-info（复习行布局修复）', /\.ec-due-info \{/.test(CSS));
+// ③ engcheck 同步覆盖修复（点击打卡 2 秒后被云端旧快照冲掉）
+ok('ecMergeEngcheck 合并函数存在', /function ecMergeEngcheck/.test(APP));
+ok('_syncFromCloudCore 调用 engcheck 合并', /ecMergeEngcheck\(localEc, state\.data\.engcheck, localEcAt, cloudEcAt\)/.test(APP));
+ok('ecAfterAction 标记本地修改时间', /ecData\(\)\.updatedAt = now\(\)/.test(APP));
+// ④ 提前复习反馈
+ok('CSS 有评价反馈条', /\.ec-review-feedback/.test(CSS));
+ok('打分后清除行内展开', /state\._ecEarlyId = null;/.test(APP));
+ok('打分后记录即时反馈', /state\._ecLastReview = \{ id: lessonId/.test(APP));
+ok('复习三列表显示反馈条', /rvFeedback\(it\.lesson\.id\)/.test(APP));
+ok('课程页背诵面板显示反馈条', /ec-group-body">\$\{body\}\$\{rvHtml\}/.test(APP));
 
 // ============ 二、FSRS 算法单测（回归） ============
 console.log('—— FSRS 算法 ——');
@@ -68,10 +86,11 @@ function makeEC(overrides) {
     const mockState = Object.assign({
         data: { engcheck: { books: [], lessons: [], tasks: {}, fsrs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' } },
         _ecBookId: null, _ecLessonId: null, _ecEditBookId: null, _ecEditLessonId: null,
-        _ecBookSelMode: false, _ecBookSel: {}, _ecLessonSelMode: false, _ecLessonSel: {}, _ecEarlyId: null
+        _ecBookSelMode: false, _ecBookSel: {}, _ecLessonSelMode: false, _ecLessonSel: {}, _ecEarlyId: null,
+        _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, state };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, state };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '' }; return elCache[id]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async () => null, async () => confirmAnswer,
         async (opts) => { if (opts && opts.getValue) return opts.getValue(); return true; },
@@ -321,14 +340,22 @@ console.log('—— 渲染冒烟 ——');
     const d = EC.ecData();
     let h = EC.ecRenderBooks();
     ok('空书单渲染', h.includes('还没有书单') && h.includes('Lv.1'));
-    ok('书单页有批量建书区', h.includes('ecBookBatchNames') && h.includes('批量新增书单'));
+    ok('书单页默认折叠：只有新增按钮', h.includes('data-action="ec-toggle-add"') && h.includes('➕ 新增') && !h.includes('ecBookBatchNames'));
+    EC.state._ecAddOpen = true;
+    h = EC.ecRenderBooks();
+    ok('书单页展开后有批量建书区', h.includes('ecBookBatchNames') && h.includes('批量新增书单'));
+    EC.state._ecAddOpen = false;
     d.books.push({ id: 'b1', name: '新概念英语一', order: 1, createdAt: 'x' });
     EC.state._ecBookId = 'b1';
     d.lessons.push({ id: 'l1', bookId: 'b1', name: 'Lesson 1', order: 1, createdAt: 'x' });
     h = EC.ecRenderLessons();
     ok('课程列表渲染', h.includes('新概念英语一') && h.includes('Lesson 1'));
     ok('课程页有批量删除入口', h.includes('data-action="ec-lesson-sel-mode"'));
-    ok('课程页有语法输入框', h.includes('ecLessonNoteInput'));
+    ok('课程页默认折叠：只有新增按钮', h.includes('data-action="ec-toggle-add"') && !h.includes('ecLessonNoteInput'));
+    EC.state._ecAddOpen = true;
+    h = EC.ecRenderLessons();
+    ok('课程页展开后有语法输入框', h.includes('ecLessonNoteInput') && h.includes('ecImportNames') && h.includes('ecBatchPrefix'));
+    EC.state._ecAddOpen = false;
     EC.state._ecLessonId = 'l1';
     h = EC.ecRenderLesson();
     ok('任务视图：输入板块', h.includes('输入板块') && h.includes('泛听') && h.includes('精听') && h.includes('跟读'));
@@ -408,6 +435,62 @@ console.log('—— 热榜渲染 ——');
         ok('loadHotData 全链路不抛错', true);
         ok('loadHotData 后清除 loading', mockState._loadingHot === false);
     }).catch(e => { ok('loadHotData 全链路不抛错', false); console.log('  ❌ loadHotData threw: ' + e.message); });
+}
+
+// ============ 十、v20261025d：同步合并 / 折叠新增 / 复习反馈 ============
+console.log('—— v20261025d 新功能 ——');
+{
+    // --- ecMergeEngcheck：防「打卡成功一秒后又变回未完成」 ---
+    const EC = makeEC();
+    const mkEc = (over) => Object.assign({
+        books: [{ id: 'b1', name: '书一', order: 1, createdAt: 'x' }],
+        lessons: [{ id: 'l1', bookId: 'b1', name: 'Lesson 1', order: 1, createdAt: 'x' }],
+        tasks: { 'l1|listen-broad': { at: 111 } },
+        fsrs: {}, score: 10, achievements: {}, days: {}, streak: 1, bestStreak: 1, lastStudyDate: '2026-10-24'
+    }, over || {});
+    // 场景 1：本地刚打卡（updatedAt 新）→ 整组保留本地，云端旧快照不许冲掉
+    const local1 = mkEc({ updatedAt: '2026-10-25T04:00:00.000Z' });
+    const cloud1 = mkEc({ updatedAt: '2026-10-25T03:00:00.000Z', tasks: {}, score: 2 });
+    const r1 = EC.ecMergeEngcheck(local1, cloud1, '2026-10-25T04:00:00.000Z', '2026-10-25T03:00:00.000Z');
+    ok('本地新→整组保留本地', r1 === local1 && !!r1.tasks['l1|listen-broad'] && r1.score === 10);
+    // 场景 2：云端更新（多设备）→ 云端数据生效，本地独有键并集保留
+    const local2 = mkEc({ updatedAt: '2026-10-25T03:00:00.000Z' });
+    const cloud2 = mkEc({ updatedAt: '2026-10-25T04:00:00.000Z', score: 30 });
+    const r2 = EC.ecMergeEngcheck(local2, cloud2, '2026-10-25T03:00:00.000Z', '2026-10-25T04:00:00.000Z');
+    ok('云端新→云端数据生效', r2.score === 30 && r2.updatedAt === '2026-10-25T04:00:00.000Z');
+    // 场景 3：时间戳都缺（旧数据首次升级）→ 键级合并：本地新 tasks/books/lessons 不丢
+    const local3 = mkEc({ tasks: { 'l1|listen-broad': { at: 222 }, 'l1|NEW': { at: 333 } }, score: 8 });
+    const cloud3 = mkEc({ tasks: { 'l1|write-drill': { at: 444 } }, score: 5 });
+    const r3 = EC.ecMergeEngcheck(local3, cloud3, '', '');
+    ok('无时间戳→本地新 tasks 键保留', !!r3.tasks['l1|NEW'] && !!r3.tasks['l1|listen-broad']);
+    ok('无时间戳→云端独有 tasks 键也保留', !!r3.tasks['l1|write-drill']);
+    ok('无时间戳→score 取大者', r3.score === 8);
+    // 场景 4：books/lessons 按 id 并集（本地新增书单/课程不丢）
+    const local4 = mkEc({ books: [{ id: 'b1', name: '书一', order: 1 }, { id: 'bNEW', name: '新书', order: 2 }], lessons: [{ id: 'l1', bookId: 'b1', name: 'L1', order: 1 }, { id: 'lNEW', bookId: 'bNEW', name: '新课', order: 1 }] });
+    const cloud4 = mkEc();
+    const r4 = EC.ecMergeEngcheck(local4, cloud4, '', '2026-10-25T00:00:00.000Z');
+    ok('并集保留本地新书', r4.books.some(b => b.id === 'bNEW') && r4.books.some(b => b.id === 'b1'));
+    ok('并集保留本地新课', r4.lessons.some(l => l.id === 'lNEW') && r4.lessons.some(l => l.id === 'l1'));
+    // 场景 5：本地无数据 → 用云端
+    ok('本地无 engcheck→用云端', EC.ecMergeEngcheck(undefined, cloud1, '', '2026-10-25T03:00:00.000Z') === cloud1);
+    // --- 提前复习反馈 ---
+    const EC2 = makeEC();
+    const d2 = EC2.ecData();
+    d2.books.push({ id: 'b1', name: '新概念英语一', order: 1, createdAt: 'x' });
+    d2.lessons.push({ id: 'l1', bookId: 'b1', name: 'Lesson 1', order: 1, createdAt: 'x' });
+    d2.fsrs.l1 = EC2.ecFsrsLearn(Date.now() - 3 * 86400000); // 3 天前入池，due 已过
+    EC2.state._ecEarlyId = 'l1';
+    const scoreBefore = d2.score;
+    EC2.ecReciteAction('l1', '3'); // Good
+    ok('打分后清除行内展开（不再卡住）', EC2.state._ecEarlyId === null);
+    ok('打分后记录即时反馈', !!EC2.state._ecLastReview && EC2.state._ecLastReview.id === 'l1' && EC2.state._ecLastReview.text.includes('Good'));
+    ok('反馈含加分与下次复习', EC2.state._ecLastReview.text.includes('+2 分') && EC2.state._ecLastReview.text.includes('下次复习'));
+    ok('Good 加分 +2', d2.score === scoreBefore + 2);
+    EC2.state._ecLessonId = 'l1';
+    const hLesson = EC2.ecRenderLesson();
+    ok('课程页背诵面板显示反馈条', hLesson.includes('ec-review-feedback') && hLesson.includes('已评价'));
+    const hReview = EC2.ecRenderReview();
+    ok('复习页显示反馈条', hReview.includes('ec-review-feedback'));
 }
 
 // 等待异步断言后汇总
