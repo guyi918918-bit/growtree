@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261025a';
+const APP_BUILD = '20261025b';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -18,7 +18,6 @@ const MODULES = [
     { id: 'beauty', name: '变美情报', icon: '💄' },
     { id: 'hot', name: '今日热点', icon: '🔥' },
     { id: 'study', name: '学习提升', icon: '📚' },
-    { id: 'english', name: '探索英语', icon: '🎮' },
     { id: 'engcheck', name: '英语打卡', icon: '🗓️' },
     { id: 'yjxs', name: '悦己享瘦', icon: '🌿' },
     { id: 'checkin', name: '认真打卡', icon: '✅' },
@@ -2642,7 +2641,6 @@ const FLUCTUATION_TIPS = [
 const state = {
     currentModule: 'home',
     currentSubTab: {},
-    _engHistoryDeleteMode: false,
     _checkinMode: null,
     _checkinSelected: new Set(),
     _collapsedCategories: new Set(),
@@ -2686,9 +2684,9 @@ const state = {
         categoryOrder: null,
         beautyInspirations: [],
         bookRead: [], // 阅读板块：看过的书（收藏书屋数据源），元素为 {title, author, tags, markedAt}
-        engHistory: { search: [], copy: [], copyCount: 0 }, // 探索英语历史：支持云端同步
-        // 英语打卡（三级目录 + 艾宾浩斯复习曲线）：books=一级(书)、lessons=二级(课)、tasks=三级(每课任务记录)
-        engcheck: { books: [], lessons: [], tasks: {} }
+        // 英语打卡（三级目录 + FSRS 背诵复习 + 积分成就）：
+        // books=一级(书)、lessons=二级(课)、tasks=三级(任务记录)、fsrs=背书复习记录
+        engcheck: { books: [], lessons: [], tasks: {}, fsrs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' }
     },
     supabase: null,
     syncStatus: 'offline',
@@ -2894,6 +2892,9 @@ function loadState() {
         if (state.settings.exchangeRule === undefined) state.settings.exchangeRule = '';
         migrateData();
         ensureDefaults();
+        // 导航排序规则：打开工作台时的首页 = 导航里第一个可见板块（设置里可调序/隐藏）
+        const firstMod = getModules()[0];
+        if (firstMod) state.currentModule = firstMod.id;
         repairZeroBasePoints();
         recalcPoints();
         recalcCourage();
@@ -2973,31 +2974,13 @@ function migrateData() {
     state.data.purgedIds = state.data.purgedIds || [];
     // 阅读板块：看过的书（收藏书屋数据源）
     if (!Array.isArray(state.data.bookRead)) state.data.bookRead = [];
-    // 探索英语历史：从旧版独立 localStorage 迁移到 state.data，以便云端同步
-    if (!state.data.engHistory || typeof state.data.engHistory !== 'object') state.data.engHistory = { search: [], copy: [], copyCount: 0 };
-    if (!Array.isArray(state.data.engHistory.search)) state.data.engHistory.search = [];
-    if (!Array.isArray(state.data.engHistory.copy)) state.data.engHistory.copy = [];
-    if (typeof state.data.engHistory.copyCount !== 'number') state.data.engHistory.copyCount = 0;
-    try {
-        const oldSearch = JSON.parse(localStorage.getItem('engPlay_search') || 'null');
-        const oldCopy = JSON.parse(localStorage.getItem('engPlay_copy') || 'null');
-        const oldCopyCount = parseInt(localStorage.getItem('engPlay_copyCount')) || 0;
-        if (Array.isArray(oldSearch) && oldSearch.length && !state.data.engHistory.search.length) {
-            state.data.engHistory.search = oldSearch.slice(0, 50);
-        }
-        if (Array.isArray(oldCopy) && oldCopy.length && !state.data.engHistory.copy.length) {
-            state.data.engHistory.copy = oldCopy.slice(0, 50);
-        }
-        if (oldCopyCount && !state.data.engHistory.copyCount) {
-            state.data.engHistory.copyCount = oldCopyCount;
-        }
-    } catch (e) { /* ignore */ }
     state.data.settings = state.data.settings || { theme: state.settings && state.settings.theme ? state.settings.theme : 'light' };
     // 英语打卡数据兼容：老账号没有该字段时补空结构（新增模块自动追加逻辑会保证导航里出现）
-    if (!state.data.engcheck || typeof state.data.engcheck !== 'object') state.data.engcheck = { books: [], lessons: [], tasks: {} };
+    if (!state.data.engcheck || typeof state.data.engcheck !== 'object') state.data.engcheck = { books: [], lessons: [], tasks: {}, fsrs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' };
     if (!Array.isArray(state.data.engcheck.books)) state.data.engcheck.books = [];
     if (!Array.isArray(state.data.engcheck.lessons)) state.data.engcheck.lessons = [];
     if (!state.data.engcheck.tasks || typeof state.data.engcheck.tasks !== 'object') state.data.engcheck.tasks = {};
+    if (!state.data.engcheck.fsrs || typeof state.data.engcheck.fsrs !== 'object') state.data.engcheck.fsrs = {};
     // manageFilterCategory / manageSortPoints 已迁出 settings（独立 localStorage，避免被云端覆盖），此处不再初始化
     // 同步默认模块：仅当检测到旧模块名（夸夸金句/夸夸自己）时，按 MODULES 重排并刷新名称，
     // 否则保留用户/云端已同步的自定义顺序与隐藏状态，避免每次启动都强制覆盖。
@@ -3016,7 +2999,8 @@ function migrateData() {
             modsForAppend.push({ id: m.id, name: m.name, icon: m.icon, hidden: false });
         }
     });
-    state.data.modules = modsForAppend;
+    // 已删除的模块（探索英语游乐场）从老用户导航里移除，避免残留入口
+    state.data.modules = modsForAppend.filter(m => m && m.id !== 'english');
     ensureGameDefaults();
 }
 
@@ -5597,15 +5581,11 @@ const moduleRenderers = {
         return `<div class="study-section-head">📖 阅读</div><div class="card tab-card">${subTabs(tabs, tab, 'study')}</div>${body}`;
     },
 
-    english() {
-        const tab = validSubTab('english', ENG_TABS, 'eng-home');
-        return `<div class="card tab-card">${subTabs(ENG_TABS, tab, 'english')}</div><div class="eng-page">${renderEnglishPage(tab)}</div>`;
-    },
-
     engcheck() {
         const tabs = [
             { id: 'ec-books', name: '书单课目', icon: '📚' },
-            { id: 'ec-review', name: '复习中心', icon: '⏰' }
+            { id: 'ec-review', name: '复习中心', icon: '⏰' },
+            { id: 'ec-achieve', name: '成就榜', icon: '🏆' }
         ];
         const tab = validSubTab('engcheck', tabs, 'ec-books');
         return `<div class="card tab-card">${subTabs(tabs, tab, 'engcheck')}</div><div class="ec-page">${renderEngCheckPage(tab)}</div>`;
@@ -6752,2191 +6732,6 @@ function renderBookShelf() {
         </div>`;
 }
 
-
-
-// ==================== 探索英语（英语游乐场 · 一级模块） ====================
-// 说明：本模块完全独立，localStorage 键统一 engPlay_ 前缀，CSS 类统一 eng- 前缀，
-// 不与任何现有模块共享数据/样式/事件，不影响其他板块功能。
-
-const ENG_TABS = [
-    { id: 'eng-home', name: '首页', icon: '🏠' },
-    { id: 'eng-achievement', name: '成就', icon: '🏆' },
-    { id: 'eng-history', name: '历史', icon: '📜' },
-    { id: 'eng-thought', name: '感悟', icon: '💬' },
-    { id: 'eng-more', name: '更多', icon: '📖' }
-];
-
-// ---------- 等级符号系统 ----------
-function engGetLevelSymbols(level) {
-    if (level <= 0) return '⚓';
-    let galaxyCount = 0;
-    let remaining = level;
-    if (level >= 500) {
-        galaxyCount = Math.floor((level - 500) / 500) + 1;
-        remaining = level - galaxyCount * 500;
-        if (remaining < 0) { remaining = level; galaxyCount = 0; }
-    }
-    const symbols = [];
-    for (let i = 0; i < galaxyCount; i++) symbols.push('🌌');
-    const tiers = [
-        { symbol: '🌍', value: 256 },
-        { symbol: '🌊', value: 64 },
-        { symbol: '⛵', value: 16 },
-        { symbol: '🧭', value: 4 },
-        { symbol: '⚓', value: 1 }
-    ];
-    for (const tier of tiers) {
-        const count = Math.floor(remaining / tier.value);
-        remaining = remaining % tier.value;
-        for (let i = 0; i < count; i++) symbols.push(tier.symbol);
-    }
-    if (symbols.length === 0) symbols.push('⚓');
-    return symbols.join(' ');
-}
-
-function engGetLevel(s) {
-    return Math.min(Math.floor(s / 10) + 1, 1999);
-}
-
-function engGetScore() {
-    return parseInt(localStorage.getItem('engPlay_score')) || 0;
-}
-function engSetScore(v) {
-    localStorage.setItem('engPlay_score', String(v));
-}
-
-// ---------- 月度成就（键：engPlay_month） ----------
-function engMonthKey() {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-function engGetMonthData() {
-    let data = {};
-    try { data = JSON.parse(localStorage.getItem('engPlay_month')) || {}; } catch (e) { data = {}; }
-    const key = engMonthKey();
-    if (!data[key]) data[key] = { searches: 0, copies: 0, words: 0, score: 0, unlocked: [] };
-    return data[key];
-}
-function engSaveMonthData(md) {
-    let data = {};
-    try { data = JSON.parse(localStorage.getItem('engPlay_month')) || {}; } catch (e) { data = {}; }
-    data[engMonthKey()] = md;
-    localStorage.setItem('engPlay_month', JSON.stringify(data));
-}
-function engHistoricalMonths() {
-    let data = {};
-    try { data = JSON.parse(localStorage.getItem('engPlay_month')) || {}; } catch (e) { data = {}; }
-    const months = Object.keys(data).filter(k => k !== engMonthKey());
-    const allUnlocked = {};
-    months.forEach(m => {
-        if (data[m] && Array.isArray(data[m].unlocked)) {
-            data[m].unlocked.forEach(id => {
-                if (!allUnlocked[id]) allUnlocked[id] = [];
-                allUnlocked[id].push(m);
-            });
-        }
-    });
-    return allUnlocked;
-}
-
-// ---------- 今日数据（键：engPlay_today） ----------
-function engTodayKey() {
-    return new Date().toLocaleDateString('zh-CN');
-}
-function engGetTodayStats() {
-    let stats = {};
-    try { stats = JSON.parse(localStorage.getItem('engPlay_today')) || {}; } catch (e) { stats = {}; }
-    if (stats.date !== engTodayKey()) {
-        stats = { date: engTodayKey(), searches: 0, copies: 0, words: 0, score: 0 };
-    }
-    return stats;
-}
-function engSaveTodayStats(stats) {
-    stats.date = engTodayKey();
-    localStorage.setItem('engPlay_today', JSON.stringify(stats));
-}
-
-// ---------- 正反馈 + 等级 ----------
-function engUpdateScore(amount) {
-    const score = engGetScore();
-    const oldLv = engGetLevel(score);
-    const ns = score + amount;
-    engSetScore(ns);
-    const monthData = engGetMonthData();
-    monthData.score += amount;
-    engSaveMonthData(monthData);
-    const todayStats = engGetTodayStats();
-    todayStats.score += amount;
-    engSaveTodayStats(todayStats);
-    const newLv = engGetLevel(ns);
-    if (newLv > oldLv) {
-        engToast(`⬆️ Lv.${newLv} 升级！`);
-    }
-    engToast(`+${amount} 正反馈 ⭐`);
-    engUpdateAchievements();
-}
-
-function engToast(msg) {
-    if (typeof toast === 'function') { toast(msg); return; }
-    try { alert(msg); } catch (e) {}
-}
-
-// ---------- 抄写工坊 ----------
-function engGetCopyCount() {
-    if (state.data.engHistory && typeof state.data.engHistory.copyCount === 'number') {
-        return state.data.engHistory.copyCount;
-    }
-    return parseInt(localStorage.getItem('engPlay_copyCount')) || 0;
-}
-function engSetCopyCount(v) {
-    if (!state.data.engHistory) state.data.engHistory = { search: [], copy: [], copyCount: 0 };
-    state.data.engHistory.copyCount = Math.max(0, parseInt(v) || 0);
-    try { localStorage.removeItem('engPlay_copyCount'); } catch (e) {}
-    saveState();
-}
-
-function engGetHistory(kind) {
-    if (state.data.engHistory && Array.isArray(state.data.engHistory[kind])) {
-        return state.data.engHistory[kind];
-    }
-    // 兜底：旧数据还没迁移时读 localStorage
-    let arr = [];
-    try { arr = JSON.parse(localStorage.getItem('engPlay_' + kind)) || []; } catch (e) { arr = []; }
-    return Array.isArray(arr) ? arr : [];
-}
-function engAddHistory(kind, item, maxLen) {
-    if (!state.data.engHistory) state.data.engHistory = { search: [], copy: [], copyCount: 0 };
-    if (!Array.isArray(state.data.engHistory[kind])) state.data.engHistory[kind] = [];
-    state.data.engHistory[kind].unshift(item);
-    const m = maxLen || 50;
-    state.data.engHistory[kind] = state.data.engHistory[kind].slice(0, m);
-    saveState();
-}
-function engDeleteHistoryItem(kind, index) {
-    if (!state.data.engHistory) state.data.engHistory = { search: [], copy: [], copyCount: 0 };
-    const arr = state.data.engHistory[kind];
-    if (!Array.isArray(arr) || index < 0 || index >= arr.length) return;
-    const item = arr[index];
-    arr.splice(index, 1);
-    // 同步清理旧 localStorage，避免残留
-    try { localStorage.removeItem('engPlay_' + kind); } catch (e) {}
-    if (kind === 'copy' && item && item.zh) {
-        // 同时减少一次累计抄写计数，避免历史被删但计数残留
-        const cur = Math.max(0, engGetCopyCount() - 1);
-        engSetCopyCount(cur);
-    }
-    saveState();
-    render();
-}
-function engClearAllHistory() {
-    if (!state.data.engHistory) state.data.engHistory = { search: [], copy: [], copyCount: 0 };
-    state.data.engHistory.search = [];
-    state.data.engHistory.copy = [];
-    state.data.engHistory.copyCount = 0;
-    // 彻底清理旧 localStorage 残留，避免清空后死灰复燃
-    try { localStorage.removeItem('engPlay_search'); } catch (e) {}
-    try { localStorage.removeItem('engPlay_copy'); } catch (e) {}
-    try { localStorage.removeItem('engPlay_copyCount'); } catch (e) {}
-    saveState();
-    render();
-}
-function engGetBaiduCreds() {
-    let appid = '', secret = '', apiKeys = '';
-    try {
-        appid = localStorage.getItem('engPlay_baiduAppid') || '';
-        secret = localStorage.getItem('engPlay_baiduKey') || '';
-        apiKeys = localStorage.getItem('engPlay_apiKeys') || '';
-    } catch (e) {}
-    return { appid, secret, apiKeys };
-}
-
-// 浏览器直连百度接口会跨域，统一走 CORS 代理重试（每个代理 5s 超时，绝不挂死）
-async function engFetchBaidu(appid, key, zh) {
-    const salt = Date.now();
-    const sign = engMd5(appid + zh + salt + key);
-    const base = `https://api.fanyi.baidu.com/api/trans/vip/translate?q=${encodeURIComponent(zh)}&from=zh&to=en&appid=${appid}&salt=${salt}&sign=${sign}`;
-    const proxies = [
-        u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-        u => `https://cors-anywhere.herokuapp.com/${u}`
-    ];
-    const fetchWithTimeout = (u, opt) => Promise.race([
-        fetch(u, opt),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-    ]);
-    for (const wrap of proxies) {
-        try {
-            const res = await fetchWithTimeout(wrap(base), { mode: 'cors' });
-            if (!res.ok) continue;
-            const data = await res.json();
-            if (data && data.trans_result && data.trans_result.length > 0) {
-                return data.trans_result[0].dst;
-            }
-            // 返回了 JSON 但有 error_code，说明密钥/参数不对，立即返回错误信息
-            if (data && data.error_code) {
-                return `[百度错误:${data.error_code}] ${data.error_msg || ''}`;
-            }
-        } catch (e) { continue; }
-    }
-    return null;
-}
-
-function engMockTranslate(zh) {
-    const result = engMockTranslateInner(zh);
-    if (!result) return null;
-    // 纯净度校验：翻译结果里若仍含中文，按"无本地翻译"返回 null，避免 'I tomorrow 要去...' 这种中英混杂伪结果
-    if (/[\u4e00-\u9fa5]/.test(result)) return null;
-    return result;
-}
-
-function engMockTranslateInner(zh) {
-    const dict = {
-        // 日常寒暄
-        '你好': 'Hello.', '谢谢': 'Thank you.', '再见': 'Goodbye.', '我爱你': 'I love you.',
-        '晚安': 'Good night.', '早上好': 'Good morning.', '下午好': 'Good afternoon.',
-        '晚上好': 'Good evening.', '对不起': 'I\'m sorry.', '没关系': 'It\'s okay.',
-        '等一下': 'Wait a moment.', '好的': 'Okay.', '是的': 'Yes.', '不是': 'No.',
-        '也许': 'Maybe.', '当然': 'Of course.', '真的吗': 'Really?', '太好了': 'That\'s great.',
-        '我不知道': 'I don\'t know.', '我明白了': 'I understand.',
-        '请再说一遍': 'Please say that again.', '你能说慢一点吗': 'Can you speak slower?',
-        '我喜欢这个': 'I like this.', '我不喜欢': 'I don\'t like it.', '太棒了': 'Awesome.',
-        '加油': 'Keep going.', '相信自己': 'Believe in yourself.',
-        '很高兴认识你': 'Nice to meet you.', '你能帮我吗': 'Can you help me?',
-        '这个多少钱': 'How much is this?', '今天吃什么': 'What to eat today?',
-        '慢慢来': 'Take it easy.', '每一天都是新的开始': 'Every day is a new beginning.',
-        // 天气 / 状态
-        '今天天气真好': 'The weather is nice today.', '我饿了': 'I\'m hungry.',
-        '我渴了': 'I\'m thirsty.', '我累了': 'I\'m tired.', '我很开心': 'I am very happy.',
-        '我很忙': 'I am very busy.', '今天下雨了': 'It is raining today.',
-        '今天好热': 'It is so hot today.', '今天好冷': 'It is so cold today.',
-        // 出行 / 旅游
-        '我想去旅行': 'I want to travel.', '我下周要去上海出差': 'I am going to Shanghai on a business trip next week.',
-        '我要坐地铁去上班': 'I take the subway to work.', '我每天开车上班': 'I drive to work every day.',
-        '我打车去机场': 'I take a taxi to the airport.', '我准备去爬山': 'I am going to climb a mountain.',
-        '上个月我和朋友去爬山了': 'Last month I went mountain climbing with a friend.',
-        '我们昨天去了公园': 'We went to the park yesterday.',
-        '我们一家去年去了北京': 'My family and I went to Beijing last year.',
-        '我周末喜欢去图书馆': 'I like going to the library on weekends.',
-        // 工作 / 学习
-        '我今天下班后要拿很多快递': 'I have to get a lot of express delivery after work today.',
-        '我明天要开会': 'I have a meeting tomorrow.', '我今晚要加班': 'I have to work overtime tonight.',
-        '我在学习英语': 'I am learning English.', '我在背单词': 'I am memorizing vocabulary.',
-        '我要准备考试': 'I am preparing for an exam.', '我在看英语视频': 'I am watching an English video.',
-        '我今天学了一个小时英语': 'I studied English for one hour today.',
-        '他每天早晨喝咖啡': 'He drinks coffee every morning.', '她正在看书': 'She is reading a book.',
-        // 吃饭 / 食物
-        '我今天想吃好吃的': 'I want something delicious today.',
-        '我去吃泰式火锅了 好好吃 在昨天': 'I went to eat a Thai hotpot. It was delicious yesterday.',
-        '我下周想请几个朋友来家里吃烤肉': 'I want to have some friends over for BBQ at my place next week.',
-        '昨天我和我老公去吃好吃的火锅了': 'Yesterday, my husband and I went to eat a delicious hot pot.',
-        '我昨天吃了一个很好吃的零食': 'I had a delicious snack yesterday.',
-        '我想喝咖啡': 'I want to drink coffee.', '我们出去吃晚饭吧': 'Let\'s go out for dinner.',
-        '我做了早饭': 'I made breakfast.',
-        // 家庭 / 生活
-        '小明和奶奶今天出去玩了 看了电影': 'Xiaoming and grandma went out to play and watched a movie today.',
-        '我和小狗跑步': 'I run and play with my puppy.',
-        '我要去买菜': 'I am going to buy groceries.', '我在打扫房间': 'I am cleaning the room.',
-        '晚上我陪孩子写作业': 'I help my child with homework in the evening.',
-        // 常用提问
-        '你叫什么名字': 'What\'s your name?', '你来自哪里': 'Where are you from?',
-        '你做什么工作': 'What do you do for a living?', '你周末做什么': 'What do you do on weekends?',
-        '为什么我总是三分钟热度': 'Why do I always lose interest quickly?',
-        '如何养成习惯': 'How to build a habit?', '心流是什么': 'What is flow state?',
-        '为什么拖延': 'Why do we procrastinate?', '怎么提高英语口语': 'How to improve spoken English?',
-        '如何坚持看英语': 'How to stick to English?'
-    };
-    if (dict[zh]) return dict[zh];
-    // 包含匹配（从长到短，避免误配）
-    const keys = Object.keys(dict).sort((a, b) => b.length - a.length);
-    for (const key of keys) {
-        if (key.length >= 3 && zh.includes(key)) return dict[key];
-    }
-    // 通用疑问句模板（不产生乱码，返回 null 表示"无本地匹配，走联网"）
-    const t = zh.replace(/[，。！？、\s]+/g, '').trim();
-    if (/^如何/.test(t)) return `How to ${t.replace(/^如何/, '').trim()}?`;
-    if (/^怎么/.test(t)) return `How to ${t.replace(/^怎么/, '').trim()}?`;
-    if (/^为什么/.test(t)) return `Why ${t.replace(/^为什么/, '').trim()}?`;
-    if (/^什么是/.test(t)) return `What is ${t.replace(/^什么是/, '').trim()}?`;
-    if (/^什么/.test(t) && !t.includes('是')) return `What ${t.replace(/^什么/, '').trim()}?`;
-    // 简单主谓结构兜底：我/你/他/她/我们/他们 + 动词（去掉标点空格后匹配，至少匹配到常用动词才输出）
-    const subjMap = { '我': 'I', '你': 'you', '他': 'he', '她': 'she', '我们': 'we', '他们': 'they', '你们': 'you' };
-    const verbMap = { '要': 'am going to', '想': 'want to', '会': 'will', '可以': 'can', '能': 'can', '喜欢': 'like', '去': 'go to', '来': 'come to', '吃': 'eat', '喝': 'drink', '看': 'watch', '是': 'am', '有': 'have', '在': 'am at', '明天': 'tomorrow', '今天': 'today', '今晚': 'tonight', '昨天': 'yesterday' };
-    for (const [zhS, enS] of Object.entries(subjMap)) {
-        if (t.startsWith(zhS)) {
-            const rest = t.slice(zhS.length);
-            // 截取前 5 个"字"找首个动词
-            const verb = Object.keys(verbMap).find(v => rest.startsWith(v));
-            if (verb) {
-                const after = rest.slice(verb.length);
-                return `${enS} ${verbMap[verb]}${after ? ' ' + after : ''}.`;
-            }
-            // 没匹配到动词：返回 null，让上层显示提示（不再输出 'I rest' 这种半翻译伪结果）
-            return null;
-        }
-    }
-    return null; // 无匹配：交由上层显示"翻译暂不可用"，绝不输出 [Translation] 假结果
-}
-
-// 带超时与多 CORS 代理的通用 GET JSON 工具
-async function engFetchWithProxies(url, extractor, timeoutMs) {
-    const proxies = [
-        u => u, // 直连
-        u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-        u => `https://cors-anywhere.herokuapp.com/${u}`
-    ];
-    const to = timeoutMs || 6000;
-    const fetchWithTimeout = (u) => Promise.race([
-        fetch(u, { mode: 'cors' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), to))
-    ]);
-    for (const wrap of proxies) {
-        try {
-            const res = await fetchWithTimeout(wrap(url));
-            if (!res.ok) continue;
-            const text = await res.text();
-            let data = null;
-            try { data = JSON.parse(text); } catch (e) { continue; }
-            const t = extractor(data);
-            if (t && String(t).trim() && !/^\[Translation\]/.test(String(t))) {
-                return String(t).trim();
-            }
-        } catch (e) { continue; }
-    }
-    return null;
-}
-
-async function engTranslateAPI(zh) {
-    // 全程 20s 总超时（Promise.race 不取消挂起的 fetch，但保证有兜底结果）
-    const overallRace = new Promise(resolve => setTimeout(() => resolve('__TIMEOUT__'), 20000));
-    const work = (async () => {
-        // 第1层：MyMemory（免费、无需 key、无需翻墙，国内可访问）
-        const myMemoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(zh)}&langpair=zh|en&de=demo@example.com`;
-        const r1 = await engFetchWithProxies(myMemoryUrl, d => d && d.responseData && d.responseData.translatedText, 6000);
-        if (r1 && engIsGoodTranslation(r1, zh)) return r1;
-        // 第2层：Google Translate（走 CORS 代理，免 key）
-        const g = await engFetchGoogle(zh);
-        if (g && engIsGoodTranslation(g, zh)) return g;
-        // 第3层：百度翻译 API（用户配了 key 时最准）
-        const { appid, secret, apiKeys } = engGetBaiduCreds();
-        if (appid && secret) {
-            const r = await engFetchBaidu(appid, secret, zh);
-            if (r && !String(r).startsWith('[') && !String(r).startsWith('（')) return r;
-        }
-        // 第4层：API Keys（OpenAI 兼容接口，可填国内镜像如 deepseek）
-        if (apiKeys) {
-            const parts = apiKeys.split('|');
-            const key = parts[0].trim();
-            const baseUrl = parts.length >= 3 ? parts[2].trim() : (parts[1] && parts[1].startsWith('http') ? parts[1].trim() : 'https://api.openai.com/v1');
-            const rk = await engFetchOpenAICompat(key, baseUrl, zh);
-            if (rk) return rk;
-        }
-        // 第5层：LibreTranslate 公共实例（免费、无需 key，但常被 Cloudflare 拦截）
-        const lt = await engFetchLibreTranslate(zh);
-        if (lt && engIsGoodTranslation(lt, zh)) return lt;
-        // 第6层：内置词典 / 模板
-        const mock = engMockTranslate(zh);
-        if (mock) return mock;
-        return null;
-    })();
-    const r = await Promise.race([work, overallRace]);
-    if (r === '__TIMEOUT__') {
-        const mock = engMockTranslate(zh);
-        if (mock) return mock;
-        return '（翻译暂不可用：网络受限（已等待 20s），可到「更多→翻译API设置」填百度/聚合 key）';
-    }
-    if (!r) {
-        const mock = engMockTranslate(zh);
-        if (mock) return mock;
-        return '（翻译暂不可用：网络受限或未配置翻译API，可到「更多→翻译API设置」填写）';
-    }
-    return r;
-}
-
-// 简单校验翻译结果不是残缺的伪翻译
-function engIsGoodTranslation(en, zh) {
-    if (!en || typeof en !== 'string') return false;
-    const s = en.trim();
-    if (!s) return false;
-    if (s === zh.trim()) return false;
-    if (/\(local\)|\[Translation\]|MYMEMORY/i.test(s)) return false;
-    // 英文翻译至少应包含一些拉丁字符
-    return /[a-zA-Z]/.test(s);
-}
-
-// LibreTranslate 公共实例（POST JSON）
-async function engFetchLibreTranslate(zh) {
-    const base = 'https://libretranslate.com/translate';
-    const proxies = [
-        u => u,
-        u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    ];
-    const fetchWithTimeout = (u, opts) => Promise.race([
-        fetch(u, opts),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000))
-    ]);
-    for (const wrap of proxies) {
-        try {
-            const res = await fetchWithTimeout(wrap(base), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ q: zh, source: 'zh', target: 'en', format: 'text' })
-            });
-            if (!res.ok) continue;
-            const d = await res.json();
-            if (d && d.translatedText) return d.translatedText;
-        } catch (e) { continue; }
-    }
-    return null;
-}
-
-// Google Translate 走 CORS 代理（免 key，国内质量最稳）——通用方向版
-async function engFetchGoogleText(text, sl, tl) {
-    const base = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`;
-    const proxies = [
-        u => u,
-        u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-    ];
-    // 翻译源长度估算"合理翻译"长度下限（中文→英文通常相近），避免返回 'I' 这种残缺只匹配一两个词的伪翻译
-    const srcLen = (text || '').replace(/\s+/g, '').length;
-    const minOkLen = Math.max(2, Math.floor(srcLen * 0.35));
-    const fetchWithTimeout = (u) => Promise.race([
-        fetch(u, { method: 'GET' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-    ]);
-    for (const wrap of proxies) {
-        try {
-            const res = await fetchWithTimeout(wrap(base));
-            if (!res.ok) continue;
-            const body = await res.text();
-            // 防御：必须以 [ 开头（Google 响应特征），避免匹配到错误页 HTML
-            if (!body || body[0] !== '[') continue;
-            // Google 返回格式: [[[["翻译","原文",...]],null,...]
-            const m = body.match(/\[\[\[\s*["']([^"']+)["']/);
-            if (m && m[1] && m[1].trim()) {
-                const got = m[1].trim();
-                // 合理性校验：去掉标点空白后字符数 < 原文 35% 视为残缺（实际是只匹配到几个字母）
-                if (got.replace(/[\s,.'"!?\-]/g, '').length >= minOkLen) return got;
-            }
-        } catch (e) { continue; }
-    }
-    return null;
-}
-
-// 英文成分 → 中文（查表加速，查不到就用 Google 英译中兜底，保证不出现英文）
-const engZhCache = {};
-async function engPhraseToZh(phrase) {
-    const key = String(phrase || '').toLowerCase().trim();
-    if (!key || key === '—') return '—';
-    // 缓存命中
-    if (engZhCache[key]) return engZhCache[key];
-    // 1) 查表（快路径）
-    const t = engTranslateToChinese(phrase);
-    if (t && t !== phrase && !/[a-zA-Z]{2,}/.test(t)) {
-        engZhCache[key] = t;
-        return t;
-    }
-    // 2) Google 英→中 兜底（不维护词表也能翻）
-    try {
-        const g = await engFetchGoogleText(key, 'en', 'zh-CN');
-        if (g && g.trim() && !/^[a-zA-Z\s,.'"!?]+$/.test(g.trim()) && !g.trim().toLowerCase().includes(key.toLowerCase())) {
-            engZhCache[key] = g.trim();
-            return g.trim();
-        }
-        if (g && g.trim() && /[\u4e00-\u9fa5]/.test(g.trim())) {
-            engZhCache[key] = g.trim();
-            return g.trim();
-        }
-    } catch (e) {}
-    // 3) 翻不出就显示 —（绝不回显英文）
-    engZhCache[key] = '—';
-    return '—';
-}
-
-// Google 中→英（抄写工坊主翻译链用）
-async function engFetchGoogle(zh) {
-    return engFetchGoogleText(zh, 'zh-CN', 'en');
-}
-
-// OpenAI 兼容接口翻译（用 API Keys 直接 POST /chat/completions）
-async function engFetchOpenAICompat(key, baseUrl, zh) {
-    const url = baseUrl.replace(/\/+$/, '') + '/chat/completions';
-    const body = {
-        model: 'gpt-3.5-turbo',
-        messages: [
-            { role: 'system', content: 'You are a translator. Translate the user\'s Chinese into natural, accurate English. Output ONLY the English translation, nothing else.' },
-            { role: 'user', content: zh }
-        ],
-        temperature: 0.3
-    };
-    const timeout = 8000;
-    const fetchWithTimeout = (u, opt) => Promise.race([
-        fetch(u, opt),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
-    ]);
-    try {
-        const res = await fetchWithTimeout(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + key
-            },
-            body: JSON.stringify(body)
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-        if (text && text.trim()) return text.trim();
-    } catch (e) { /* 忽略，继续下一层 */ }
-    return null;
-}
-
-// ---------- MD5（百度签名） ----------
-function engMd5(string) {
-    function md5cycle(x, k) {
-        var a = x[0], b = x[1], c = x[2], d = x[3];
-        a = ff(a, b, c, d, k[0], 7, -680876936);
-        d = ff(d, a, b, c, k[1], 12, -389564586);
-        c = ff(c, d, a, b, k[2], 17, 606105819);
-        b = ff(b, c, d, a, k[3], 22, -1044525330);
-        a = ff(a, b, c, d, k[4], 7, -176418897);
-        d = ff(d, a, b, c, k[5], 12, 1200080426);
-        c = ff(c, d, a, b, k[6], 17, -1473231341);
-        b = ff(b, c, d, a, k[7], 22, -45705983);
-        a = ff(a, b, c, d, k[8], 7, 1770035416);
-        d = ff(d, a, b, c, k[9], 12, -1958414417);
-        c = ff(c, d, a, b, k[10], 17, -42063);
-        b = ff(b, c, d, a, k[11], 22, -1990404162);
-        a = ff(a, b, c, d, k[12], 7, 1804603682);
-        d = ff(d, a, b, c, k[13], 12, -40341101);
-        c = ff(c, d, a, b, k[14], 17, -1502002290);
-        b = ff(b, c, d, a, k[15], 22, 1236535329);
-        a = gg(a, b, c, d, k[1], 5, -165796510);
-        d = gg(d, a, b, c, k[6], 9, -1069501632);
-        c = gg(c, d, a, b, k[11], 14, 643717713);
-        b = gg(b, c, d, a, k[0], 20, -373897302);
-        a = gg(a, b, c, d, k[5], 5, -701558691);
-        d = gg(d, a, b, c, k[10], 9, 38016083);
-        c = gg(c, d, a, b, k[15], 14, -660478335);
-        b = gg(b, c, d, a, k[4], 20, -405537848);
-        a = gg(a, b, c, d, k[9], 5, 568446438);
-        d = gg(d, a, b, c, k[14], 9, -1019803690);
-        c = gg(c, d, a, b, k[3], 14, -187363961);
-        b = gg(b, c, d, a, k[8], 20, 1163531501);
-        a = gg(a, b, c, d, k[13], 5, -1444681467);
-        d = gg(d, a, b, c, k[2], 9, -51403784);
-        c = gg(c, d, a, b, k[7], 14, 1735328473);
-        b = gg(b, c, d, a, k[12], 20, -1926607734);
-        a = hh(a, b, c, d, k[5], 4, -378558);
-        d = hh(d, a, b, c, k[8], 11, -2022574463);
-        c = hh(c, d, a, b, k[11], 16, 1839030562);
-        b = hh(b, c, d, a, k[14], 23, -35309556);
-        a = hh(a, b, c, d, k[1], 4, -1530992060);
-        d = hh(d, a, b, c, k[4], 11, 1272893353);
-        c = hh(c, d, a, b, k[7], 16, -155497632);
-        b = hh(b, c, d, a, k[10], 23, -1094730640);
-        a = hh(a, b, c, d, k[13], 4, 681279174);
-        d = hh(d, a, b, c, k[0], 11, -358537222);
-        c = hh(c, d, a, b, k[3], 16, -722521979);
-        b = hh(b, c, d, a, k[6], 23, 76029189);
-        a = hh(a, b, c, d, k[9], 4, -640364487);
-        d = hh(d, a, b, c, k[12], 11, -421815835);
-        c = hh(c, d, a, b, k[15], 16, 530742520);
-        b = hh(b, c, d, a, k[2], 23, -995338651);
-        a = ii(a, b, c, d, k[0], 6, -198630844);
-        d = ii(d, a, b, c, k[7], 10, 1126891415);
-        c = ii(c, d, a, b, k[14], 15, -1416354905);
-        b = ii(b, c, d, a, k[5], 21, -57434055);
-        a = ii(a, b, c, d, k[12], 6, 1700485571);
-        d = ii(d, a, b, c, k[3], 10, -1894986606);
-        c = ii(c, d, a, b, k[10], 15, -1051523);
-        b = ii(b, c, d, a, k[1], 21, -2054922799);
-        a = ii(a, b, c, d, k[8], 6, 1873313359);
-        d = ii(d, a, b, c, k[15], 10, -30611744);
-        c = ii(c, d, a, b, k[6], 15, -1560198380);
-        b = ii(b, c, d, a, k[13], 21, 1309151649);
-        a = ii(a, b, c, d, k[4], 6, -145523070);
-        d = ii(d, a, b, c, k[11], 10, -1120210379);
-        c = ii(c, d, a, b, k[2], 15, 718787259);
-        b = ii(b, c, d, a, k[9], 21, -343485551);
-        x[0] = add32(a, x[0]);
-        x[1] = add32(b, x[1]);
-        x[2] = add32(c, x[2]);
-        x[3] = add32(d, x[3]);
-    }
-    function cmn(q, a, b, x, s, t) {
-        a = add32(add32(a, q), add32(x, t));
-        return add32((a << s) | (a >>> (32 - s)), b);
-    }
-    function ff(a, b, c, d, x, s, t) { return cmn((b & c) | ((~b) & d), a, b, x, s, t); }
-    function gg(a, b, c, d, x, s, t) { return cmn((b & d) | (c & (~d)), a, b, x, s, t); }
-    function hh(a, b, c, d, x, s, t) { return cmn(b ^ c ^ d, a, b, x, s, t); }
-    function ii(a, b, c, d, x, s, t) { return cmn(c ^ (b | (~d)), a, b, x, s, t); }
-    function add32(a, b) { return (a + b) & 0xFFFFFFFF; }
-    function md5str(s) {
-        var arr = [], i;
-        for (i = 0; i < s.length; i++) arr.push(s.charCodeAt(i));
-        var n = arr.length, bits = n * 8;
-        arr.push(0x80);
-        while (arr.length % 64 !== 56) arr.push(0);
-        for (i = 0; i < 8; i++) arr.push((bits >>> (i * 8)) & 0xFF);
-        var blocks = [];
-        for (i = 0; i < arr.length; i += 64) blocks.push(arr.slice(i, i + 64));
-        var h0 = 0x67452301, h1 = 0xEFCDAB89, h2 = 0x98BADCFE, h3 = 0x10325476;
-        for (var blockIdx = 0; blockIdx < blocks.length; blockIdx++) {
-            var block = blocks[blockIdx];
-            var x = [];
-            for (i = 0; i < 64; i += 4) {
-                x[i >> 2] = block[i] + (block[i + 1] << 8) + (block[i + 2] << 16) + (block[i + 3] << 24);
-            }
-            var a = h0, b = h1, c = h2, d = h3;
-            md5cycle([a, b, c, d], x);
-            h0 = add32(h0, a);
-            h1 = add32(h1, b);
-            h2 = add32(h2, c);
-            h3 = add32(h3, d);
-        }
-        return ((h0 >>> 0).toString(16).padStart(8, '0') +
-            (h1 >>> 0).toString(16).padStart(8, '0') +
-            (h2 >>> 0).toString(16).padStart(8, '0') +
-            (h3 >>> 0).toString(16).padStart(8, '0'));
-    }
-    return md5str(string);
-}
-
-// ---------- 英文成分→中文翻译 词表 ----------
-const ENG_ZH_MAP = {
-    // 时间状语
-    'yesterday': '昨天', 'today': '今天', 'tomorrow': '明天',
-    'tonight': '今晚', 'now': '现在', 'soon': '不久', 'later': '之后',
-    'last week': '上周', 'next week': '下周', 'this week': '本周',
-    'last month': '上个月', 'next month': '下个月', 'this month': '本月',
-    'last year': '去年', 'next year': '明年', 'this year': '今年',
-    'last night': '昨晚', 'last morning': '昨天上午', 'last evening': '昨天晚上',
-    'next morning': '明天上午', 'next evening': '明天晚上',
-    'every morning': '每天早上', 'every evening': '每天晚上', 'every night': '每晚',
-    'in the morning': '在早上', 'in the afternoon': '在下午',
-    'in the evening': '在晚上', 'at night': '在夜里',
-    // 主语
-    'i': '我', 'you': '你', 'he': '他', 'she': '她', 'we': '我们', 'they': '他们',
-    'me': '我', 'him': '他', 'her': '她', 'us': '我们', 'them': '他们',
-    'my': '我的', 'your': '你的', 'his': '他的', 'our': '我们的', 'their': '他们的',
-    'good': '好的', 'best': '最好的', 'new': '新的', 'old': '旧的', 'delicious': '好吃的',
-    'my husband and i': '我和我老公', 'my wife and i': '我和我老婆',
-    'my friend and i': '我和我的朋友', 'my friends and i': '我和我的朋友们',
-    'my family and i': '我和我的家人',
-    'my husband': '我老公', 'my wife': '我老婆', 'my friend': '我的朋友',
-    'my friends': '我的朋友们', 'my family': '我的家人',
-    'my sister': '我姐姐', 'my brother': '我哥哥', 'my mom': '我妈妈',
-    'my dad': '我爸爸', 'my dog': '我的小狗', 'my puppy': '我的小狗',
-    'my good friend': '我的好朋友', 'my best friend': '我的最好的朋友',
-    // 谓语动词（含复合）
-    'want to have': '想请', 'want to eat': '想吃', 'want to see': '想看',
-    'want to go': '想去', 'want to': '想',
-    'went to eat': '去吃', 'went to have': '去吃', 'went to see': '去看',
-    'went to': '去', 'went mountain climbing': '去爬山',
-    'went': '去了', 'go': '去', 'goes': '去',
-    'want': '想', 'wanted': '想要', 'wants': '想',
-    'had': '吃了', 'ate': '吃了', 'eat': '吃', 'eats': '吃',
-    'have': '有', 'has': '有',
-    'like': '喜欢', 'likes': '喜欢', 'liked': '喜欢',
-    'love': '爱', 'loves': '爱', 'loved': '爱',
-    'enjoy': '享受', 'enjoyed': '享受',
-    'invite': '邀请', 'invited': '邀请', 'invites': '邀请',
-    'is reading': '正在读', 'drinks': '喝', 'drink': '喝',
-    'runs': '跑', 'run': '跑', 'ran': '跑了',
-    'stick': '坚持', 'sticks': '坚持', 'sticked': '坚持',
-    'listen': '听', 'listens': '听', 'listened': '听',
-    'look': '看', 'looks': '看', 'looked': '看',
-    'talk': '谈', 'talks': '谈', 'talked': '谈',
-    'think': '想', 'thinks': '想', 'thought': '想',
-    'learn': '学', 'learns': '学', 'learned': '学',
-    'study': '学习', 'studies': '学习', 'studied': '学习',
-    'read': '读', 'reads': '读',
-    'play': '玩', 'plays': '玩', 'played': '玩',
-    'see': '看见', 'saw': '看见了',
-    'watch': '看', 'watches': '看',
-    'mountain climbing': '爬山', 'went mountain climbing': '去爬山',
-    // 地点状语
-    'at my place': '在我家', 'at my home': '在我家', 'at home': '在家',
-    'at school': '在学校', 'at work': '在上班',
-    'in the park': '在公园', 'at the park': '在公园',
-    'in beijing': '在北京', 'in shanghai': '在上海',
-    'at the cafe': '在咖啡馆', 'at the cafe.': '在咖啡馆', 'at the café': '在咖啡馆',
-    // 方式状语 / 副词
-    'with a friend': '和朋友一起', 'with my friend': '和我的朋友',
-    'with my friends': '和我的朋友们',
-    'with my family': '和家人一起',
-    'by bus': '坐公交', 'by car': '坐车',
-    'slowly': '慢慢地', 'quickly': '快速地', 'carefully': '仔细地',
-    'always': '总是', 'usually': '通常', 'sometimes': '有时', 'often': '经常', 'never': '从不',
-    'together': '一起', 'easily': '容易地', 'well': '好',
-    'warmly': '热情地', 'happily': '开心地', 'politely': '礼貌地',
-    // 疑问副词
-    'how': '怎么', 'when': '什么时候', 'where': '哪里', 'why': '为什么',
-    // 补足语常见
-    'to english': '看英语', 'to music': '音乐',
-    'to lunch': '共进午餐', 'to have lunch': '共进午餐',
-    'to the book': '那本书', 'to her': '她',
-    'to the cafe': '去咖啡馆', 'to the café': '去咖啡馆',
-    // 宾语常见
-    'a delicious snack': '一个很好吃的零食',
-    'a delicious hot pot': '好吃的火锅',
-    'a bowl of noodles': '一碗面',
-    'a bowl of': '一碗',
-    'a book': '一本书', 'books': '书',
-    'coffee': '咖啡', 'tea': '茶', 'water': '水', 'milk': '牛奶',
-    'bowl of noodles': '一碗面',
-    'bowl of rice': '一碗饭',
-    'bowl of soup': '一碗汤',
-    'a glass of water': '一杯水',
-    'a cup of tea': '一杯茶',
-    'a cup of coffee': '一杯咖啡',
-    'noodles': '面',
-    'rice': '饭',
-    'soup': '汤'
-};
-
-function engTranslateToChinese(phrase) {
-    let lower = String(phrase || '').toLowerCase().trim();
-    if (!lower || lower === '—') return '—';
-    // 多句只翻译第一段（与解析器保持一致）
-    const dotIdx = lower.search(/[.!?]/);
-    if (dotIdx > 0) lower = lower.slice(0, dotIdx).trim();
-    if (ENG_ZH_MAP[lower]) return ENG_ZH_MAP[lower];
-    for (let key of Object.keys(ENG_ZH_MAP).sort((a, b) => b.length - a.length)) {
-        if (key.length > 2 && lower.includes(key)) {
-            let replaced = lower.replace(key, ENG_ZH_MAP[key]);
-            if (!/[a-zA-Z]/.test(replaced)) return replaced;
-        }
-    }
-    let words = lower.split(' ');
-    let mapped = words.map(w => {
-        let lw = w.replace(/[^a-z]/g, '');
-        return ENG_ZH_MAP[lw] || w;
-    });
-    let result = mapped.join(' ');
-    if (!/[a-zA-Z]/.test(result)) return result;
-    let cleaned = lower.replace(/\b(a|an|the)\b/g, '').trim();
-    if (cleaned && !/[a-zA-Z]/.test(cleaned)) return cleaned;
-    return phrase;
-}
-
-function engGenerateOutput(zh, rowCount) {
-    // 4 列 × N 行：列 = 成分 / 英文 / 中文 / 备注
-    // 每行右侧悬浮铅笔图标，点击后展开行管理菜单（增删、上下移动）。
-    rowCount = Math.max(3, Math.min(20, parseInt(rowCount, 10) || 8));
-    const colHeads = ['英文（对照填）', '中文（对照填）', '备注（自定）'];
-    const defaultLabels = ['主语', '谓语', '宾语', '定语', '状语（时间）', '状语（地点）', '状语（方式）', '补足语'];
-
-    let html = '';
-    html += `<div class="eng-lesson-line"><span class="eng-label">中文原句</span><span class="eng-content">${escapeHtml(zh || '')}</span></div>`;
-    html += `<div class="eng-lesson-line"><span class="eng-label">英文翻译</span><span class="eng-en" id="engUserEnglishSentence" contenteditable="true" placeholder="在此填入完整英文翻译">${escapeHtml(engCurrentLesson.en || '')}</span></div>`;
-    html += `<div class="eng-lesson-line"><span class="eng-label">句型分析</span><span class="eng-pattern" id="engSentencePattern" contenteditable="true" placeholder="在此填写句型分析，例如：主-系-表（主句）+ when 引导的时间状语从句">${escapeHtml(engCurrentLesson.pattern || '')}</span></div>`;
-
-    // AI 快捷链接：复制英文句子并跳转到对应 AI 对话页
-    html += `<div class="eng-ai-links" id="engAiLinks">
-        <span class="eng-ai-label">🤖 问 AI 这句对不对：</span>
-        <button class="eng-btn eng-btn-ghost eng-btn-sm" data-action="eng-ai-doubao" title="复制英文并打开豆包">豆包</button>
-        <button class="eng-btn eng-btn-ghost eng-btn-sm" data-action="eng-ai-qianwen" title="复制英文并打开通义千问">通义千问</button>
-        <button class="eng-btn eng-btn-ghost eng-btn-sm" data-action="eng-ai-deepseek" title="复制英文并打开 DeepSeek">DeepSeek</button>
-    </div>`;
-
-    html += `<div class="eng-table-wrap"><table class="eng-manual-table" id="engManualTable"><thead><tr>`;
-    html += `<th class="eng-corner-cell">成分</th>`;
-    for (let c = 0; c < 3; c++) {
-        html += `<th class="eng-col-head">${colHeads[c]}</th>`;
-    }
-    html += `</tr></thead><tbody>`;
-
-    const rowMenu = (r) => `
-        <span class="eng-row-menu">
-            <button class="eng-menu-item" data-action="eng-row-add-above" data-row="${r}" title="在上方增加一行">➕ 在上增加</button>
-            <button class="eng-menu-item" data-action="eng-row-add-below" data-row="${r}" title="在下方增加一行">➕ 在下增加</button>
-            <button class="eng-menu-item" data-action="eng-row-delete" data-row="${r}" title="删除本行">🗑 删除本行</button>
-            <button class="eng-menu-item" data-action="eng-row-move-up" data-row="${r}" title="上移一行">⬆️ 上移</button>
-            <button class="eng-menu-item" data-action="eng-row-move-down" data-row="${r}" title="下移一行">⬇️ 下移</button>
-        </span>`;
-
-    for (let r = 0; r < rowCount; r++) {
-        html += `<tr>`;
-        html += `<td class="eng-row-label">
-            <input type="text" class="eng-label-input" data-label-row="${r}" placeholder="成分名" value="${escapeHtml(defaultLabels[r] || `成分${r + 1}`)}">
-        </td>`;
-        html += `<td class="eng-edit-cell"><input type="text" class="eng-cell-input" data-row="${r}" data-col="0" placeholder="English" value=""></td>`;
-        html += `<td class="eng-edit-cell"><input type="text" class="eng-cell-input" data-row="${r}" data-col="1" placeholder="中文" value=""></td>`;
-        html += `<td class="eng-edit-cell eng-edit-cell-last"><input type="text" class="eng-cell-input" data-row="${r}" data-col="2" placeholder="备注" value="">
-            <span class="eng-row-actions">
-                <button class="eng-row-edit" data-action="eng-row-edit" data-row="${r}" title="管理此行" aria-label="管理此行">
-                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
-                </button>
-                ${rowMenu(r)}
-            </span>
-        </td>`;
-        html += `</tr>`;
-    }
-    html += `</tbody></table></div>`;
-
-    html += `<div class="eng-table-actions">
-        <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-add-row">➕ 增加行</button>
-        <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-remove-row" title="删除最后一行">✖ 删除末行</button>
-        <button class="eng-btn eng-btn-primary eng-btn-sm" data-action="eng-save-table" title="保存当前表格到抄写历史">💾 保存到历史</button>
-        <span class="eng-text-muted">行数可自由增减（3-20 行）</span>
-    </div>`;
-
-    return html;
-}
-
-// 渲染完成后：扫描中文行占位单元格，逐个用 Google 英→中 翻译补齐（不维护词表也能翻成中文）
-async function engTranslatePendingCells(container) {
-    if (!container) return;
-    const cells = container.querySelectorAll('.eng-zh-pending');
-    if (!cells.length) return;
-    const done = new Set();
-    for (const el of cells) {
-        const phrase = (el.getAttribute('data-phrase') || '').trim();
-        if (!phrase || done.has(phrase)) continue;
-        done.add(phrase);
-        const zhT = await engPhraseToZh(phrase);
-        if (zhT && zhT !== '—') {
-            container.querySelectorAll('.eng-zh-pending').forEach(td => {
-                if ((td.getAttribute('data-phrase') || '').trim().toLowerCase() === phrase.toLowerCase()) {
-                    td.textContent = zhT;
-                    td.classList.remove('eng-zh-pending');
-                }
-            });
-        }
-    }
-}
-
-// 分句工具——一句中文对应一句英文，分句之间严格分开
-function engSplitSentences(text, lang) {
-    if (!text) return [];
-    const s = String(text).trim();
-    if (lang === 'zh') {
-        return s.split(/[。！？]+/).map(x => x.trim().replace(/^[,，、\s]+|[,，、\s]+$/g, '')).filter(Boolean);
-    }
-    return s.split(/[.!?]+/).map(x => x.trim().replace(/^[,，、\s]+|[,，、\s]+$/g, '')).filter(Boolean);
-}
-
-// ===== 英文句法解析（按词数组+最长匹配，杜绝整句塞宾语）=====
-function engParseSentenceEN(en) {
-    const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
-    let s = String(en || '').replace(/[.!?;,]+$/, '').trim();
-    if (!s) return result;
-
-    // 优先用 Compromise 词性标注（CDN 引入，window.nlp 可用时）
-    if (typeof window !== 'undefined' && window.nlp && typeof window.nlp === 'function') {
-        try {
-            return engParseSentenceENNlp(s);
-        } catch (e) { /* 回退正则 */ }
-    }
-    return engParseSentenceENRegex(s);
-}
-
-// ===== Compromise 词性标注版 =====
-function engParseSentenceENNlp(s) {
-    const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
-    const doc = window.nlp(s);
-    const words = [];
-    try {
-        doc.json()[0].terms.forEach(t => {
-            words.push({ text: t.text, tags: new Set(t.tags || []), post: t.post || '' });
-        });
-    } catch (e) { return engParseSentenceENRegex(s); }
-    if (words.length === 0) return result;
-
-    const isVerb = w => w.tags.has('Verb') || w.tags.has('Infinitive') || w.tags.has('Gerund') || w.tags.has('PastTense');
-    const isAdverb = w => w.tags.has('Adverb');
-    const isPreposition = w => w.tags.has('Preposition');
-    const isNoun = w => w.tags.has('Noun') || w.tags.has('Pronoun') || w.tags.has('ProperNoun') || w.tags.has('Singular') || w.tags.has('Plural');
-    const isAdj = w => w.tags.has('Adjective');
-    const isDet = w => w.tags.has('Determiner');
-    const isQuestion = w => w.tags.has('QuestionWord');
-    const isConj = w => w.tags.has('Conjunction');
-    const used = new Array(words.length).fill(false);
-    const joinW = idxs => idxs.map(i => words[i].text).join(' ').replace(/[,.!?;:]+$/, '');
-
-    // 时间词表（compromise 有时把 tonight 标为 Noun，这里补充）
-    const TIME_WORDS = new Set(['today','yesterday','tomorrow','tonight','now','soon','later','morning','afternoon','evening','night','week','month','year','weekend']);
-    const TIME_PREFIX = new Set(['this','next','last','every']);
-
-    // 1) 时间状语：扫描 "this/next/last/every + timeword" 或独立时间词
-    for (let i = 0; i < words.length; i++) {
-        if (used[i]) continue;
-        const w = words[i].text.toLowerCase().replace(/[,.!?;:]+$/, '');
-        if (TIME_PREFIX.has(w) && i + 1 < words.length && TIME_WORDS.has(words[i+1].text.toLowerCase())) {
-            result.advTime = (w + ' ' + words[i+1].text).replace(/[,.!?;:]+$/, '');
-            used[i] = true; used[i+1] = true;
-            break;
-        }
-    }
-    if (result.advTime === '—') {
-        for (let i = 0; i < words.length; i++) {
-            if (used[i]) continue;
-            const w = words[i].text.toLowerCase().replace(/[,.!?;:]+$/, '');
-            if (['today','yesterday','tomorrow','tonight','now','soon','later'].indexOf(w) >= 0) {
-                result.advTime = words[i].text.replace(/[,.!?;:]+$/, '');
-                used[i] = true;
-                break;
-            }
-        }
-    }
-
-    // 2) 方式状语：Adverb 标签
-    for (let i = 0; i < words.length; i++) {
-        if (used[i]) continue;
-        if (isAdverb(words[i])) {
-            result.advManner = words[i].text.replace(/[,.!?;:]+$/, '');
-            used[i] = true;
-            break;
-        }
-    }
-
-    // 3) 地点状语：Preposition + 后面名词（at/in/on）
-    for (let i = 0; i < words.length; i++) {
-        if (used[i]) continue;
-        if (isPreposition(words[i]) && ['at','in','on'].indexOf(words[i].text.toLowerCase()) >= 0) {
-            const place = [];
-            for (let j = i; j < words.length && place.length < 4; j++) {
-                if (used[j]) break;
-                place.push(words[j].text.replace(/[,.!?;:]+$/, ''));
-                if (j + 1 < words.length && !isNoun(words[j+1]) && !isDet(words[j+1])) break;
-            }
-            if (place.length >= 2) {
-                result.advPlace = place.join(' ');
-                for (let j = i; j < i + place.length; j++) used[j] = true;
-                break;
-            }
-        }
-    }
-
-    // 4) 补足语：to + 名词 或 to + 动词不定式（非 want/plan 等复合动词结构时）
-    const compMainVerbs = ['want','wants','wanted','plan','plans','planned','decide','decided','hope','hopes','go','goes','going'];
-    for (let i = 0; i < words.length - 1; i++) {
-        if (used[i]) continue;
-        const w = words[i].text.toLowerCase();
-        // 前一个词是复合动词核心（want to eat 的 want），跳过
-        const prev = i > 0 ? words[i-1].text.toLowerCase() : '';
-        if (compMainVerbs.indexOf(prev) >= 0) continue;
-        if (w === 'to' && i + 1 < words.length) {
-            const tail = [];
-            for (let j = i; j < words.length && tail.length < 3; j++) {
-                if (used[j]) break;
-                tail.push(words[j].text.replace(/[,.!?;:]+$/, ''));
-                if (j + 1 < words.length && (words[j+1].tags.has('Preposition') || ['at','in','on'].indexOf(words[j+1].text.toLowerCase()) >= 0)) break;
-            }
-            if (tail.length >= 2) {
-                result.complement = tail.join(' ');
-                for (let j = i; j < i + tail.length; j++) used[j] = true;
-                break;
-            }
-        }
-    }
-
-    // 5) 主语：从第一个未被占用的词开始（时间/方式/地点已被抽走）
-    let subStart = 0;
-    while (subStart < words.length && used[subStart]) subStart++;
-    let subEnd = 0;
-    // 代词主语
-    if (subStart < words.length && !used[subStart] && (words[subStart].tags.has('Pronoun') || ['i','you','he','she','we','they'].indexOf(words[subStart].text.toLowerCase()) >= 0)) {
-        subEnd = subStart + 1;
-    }
-    if (subEnd === 0) {
-        // my/your/his/her/our/their/the/a/an + (adj)* + 名词
-        for (let len = 5; len >= 2; len--) {
-            if (subStart + len > words.length) continue;
-            let ok = true;
-            for (let j = subStart; j < subStart + len; j++) if (used[j]) { ok = false; break; }
-            if (!ok) continue;
-            const first = words[subStart].text.toLowerCase();
-            if (['my','your','his','her','our','their','the','a','an'].indexOf(first) < 0) continue;
-            // 最后一个是名词
-            if (!isNoun(words[subStart + len - 1])) continue;
-            subEnd = subStart + len;
-            // 定语：第一个词到倒数第二个（如 "my good" 是 friend 的定语）
-            if (len >= 3) {
-                const modWords = [];
-                for (let j = subStart; j < subStart + len - 1; j++) modWords.push(words[j].text.replace(/[,.!?;:]+$/, ''));
-                if (modWords.length >= 2) result.modifier = modWords.join(' ');
-                else if (modWords.length === 1 && ['my','your','his','her','our','their'].indexOf(modWords[0].toLowerCase()) >= 0) result.modifier = modWords[0];
-            }
-            break;
-        }
-    }
-    if (subEnd === 0 && subStart < words.length && !used[subStart]) {
-        const w0 = words[subStart].text.toLowerCase();
-        // QuestionWord（How/When/Where/Why）不作主语
-        if (!words[subStart].tags.has('QuestionWord') && ['i','you','he','she','we','they','it','this','that'].indexOf(w0) >= 0) subEnd = subStart + 1;
-    }
-    if (subEnd > 0) {
-        result.subject = words.slice(subStart, subEnd).map(w => w.text).join(' ');
-        for (let j = subStart; j < subEnd; j++) used[j] = true;
-    }
-
-    // 6) 谓语动词：第一个 Verb 标签（含复合 want to eat / is reading）
-    let startVerb = 0;
-    for (let i = 0; i < words.length; i++) { if (!used[i]) { startVerb = i; break; } }
-    if (startVerb < words.length) {
-        // 复合动词：want to eat / going to / is reading
-        let verbEnd = startVerb;
-        const v1 = words[startVerb].text.toLowerCase();
-        if (['want','wants','wanted','plan','plans','planned','decide','decided','hope','hopes','go','goes','going','is','am','are','was','were','has','have','had','do','does','did'].indexOf(v1) >= 0) {
-            // want to V / going to V / is Ving
-            if (startVerb + 1 < words.length && words[startVerb+1].text.toLowerCase() === 'to' && !used[startVerb+1]) {
-                if (startVerb + 2 < words.length && isVerb(words[startVerb+2])) {
-                    verbEnd = startVerb + 2;
-                } else {
-                    verbEnd = startVerb + 1;
-                }
-            } else if (startVerb + 1 < words.length && isVerb(words[startVerb+1]) && (['is','am','are','was','were'].indexOf(v1) >= 0)) {
-                verbEnd = startVerb + 1;
-            }
-        } else if (isVerb(words[startVerb])) {
-            verbEnd = startVerb;
-        }
-        // 兜底：取动词标签
-        if (verbEnd === startVerb && isVerb(words[startVerb])) verbEnd = startVerb;
-        result.verb = words.slice(startVerb, verbEnd + 1).map(w => w.text).join(' ');
-        for (let j = startVerb; j <= verbEnd; j++) used[j] = true;
-    }
-
-    // 7) 剩余为宾语
-    const objIdxs = [];
-    for (let i = 0; i < words.length; i++) if (!used[i]) objIdxs.push(i);
-    if (objIdxs.length > 0) result.object = joinW(objIdxs);
-
-    return result;
-}
-
-// ===== 正则版（无 Compromise 时兜底）=====
-function engParseSentenceENRegex(s) {
-    const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
-    const words = s.split(/\s+/).filter(Boolean);
-    if (words.length === 0) return result;
-    const used = new Array(words.length).fill(false);
-
-    // 0) 识别复合动词 to 占用
-    const compVerbs = ['want','wanted','wants','planned','planning','plans','decided','hoped','hopes','chose','refused','needed','tried'];
-    const verbsLike = ['go','eat','have','drink','see','do','play','visit','study','read','take','make','come','run','walk','give','buy','find','get'];
-    for (let i = 0; i < words.length - 2; i++) {
-        if (used[i+1] || used[i+2]) continue;
-        const first = words[i].toLowerCase();
-        if (compVerbs.indexOf(first) >= 0 && words[i+1] && words[i+1].toLowerCase() === 'to') {
-            used[i+1] = true;
-            if (words[i+2] && verbsLike.indexOf(words[i+2].toLowerCase()) >= 0) used[i+2] = true;
-        }
-    }
-
-    // 1) 补足语
-    const findComplement = () => {
-        for (let i = 0; i < words.length - 1; i++) {
-            if (used[i]) continue;
-            const w = words[i].toLowerCase().replace(/[,.!?;:]+$/, '');
-            if (w !== 'to' && w !== 'for' && w !== 'about') continue;
-            const tail = [];
-            for (let j = i + 1; j < Math.min(i + 3, words.length); j++) {
-                if (used[j]) break;
-                tail.push(words[j].replace(/[,.!?;:]+$/, ''));
-                if (j - i >= 2) break;
-                if (j + 1 < words.length) {
-                    const next = words[j + 1].toLowerCase();
-                    if (['at','in','on','with','by','for','about','to','next','last','this','that','today','yesterday','tomorrow','tonight','now','every','warmly','slowly','quickly'].indexOf(next) >= 0) break;
-                }
-            }
-            if (tail.length > 0 && tail.length <= 3) {
-                const comp = w + ' ' + tail.join(' ');
-                used[i] = true;
-                for (let j = i + 1; j <= i + tail.length; j++) used[j] = true;
-                return comp;
-            }
-        }
-        return null;
-    };
-    const comp = findComplement();
-    if (comp) result.complement = comp;
-
-    // 2) 方式状语
-    const mannerAdverbs = ['slowly','quickly','carefully','well','hard','fast','often','usually','always','never','sometimes','together','warmly','gently','happily','politely','quietly','eagerly','how','when','where','why'];
-    for (let i = 0; i < words.length; i++) {
-        if (used[i]) continue;
-        const w = words[i].toLowerCase().replace(/[,.!?;:]+$/, '');
-        if (mannerAdverbs.indexOf(w) >= 0) {
-            result.advManner = words[i].replace(/[,.!?;:]+$/, '');
-            used[i] = true;
-            break;
-        }
-    }
-    if (result.advManner === '—') {
-        for (let len = 3; len >= 2; len--) {
-            for (let i = 0; i <= words.length - len; i++) {
-                if (used[i]) continue;
-                const first = words[i].toLowerCase();
-                if (first === 'with' || first === 'by') {
-                    result.advManner = words.slice(i, i + len).join(' ');
-                    for (let j = i; j < i + len; j++) used[j] = true;
-                    break;
-                }
-            }
-            if (result.advManner !== '—') break;
-        }
-    }
-
-    // 3) 地点
-    for (let len = 4; len >= 2; len--) {
-        for (let i = 0; i <= words.length - len; i++) {
-            if (used[i]) continue;
-            const w = words.slice(i, i + len).join(' ').toLowerCase();
-            if (/^(at|in|on)\s+/.test(w)) {
-                result.advPlace = words.slice(i, i + len).join(' ');
-                for (let j = i; j < i + len; j++) used[j] = true;
-                break;
-            }
-        }
-        if (result.advPlace !== '—') break;
-    }
-
-    // 4) 时间
-    for (let len = 3; len >= 1; len--) {
-        for (let i = 0; i <= words.length - len; i++) {
-            if (used[i]) continue;
-            const w = words.slice(i, i + len).join(' ').toLowerCase();
-            if (/^(this|next|last|every)\s+(morning|afternoon|evening|night|week|month|year|day|weekend)[,.;:!?]*$/.test(w) ||
-                /^(today|yesterday|tomorrow|tonight|now|soon|later)[,.;:!?]*$/.test(w) ||
-                /^\d+\s+(hours?|days?|weeks?|months?|years?)\s+ago$/.test(w) ||
-                /^(in|at)\s+the\s+(morning|afternoon|evening|night)$/.test(w)) {
-                result.advTime = words.slice(i, i + len).join(' ').replace(/[,.;:!?]+$/, '');
-                for (let j = i; j < i + len; j++) used[j] = true;
-                break;
-            }
-        }
-        if (result.advTime !== '—') break;
-    }
-
-    // 5) 主语
-    let subStart = 0;
-    while (subStart < words.length && used[subStart]) subStart++;
-    let subEnd = 0;
-    if (subStart < words.length) {
-        const w = words[subStart].toLowerCase();
-        if (['i','you','he','she','we','they'].indexOf(w) >= 0) subEnd = subStart + 1;
-    }
-    if (subEnd === 0) {
-        for (let len = 5; len >= 2; len--) {
-            if (subStart + len > words.length) continue;
-            let allFree = true;
-            for (let j = subStart; j < subStart + len; j++) if (used[j]) { allFree = false; break; }
-            if (!allFree) continue;
-            const w = words.slice(subStart, subStart + len).join(' ').toLowerCase();
-            if (/^(my|your|his|her|our|their)\s+\w+/.test(w) || /^(the|a|an)\s+\w+/.test(w)) {
-                subEnd = subStart + len;
-                const subWords = words.slice(subStart, subStart + len);
-                if (subWords.length >= 3) {
-                    const modWords = subWords.slice(0, subWords.length - 1);
-                    if (modWords.length >= 2) {
-                        const mod = modWords.join(' ');
-                        if (!result.modifier || result.modifier === '—') result.modifier = mod;
-                    }
-                }
-                break;
-            }
-        }
-    }
-    if (subEnd === 0 && !used[subStart]) {
-        const w0 = words[subStart].toLowerCase().replace(/[,.!?;:]+$/, '');
-        if (['i','you','he','she','we','they','it','this','that'].indexOf(w0) >= 0) subEnd = subStart + 1;
-    }
-    if (subEnd > 0) {
-        result.subject = words.slice(subStart, subEnd).join(' ');
-        for (let j = subStart; j < subEnd; j++) used[j] = true;
-    }
-
-    // 6) 谓语
-    let startVerb = 0;
-    for (let i = 0; i < words.length; i++) { if (!used[i]) { startVerb = i; break; } }
-    if (startVerb < words.length) {
-        const look = words.slice(startVerb, Math.min(startVerb + 5, words.length));
-        const verbPhrases = [
-            /^(want|wanted|wants)\s+to\s+(?:go|eat|have|drink|see|do|play|visit|drink|study|read|take|make|come|run|walk)/i,
-            /^(went|goes|go)\s+to\s+(?:eat|have|see|do|play|visit|drink|school|park|home|work)/i,
-            /^(is|am|are|was|were)\s+(?:\w+ing|\w+)/i,
-            /^(to)\s+\w+/i,
-            /^(has|have|had|having)\s+\w*/i,
-            /^(does|do|did|will|would|can|could|should|may|might|must)\s+\w*/i,
-        ];
-        let verbLen = 1;
-        for (const pat of verbPhrases) {
-            const m = look.join(' ').match(pat);
-            if (m) { verbLen = m[0].split(' ').length; break; }
-        }
-        result.verb = words.slice(startVerb, startVerb + verbLen).join(' ');
-        for (let j = startVerb; j < startVerb + verbLen; j++) used[j] = true;
-    }
-
-    // 7) 宾语
-    const objWords = words.filter((_, i) => !used[i]);
-    if (objWords.length > 0) result.object = objWords.join(' ');
-
-    return result;
-}
-
-
-// ===== 中文句解析器（基于模式匹配）=====
-function engParseSentenceZH(zh) {
-    const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
-    let s = String(zh || '').replace(/[。，！？,，]+$/, '').trim();
-    if (!s) return result;
-
-    // 1) 时间状语
-    const timePatterns = [
-        /(今天早上|今天下午|今天晚上|今天上午|今天中午|今天夜里)/,
-        /(昨天晚上|今天早晨|今天上午|明天早上|明天下午|明天上午|明天下午|明天晚上|明天夜里)/,
-        /(昨天晚上|今天晚上|今天夜里|今天早晨)/,
-        /(今天|明天|后天|昨天|前天|刚才|现在|马上|立刻|稍后|以后|之前)/,
-        /(上周|这周|下周|这个月|上个月|下个月|去年|今年|明年)/,
-        /(每个早上|每天早上|每天晚上|每晚|每天|每周|每月|每年)/,
-    ];
-    for (const pat of timePatterns) {
-        const m = s.match(pat);
-        if (m) {
-            result.advTime = m[0];
-            s = s.replace(m[0], '').trim();
-            break;
-        }
-    }
-
-    // 2) 地点状语：在 + 名词（1-3 字，遇到"地/的"停止）
-    const placeMatch = s.match(/在[\u4e00-\u9fa5]{1,3}(?=[地的是了很就都]|$)/);
-    if (placeMatch) {
-        result.advPlace = placeMatch[0];
-        s = s.replace(placeMatch[0], '').trim();
-    }
-
-    // 3) 方式状语：副词+地（"X地"，取最后匹配避免吃名词）
-    const mannerMatch = s.match(/([\u4e00-\u9fa5]{1,4}地)/);
-    if (mannerMatch) {
-        result.advManner = mannerMatch[1];
-        s = s.replace(mannerMatch[0], '').trim();
-    }
-
-    // 4) 主语（从最左开始）
-    // 代词：我、你、他、她、我们、他们、你们
-    const pronounRe = /^(我|你|他|她|它|我们|他们|她们|你们|咱们)/;
-    if (pronounRe.test(s)) {
-        const m = s.match(pronounRe);
-        result.subject = m[0];
-        s = s.slice(m[0].length).trim();
-        // 找"的+名词"扩展主语（如"我的好朋友"）
-        const descMatch = s.match(/^(的[\u4e00-\u9fa5]{1,8})/);
-        if (descMatch) {
-            result.subject += descMatch[0];
-            s = s.slice(descMatch[0].length).trim();
-            // 定语：subject 中的"的+形容词"或"的"开头
-            const modMatch = result.subject.match(/^([我你他她它]|我们|你们|他们)的([\u4e00-\u9fa5]{1,8})$/);
-            if (modMatch && (!result.modifier || result.modifier === '—')) {
-                result.modifier = modMatch[1] + '的';
-            }
-        }
-    } else {
-        // 普通名词短语主语（1-4字）
-        const nomRe = /^[\u4e00-\u9fa5]{1,4}/;
-        const m = s.match(nomRe);
-        if (m) {
-            result.subject = m[0];
-            s = s.slice(m[0].length).trim();
-        }
-    }
-
-    // 5) 谓语动词（已知动词列表 + 兜底取1-2字）
-    const knownVerbs = ['邀请','请','吃','喝','看','听','学','做','去','来','走','跑','玩','买','卖','给','拿','说','写','读','想','要','是','在','有','会','能','可以','喜欢','讨厌','帮助','认识','告诉','回答','问','叫','欢迎','感谢','希望','打算','计划','准备','开始','结束','想要','共进'];
-    let verbMatched = false;
-    for (const v of knownVerbs) {
-        if (s.startsWith(v)) {
-            result.verb = v;
-            s = s.slice(v.length).trim();
-            verbMatched = true;
-            break;
-        }
-    }
-    if (!verbMatched) {
-        const v2 = s.match(/^[\u4e00-\u9fa5]{1,2}/);
-        if (v2) { result.verb = v2[0]; s = s.slice(v2[0].length).trim(); }
-    }
-
-    // 6) 宾语（代词或名词）+ 补足语（如果有"动词+补足"模式）
-    // 先找宾语
-    if (s) {
-        const objMatch = s.match(/^(我|你|他|她||我们|他们|[\u4e00-\u9fa5]{1,8})/);
-        if (objMatch) {
-            result.object = objMatch[0];
-            s = s.slice(objMatch[0].length).trim();
-        }
-    }
-    // 剩余作为补足语（"共进午餐"/"一起吃饭"/"很开心"等）
-    if (s) {
-        result.complement = s.trim();
-    }
-
-    return result;
-}
-
-// ===== 中文行翻译：兼容中文解析结果 =====
-
-// 当前课程（供抄写/重置使用）
-let engCurrentLesson = { zh: '', en: '', fullHtml: '' };
-
-async function engRunLesson() {
-    const input = document.getElementById('engTranslateInput');
-    const output = document.getElementById('engLessonOutput');
-    if (!input || !output) return;
-    const zh = input.value.trim();
-    if (!zh) {
-        output.innerHTML = `<div class="eng-empty">💡 输入中文句子，点击「生成填表」开始手动对应语序</div>`;
-        engCurrentLesson = { zh: '', en: '', fullHtml: '' };
-        return;
-    }
-    output.innerHTML = `<div class="eng-empty">⏳ 正在翻译并生成表格...</div>`;
-    // 自动翻译（优先免费无需翻墙的源）
-    const en = await engTranslateAPI(zh);
-    engCurrentLesson = { zh, en, fullHtml: '', pattern: '' };
-    const html = engGenerateOutput(zh);
-    engCurrentLesson.fullHtml = html;
-    output.innerHTML = html;
-    // 把自动翻译结果回填到英文整句框
-    const enSentence = document.getElementById('engUserEnglishSentence');
-    if (enSentence && engCurrentLesson.en && !engCurrentLesson.en.startsWith('（翻译暂不可用')) {
-        enSentence.textContent = engCurrentLesson.en;
-    }
-    engAddHistory('copy', { time: new Date().toISOString(), zh: zh, en: en, detail: html });
-    const todayStats = engGetTodayStats();
-    todayStats.words += zh.length;
-    engSaveTodayStats(todayStats);
-    const monthData = engGetMonthData();
-    monthData.words += zh.length;
-    engSaveMonthData(monthData);
-    engUpdateScore(2);
-}
-
-// 保存当前手工表格的输入状态（行数、内容、成分标签）
-function engSerializeTable() {
-    const table = document.getElementById('engManualTable');
-    const enSentence = document.getElementById('engUserEnglishSentence');
-    const patternEl = document.getElementById('engSentencePattern');
-    if (!table) return null;
-    const rowCount = table.querySelectorAll('tbody tr').length;
-    const rows = [];
-    const labels = [];
-    table.querySelectorAll('tbody tr').forEach((tr, r) => {
-        rows[r] = [];
-        tr.querySelectorAll('td.eng-edit-cell input').forEach((inp, c) => {
-            rows[r][c] = inp.value;
-        });
-        const labelInp = tr.querySelector('td.eng-row-label input.eng-label-input');
-        labels[r] = labelInp ? labelInp.value : '';
-    });
-    return {
-        rowCount,
-        rows,
-        labels,
-        en: enSentence ? enSentence.textContent.trim() : '',
-        pattern: patternEl ? patternEl.textContent.trim() : (engCurrentLesson.pattern || '')
-    };
-}
-
-function engRestoreTable(state) {
-    if (!state || !state.rows) return;
-    const table = document.getElementById('engManualTable');
-    const enSentence = document.getElementById('engUserEnglishSentence');
-    const patternEl = document.getElementById('engSentencePattern');
-    if (!table) return;
-    // 恢复英文整句与句型分析
-    if (enSentence && state.en) enSentence.textContent = state.en;
-    if (patternEl && state.pattern) patternEl.textContent = state.pattern;
-    // 恢复单元格内容与成分标签
-    const trs = table.querySelectorAll('tbody tr');
-    trs.forEach((tr, r) => {
-        const labelInp = tr.querySelector('td.eng-row-label input.eng-label-input');
-        if (labelInp && state.labels && state.labels[r] !== undefined) labelInp.value = state.labels[r];
-        const inputs = tr.querySelectorAll('td.eng-edit-cell input');
-        inputs.forEach((inp, c) => {
-            if (state.rows[r] && state.rows[r][c] !== undefined) {
-                inp.value = state.rows[r][c];
-            }
-        });
-    });
-}
-
-function engRebuildTableWithRows(rowCount) {
-    const zh = engCurrentLesson.zh || '';
-    const old = engSerializeTable();
-    // 保留旧内容到新尺寸
-    const newRows = [];
-    const newLabels = [];
-    for (let r = 0; r < rowCount; r++) {
-        newRows[r] = [];
-        for (let c = 0; c < 3; c++) {
-            newRows[r][c] = (old && old.rows[r] && old.rows[r][c] !== undefined) ? old.rows[r][c] : '';
-        }
-        newLabels[r] = (old && old.labels && old.labels[r] !== undefined) ? old.labels[r] : '';
-    }
-    // 重新生成表格
-    const output = document.getElementById('engLessonOutput');
-    if (!output) return;
-    output.innerHTML = engGenerateOutput(zh, rowCount);
-    // 回填
-    const table = document.getElementById('engManualTable');
-    const trs = table.querySelectorAll('tbody tr');
-    trs.forEach((tr, r) => {
-        const labelInp = tr.querySelector('td.eng-row-label input.eng-label-input');
-        if (labelInp && newLabels[r] !== undefined) labelInp.value = newLabels[r];
-        const inputs = tr.querySelectorAll('td.eng-edit-cell input');
-        inputs.forEach((inp, c) => {
-            if (newRows[r][c] !== undefined) inp.value = newRows[r][c];
-        });
-    });
-    if (old && old.en) {
-        const enSentence = document.getElementById('engUserEnglishSentence');
-        if (enSentence) enSentence.textContent = old.en;
-    }
-    if (old && old.pattern) {
-        const patternEl = document.getElementById('engSentencePattern');
-        if (patternEl) patternEl.textContent = old.pattern;
-    }
-    engCurrentLesson.fullHtml = output.innerHTML;
-}
-
-function engAddRow() {
-    const table = document.getElementById('engManualTable');
-    if (!table) return;
-    const currentRows = table.querySelectorAll('tbody tr').length;
-    if (currentRows >= 20) {
-        engToast('最多 20 行，已经足够长啦');
-        return;
-    }
-    engRebuildTableWithRows(currentRows + 1);
-}
-
-function engRemoveRow() {
-    const table = document.getElementById('engManualTable');
-    if (!table) return;
-    const currentRows = table.querySelectorAll('tbody tr').length;
-    if (currentRows <= 3) {
-        engToast('最少保留 3 行');
-        return;
-    }
-    engRebuildTableWithRows(currentRows - 1);
-}
-
-function engRowEditToggle(rowIdx) {
-    const table = document.getElementById('engManualTable');
-    if (!table) return;
-    const trs = table.querySelectorAll('tbody tr');
-    const wasEditing = trs[rowIdx] && trs[rowIdx].classList.contains('eng-row-editing');
-    trs.forEach(tr => tr.classList.remove('eng-row-editing'));
-    if (!wasEditing && trs[rowIdx]) {
-        trs[rowIdx].classList.add('eng-row-editing');
-    }
-}
-
-function engCloseAllRowEdit() {
-    const table = document.getElementById('engManualTable');
-    if (!table) return;
-    table.querySelectorAll('tbody tr.eng-row-editing').forEach(tr => tr.classList.remove('eng-row-editing'));
-}
-
-function engRebuildTableFromData(zh, labels, rows, en, pattern) {
-    const output = document.getElementById('engLessonOutput');
-    if (!output) return;
-    const rowCount = Math.max(3, Math.min(20, rows.length));
-    // 临时保存要回填的句型，避免 engGenerateOutput 覆盖
-    engCurrentLesson.pattern = pattern || '';
-    output.innerHTML = engGenerateOutput(zh || '', rowCount);
-    const table = document.getElementById('engManualTable');
-    const trs = table ? table.querySelectorAll('tbody tr') : [];
-    trs.forEach((tr, r) => {
-        const labelInp = tr.querySelector('td.eng-row-label input.eng-label-input');
-        if (labelInp && labels[r] !== undefined) labelInp.value = labels[r];
-        const inputs = tr.querySelectorAll('td.eng-edit-cell input');
-        inputs.forEach((inp, c) => {
-            if (rows[r] && rows[r][c] !== undefined) inp.value = rows[r][c];
-        });
-    });
-    const enSentence = document.getElementById('engUserEnglishSentence');
-    if (enSentence && en) enSentence.textContent = en;
-    const patternEl = document.getElementById('engSentencePattern');
-    if (patternEl && pattern) patternEl.textContent = pattern;
-    engCurrentLesson.fullHtml = output.innerHTML;
-}
-
-function engDeleteRow(rowIdx) {
-    const table = document.getElementById('engManualTable');
-    if (!table) return;
-    const currentRows = table.querySelectorAll('tbody tr').length;
-    if (currentRows <= 3) {
-        engToast('最少保留 3 行');
-        return;
-    }
-    if (rowIdx < 0 || rowIdx >= currentRows) return;
-
-    const old = engSerializeTable();
-    const newRows = old.rows.filter((_, i) => i !== rowIdx);
-    const newLabels = old.labels.filter((_, i) => i !== rowIdx);
-    engRebuildTableFromData(engCurrentLesson.zh || '', newLabels, newRows, old.en);
-}
-
-function engInsertRow(rowIdx, where) {
-    const table = document.getElementById('engManualTable');
-    if (!table) return;
-    const currentRows = table.querySelectorAll('tbody tr').length;
-    if (currentRows >= 20) {
-        engToast('最多 20 行');
-        return;
-    }
-    if (rowIdx < 0 || rowIdx >= currentRows) return;
-    const old = engSerializeTable();
-    const emptyRow = ['', '', ''];
-    const newRows = old.rows.slice();
-    const newLabels = old.labels.slice();
-    const insertIdx = where === 'above' ? rowIdx : rowIdx + 1;
-    newRows.splice(insertIdx, 0, emptyRow);
-    newLabels.splice(insertIdx, 0, `成分${insertIdx + 1}`);
-    engRebuildTableFromData(engCurrentLesson.zh || '', newLabels, newRows, old.en);
-    // 保持新行所在行的编辑菜单展开
-    setTimeout(() => engRowEditToggle(insertIdx), 0);
-}
-
-function engMoveRow(rowIdx, direction) {
-    const table = document.getElementById('engManualTable');
-    if (!table) return;
-    const currentRows = table.querySelectorAll('tbody tr').length;
-    if (rowIdx < 0 || rowIdx >= currentRows) return;
-    const targetIdx = direction === 'up' ? rowIdx - 1 : rowIdx + 1;
-    if (targetIdx < 0 || targetIdx >= currentRows) return;
-    const old = engSerializeTable();
-    const newRows = old.rows.slice();
-    const newLabels = old.labels.slice();
-    [newRows[rowIdx], newRows[targetIdx]] = [newRows[targetIdx], newRows[rowIdx]];
-    [newLabels[rowIdx], newLabels[targetIdx]] = [newLabels[targetIdx], newLabels[rowIdx]];
-    engRebuildTableFromData(engCurrentLesson.zh || '', newLabels, newRows, old.en);
-    setTimeout(() => engRowEditToggle(targetIdx), 0);
-}
-
-function engGetCurrentEnglishSentence() {
-    const el = document.getElementById('engUserEnglishSentence');
-    return el ? el.textContent.trim() : (engCurrentLesson.en || '');
-}
-
-function engAiOpen(url) {
-    const text = engGetCurrentEnglishSentence();
-    if (!text) {
-        engToast('还没有英文句子，先输入中文并生成填表');
-        return;
-    }
-    try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).catch(() => {});
-        }
-    } catch (e) {}
-    const sep = url.indexOf('?') >= 0 ? '&' : '?';
-    window.open(url + sep + 'q=' + encodeURIComponent(text), '_blank', 'noopener,noreferrer');
-}
-
-function engSaveTableToHistory() {
-    if (!engCurrentLesson.zh) {
-        engToast('还没有生成表格，先输入中文并点击「生成填表」');
-        return;
-    }
-    const tableState = engSerializeTable();
-    const en = engGetCurrentEnglishSentence();
-    const zh = engCurrentLesson.zh;
-    const pattern = (tableState && tableState.pattern) || engCurrentLesson.pattern || '';
-    // 历史统一存进 state.data.engHistory（随云端同步，跨设备可见）；不再写 localStorage engPlay_copy
-    if (!state.data.engHistory) state.data.engHistory = { search: [], copy: [], copyCount: 0 };
-    if (!Array.isArray(state.data.engHistory.copy)) state.data.engHistory.copy = [];
-    const record = {
-        time: new Date().toISOString(),
-        zh,
-        en,
-        pattern,
-        detail: '',
-        table: {
-            labels: tableState.labels,
-            rows: tableState.rows,
-            rowCount: tableState.rowCount
-        }
-    };
-    const arr = state.data.engHistory.copy;
-    // 尝试更新最近一条同一句子的记录（5 分钟内）；否则新增
-    let idx = arr.findIndex(item => item.zh === zh);
-    if (idx < 0) idx = arr.findIndex(item => item.time && (new Date().getTime() - new Date(item.time).getTime()) < 5 * 60 * 1000);
-    if (idx >= 0) {
-        arr[idx] = Object.assign({}, arr[idx], record);
-    } else {
-        arr.unshift(record);
-    }
-    state.data.engHistory.copy = arr.slice(0, 50);
-    saveState();
-    engCurrentLesson.fullHtml = document.getElementById('engLessonOutput') ? document.getElementById('engLessonOutput').innerHTML : '';
-    engToast('已保存到抄写历史');
-}
-
-function engCopyCurrent() {
-    if (!engCurrentLesson.zh) {
-        const input = document.getElementById('engTranslateInput');
-        if (input && input.value.trim()) {
-            engRunLesson().then(() => {
-                setTimeout(() => {
-                    if (engCurrentLesson.zh) {
-                        const c = engGetCopyCount() + 1;
-                        engSetCopyCount(c);
-                        engSaveTableToHistory();
-                        const todayStats = engGetTodayStats();
-                        todayStats.copies += 1;
-                        engSaveTodayStats(todayStats);
-                        const monthData = engGetMonthData();
-                        monthData.copies += 1;
-                        engSaveMonthData(monthData);
-                        engUpdateScore(2);
-                        const el = document.getElementById('engCopyCount');
-                        if (el) el.textContent = c;
-                    }
-                }, 900);
-            });
-        }
-        return;
-    }
-    // 先保存当前手工表格，再累计抄写次数
-    engSaveTableToHistory();
-    const c = engGetCopyCount() + 1;
-    engSetCopyCount(c);
-    const todayStats = engGetTodayStats();
-    todayStats.copies += 1;
-    engSaveTodayStats(todayStats);
-    const monthData = engGetMonthData();
-    monthData.copies += 1;
-    engSaveMonthData(monthData);
-    engUpdateScore(2);
-    const el = document.getElementById('engCopyCount');
-    if (el) el.textContent = c;
-}
-
-function engResetCopy() {
-    engSetCopyCount(0);
-    const el = document.getElementById('engCopyCount');
-    if (el) el.textContent = '0';
-    engToast('抄写次数已重置');
-}
-
-// ---------- 兴趣探索 ----------
-function engDoSearch(query) {
-    const input = document.getElementById('engSearchInput');
-    const q = (query || (input ? input.value.trim() : ''));
-    if (!q) return;
-    window.open(`https://cn.bing.com/search?q=${encodeURIComponent(q)}`, '_blank');
-    engAddHistory('search', { time: new Date().toISOString(), query: q });
-    const todayStats = engGetTodayStats();
-    todayStats.searches += 1;
-    engSaveTodayStats(todayStats);
-    const monthData = engGetMonthData();
-    monthData.searches += 1;
-    engSaveMonthData(monthData);
-    engUpdateScore(1);
-}
-
-async function engTranslateAndSearch() {
-    const input = document.getElementById('engSearchInput');
-    if (!input) return;
-    const zh = input.value.trim();
-    if (!zh) return;
-    if (/^[a-zA-Z\s\?\.\,\!]+$/.test(zh)) { engDoSearch(zh); return; }
-    const en = await engTranslateAPI(zh);
-    input.value = en;
-    engDoSearch(en);
-}
-
-// ---------- 成就 ----------
-function engUpdateAchievements() {
-    const historical = engHistoricalMonths();
-    const monthData = engGetMonthData();
-    const achievements = [
-        { id: 'first_search', icon: '🔍', name: '好奇探索者', desc: '完成1次搜索', threshold: 1, current: monthData.searches },
-        { id: 'search_10', icon: '🔍', name: '搜索达人', desc: '完成10次搜索', threshold: 10, current: monthData.searches },
-        { id: 'first_copy', icon: '📝', name: '抄写新手', desc: '抄写1次', threshold: 1, current: monthData.copies },
-        { id: 'copy_10', icon: '📝', name: '抄写高手', desc: '抄写10次', threshold: 10, current: monthData.copies },
-        { id: 'word_100', icon: '✍️', name: '输出新星', desc: '累计输出100字', threshold: 100, current: monthData.words },
-        { id: 'word_1000', icon: '✍️', name: '输出达人', desc: '累计输出1000字', threshold: 1000, current: monthData.words },
-        { id: 'score_50', icon: '⭐', name: '正反馈收集者', desc: '获得50正反馈', threshold: 50, current: monthData.score },
-        { id: 'score_100', icon: '⭐', name: '正反馈大师', desc: '获得100正反馈', threshold: 100, current: monthData.score },
-    ];
-    const monthUnlocked = monthData.unlocked || [];
-    if (!Array.isArray(monthUnlocked)) monthData.unlocked = [];
-    let changed = false;
-    achievements.forEach(a => {
-        const unlocked = a.current >= a.threshold;
-        if (unlocked && !monthData.unlocked.includes(a.id)) {
-            monthData.unlocked.push(a.id);
-            changed = true;
-        }
-    });
-    if (changed) engSaveMonthData(monthData);
-    return achievements.map(a => {
-        const unlocked = a.current >= a.threshold;
-        const stars = (historical[a.id] || []).length;
-        return {
-            ...a,
-            unlocked,
-            stars: stars > 0 ? ` 🌟×${stars}` : ''
-        };
-    });
-}
-
-// ---------- 感悟 ----------
-function engInitThoughts() {
-    let thoughts = [];
-    try { thoughts = JSON.parse(localStorage.getItem('engPlay_thoughts')); } catch (e) { thoughts = null; }
-    if (!thoughts || !Array.isArray(thoughts) || thoughts.length === 0) {
-        const now = new Date().toISOString();
-        thoughts = [
-            { id: Date.now() + 1, content: '把学英语当成一个大型开放世界游戏。积累的只有正反馈。', time: now },
-            { id: Date.now() + 2, content: '要用英语去追我的兴趣那就把"英语"变成"搜索工具"。', time: now },
-            { id: Date.now() + 3, content: '每天问自己："今天有什么英语相关的、让我觉得有趣的事可以做？"', time: now },
-            { id: Date.now() + 4, content: '别再想"跟读"了，中英夹杂都行。你的目标不是"会说英语"，而是让英语成为你大脑的背景音BGM。', time: now },
-            { id: Date.now() + 5, content: '彻底"枪毙"语法书，改用"语法翻译器"——只在"写"的时候查，抄结构，抄完就忘，下次再抄。', time: now },
-            { id: Date.now() + 6, content: '给AI下"封口令"：不许纠错，只许接话。流利度永远比准确度重要。', time: now },
-            { id: Date.now() + 7, content: '你不是"不会说"，你是"不敢错"。让那个纠错的声音闭嘴，你的嘴就张开了。', time: now }
-        ];
-        localStorage.setItem('engPlay_thoughts', JSON.stringify(thoughts));
-    }
-    return thoughts;
-}
-
-function engFormatTime(isoString) {
-    const d = new Date(isoString);
-    return `${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-function engAddThought(content) {
-    const thoughts = engInitThoughts();
-    thoughts.unshift({ id: Date.now(), content: content, time: new Date().toISOString() });
-    localStorage.setItem('engPlay_thoughts', JSON.stringify(thoughts));
-    engUpdateScore(1);
-}
-
-function engDelThought(idx) {
-    const thoughts = engInitThoughts();
-    if (idx >= 0 && idx < thoughts.length) {
-        thoughts.splice(idx, 1);
-        localStorage.setItem('engPlay_thoughts', JSON.stringify(thoughts));
-    }
-}
-
-// ---------- 渲染 ----------
-function engHeaderHTML() {
-    const score = engGetScore();
-    const lv = engGetLevel(score);
-    return `
-    <div class="eng-header">
-        <div class="eng-logo">
-            <div class="eng-logo-title">🎮 英语游乐场</div>
-            <div class="eng-slogan">把学英语当成一个大型开放世界游戏</div>
-        </div>
-        <div class="eng-level-area">
-            <div class="eng-level-badge"><span class="eng-symbols">${engGetLevelSymbols(lv)}</span> Lv.${lv}</div>
-            <div class="eng-score-box">⭐ <span id="engScoreDisplay">${score}</span></div>
-        </div>
-    </div>`;
-}
-
-function renderEnglishPage(tab) {
-    if (tab === 'eng-home') return engRenderHome();
-    if (tab === 'eng-achievement') return engRenderAchievement();
-    if (tab === 'eng-history') return engRenderHistory();
-    if (tab === 'eng-thought') return engRenderThought();
-    if (tab === 'eng-more') return engRenderMore();
-    return engRenderHome();
-}
-
-function engRenderHome() {
-    const copyCount = engGetCopyCount();
-    return `
-    ${engHeaderHTML()}
-    <div class="eng-card">
-        <div class="eng-card-title">📝 抄写工坊</div>
-        <div class="eng-card-desc">只在"写"的时候查语法 —— 抄结构，不背规则</div>
-        <div class="eng-text-muted" style="margin-bottom:8px;">🧪 用法：输入一句中文 → 点「生成填表」→ 自动翻译出英文后，在 8 行表格里按英文语序自行对应填空</div>
-        <div class="eng-row">
-            <input type="text" id="engTranslateInput" placeholder="输入中文句子，如：上个月我和朋友去爬山了" data-action="eng-translate-input">
-            <button class="eng-btn eng-btn-primary" data-action="eng-translate">📖 生成填表</button>
-        </div>
-        <div class="eng-lesson-output" id="engLessonOutput"><div class="eng-empty">💡 输入中文句子，点击「生成填表」开始手动对应语序</div></div>
-        <div class="eng-copy-bar">
-            <div class="eng-copy-stats">✏️ 已抄 <strong id="engCopyCount">${copyCount}</strong> 次</div>
-            <div class="eng-copy-actions">
-                <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-copy">📋 抄写</button>
-                <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-reset-copy">↺ 重置</button>
-            </div>
-        </div>
-        <div class="eng-text-muted">✅ 抄完就忘，下次再抄，大脑会自动形成肌肉记忆</div>
-    </div>
-
-    <div class="eng-card">
-        <div class="eng-card-title">🔍 兴趣探索</div>
-        <div class="eng-card-desc">每天问自己："今天有什么英语相关的、让我觉得有趣的事可以做？"</div>
-        <div class="eng-row">
-            <input type="text" id="engSearchInput" placeholder="用英文搜你好奇的问题…" data-action="eng-search-input">
-            <button class="eng-btn eng-btn-primary" data-action="eng-search">🔎 搜索</button>
-            <button class="eng-btn eng-btn-ghost" data-action="eng-translate-search" title="输入中文，自动翻译成英文后搜索">🌐</button>
-        </div>
-        <div class="eng-pill-group">
-            <span class="eng-pill" data-action="eng-pill" data-q="why do I lose interest quickly">🤔 三分钟热度？</span>
-            <span class="eng-pill" data-action="eng-pill" data-q="how to build a daily habit">🧠 养成习惯</span>
-            <span class="eng-pill" data-action="eng-pill" data-q="what is flow state">✨ 心流是什么</span>
-            <span class="eng-pill" data-action="eng-pill" data-q="why do we procrastinate">⏳ 拖延原因</span>
-        </div>
-        <div class="eng-text-muted">💡 点建议词自动填入，🌐 可把中文翻译成英文后搜索</div>
-    </div>`;
-}
-
-function engRenderAchievement() {
-    const monthData = engGetMonthData();
-    const todayStats = engGetTodayStats();
-    const ach = engUpdateAchievements();
-    const grid = ach.map(a => `
-        <div class="eng-ach-item ${a.unlocked ? '' : 'eng-locked'}">
-            <span class="eng-ach-icon">${a.icon}</span>
-            <div class="eng-ach-info">
-                <div class="eng-ach-name">${a.name} <span class="eng-star-badge">${a.stars}</span></div>
-                <div class="eng-ach-desc">${a.desc}</div>
-            </div>
-        </div>`).join('');
-    const bar = (v, max) => Math.min(v / max * 100, 100).toFixed(1) + '%';
-    return `
-    ${engHeaderHTML()}
-    <div class="eng-card">
-        <div class="eng-card-title">🏆 成就墙</div>
-        <div class="eng-card-desc">解锁成就，积累你的游戏履历</div>
-        <div class="eng-achievement-grid">${grid}</div>
-    </div>
-    <div class="eng-card">
-        <div class="eng-card-title">📊 今日数据</div>
-        <div class="eng-card-desc">你今天在英语游乐场里的活跃记录</div>
-        <div class="eng-stats-grid">
-            <div class="eng-stat-item"><div class="eng-stat-number">${todayStats.searches}</div><div class="eng-stat-label">🔍 搜索</div><div class="eng-mini-bar"><div class="eng-mini-fill" style="width:${bar(todayStats.searches, 10)}"></div></div></div>
-            <div class="eng-stat-item"><div class="eng-stat-number">${todayStats.copies}</div><div class="eng-stat-label">📝 抄写</div><div class="eng-mini-bar"><div class="eng-mini-fill" style="width:${bar(todayStats.copies, 10)}"></div></div></div>
-            <div class="eng-stat-item"><div class="eng-stat-number">${todayStats.words}</div><div class="eng-stat-label">✍️ 输出字数</div><div class="eng-mini-bar"><div class="eng-mini-fill" style="width:${bar(todayStats.words, 100)}"></div></div></div>
-            <div class="eng-stat-item"><div class="eng-stat-number">${todayStats.score}</div><div class="eng-stat-label">⭐ 今日正反馈</div><div class="eng-mini-bar"><div class="eng-mini-fill" style="width:${bar(todayStats.score, 20)}"></div></div></div>
-        </div>
-        <div class="eng-text-muted eng-text-center">每日重置，保持新鲜感</div>
-    </div>`;
-}
-
-function engRenderHistoryListHTML() {
-    const stateTab = (state.currentSubTab && state.currentSubTab.engHistoryTab) || 'search';
-    const filter = (state._engHistoryFilter || '').toLowerCase();
-    const deleteMode = state._engHistoryDeleteMode;
-    const searchHistory = engGetHistory('search');
-    const copyHistory = engGetHistory('copy');
-    let itemsHtml = '';
-    if (stateTab === 'search') {
-        const filtered = searchHistory.filter(item => String(item.query || '').toLowerCase().includes(filter));
-        if (!filtered.length) {
-            itemsHtml = `<div class="eng-history-empty">${filter ? '没有匹配的搜索记录' : '暂无搜索记录'}</div>`;
-        } else {
-            itemsHtml = filtered.map((item) => {
-                const realIndex = searchHistory.indexOf(item);
-                const time = new Date(item.time).toLocaleString('zh-CN');
-                return `<div class="eng-history-item" data-action="eng-history-toggle" data-kind="search" data-index="${realIndex}">
-                    <div class="eng-history-main"><span class="eng-history-time">${time}</span><span class="eng-history-content">🔍 ${escapeHtml(item.query)}</span></div>
-                    <button class="eng-history-item-del" data-action="eng-delete-history-item" data-kind="search" data-index="${realIndex}" title="删除本条">✕</button>
-                    <span class="eng-expand-icon">▾</span>
-                </div>
-                <div class="eng-history-detail" id="eng-search-detail-${realIndex}">
-                    <div class="eng-copy-detail-wrap">
-                        <div class="eng-detail-time">${time}</div>
-                        <div class="eng-detail-query">${escapeHtml(item.query)}</div>
-                    </div>
-                </div>`;
-            }).join('');
-        }
-    } else {
-        const filtered = copyHistory.filter(item => String(item.zh || '').includes(filter) || String(item.en || '').toLowerCase().includes(filter));
-        const renderCopyDetail = (item) => {
-            const fullTime = item.time ? new Date(item.time).toLocaleString('zh-CN') : '';
-            let html = `<div class="eng-copy-detail-wrap">`;
-            if (fullTime) html += `<div class="eng-detail-time">${fullTime}</div>`;
-            if (item.zh) {
-                html += `<div class="eng-detail-zh">${escapeHtml(item.zh)}</div>`;
-            }
-            if (item.en) {
-                html += `<div class="eng-detail-en">${escapeHtml(item.en)}</div>`;
-            } else if (item.zh) {
-                html += `<div class="eng-detail-en"><span class="eng-history-muted">该记录未保存英文翻译</span></div>`;
-            }
-            if (item.pattern) {
-                html += `<div class="eng-detail-section"><div class="eng-detail-section-title">句型分析</div><div class="eng-detail-pattern">${escapeHtml(item.pattern)}</div></div>`;
-            }
-            if (item.table && Array.isArray(item.table.rows) && item.table.rows.length) {
-                html += `<div class="eng-detail-section"><div class="eng-detail-section-title">成分拆解</div><div class="eng-detail-table-wrap"><table class="eng-manual-table"><thead><tr><th class="eng-corner-cell">成分</th><th>英文</th><th>中文</th><th>备注</th></tr></thead><tbody>`;
-                item.table.rows.forEach((row, r) => {
-                    const label = (item.table.labels && item.table.labels[r]) || `成分${r + 1}`;
-                    html += `<tr><td class="eng-row-label">${escapeHtml(label)}</td>`;
-                    (row || []).forEach(cell => {
-                        html += `<td class="eng-edit-cell">${escapeHtml(cell || '')}</td>`;
-                    });
-                    html += `</tr>`;
-                });
-                html += `</tbody></table></div></div>`;
-            } else if (item.detail) {
-                html += `<div class="eng-detail-section"><div class="eng-detail-section-title">原文详情</div>${item.detail}</div>`;
-            } else if (!item.zh && !item.en) {
-                html += `<div class="eng-empty">（该记录未保存详情）</div>`;
-            }
-            html += `</div>`;
-            return html;
-        };
-        if (!filtered.length) {
-            itemsHtml = `<div class="eng-history-empty">${filter ? '没有匹配的抄写记录' : '暂无抄写记录'}</div>`;
-        } else {
-            itemsHtml = filtered.map(item => {
-                const realIndex = copyHistory.indexOf(item);
-                const time = new Date(item.time).toLocaleString('zh-CN');
-                return `<div class="eng-history-item" data-action="eng-history-toggle" data-kind="copy" data-index="${realIndex}">
-                    <div class="eng-history-main"><span class="eng-history-time">${time}</span><span class="eng-history-content">📝 ${escapeHtml(item.zh)} → ${escapeHtml(item.en)}</span></div>
-                    <button class="eng-history-item-del" data-action="eng-delete-history-item" data-kind="copy" data-index="${realIndex}" title="删除本条">✕</button>
-                    <span class="eng-expand-icon">▾</span>
-                </div>
-                <div class="eng-history-detail" id="eng-copy-detail-${realIndex}">${renderCopyDetail(item)}</div>`;
-            }).join('');
-        }
-    }
-    return itemsHtml;
-}
-
-function engRenderHistory() {
-    const stateTab = (state.currentSubTab && state.currentSubTab.engHistoryTab) || 'search';
-    const filter = (state._engHistoryFilter || '').toLowerCase();
-    return `
-    ${engHeaderHTML()}
-    <div class="eng-card">
-        <div class="eng-card-title">📜 历史记录</div>
-        <div class="eng-history-clear-row">
-            <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-clear-history">🗑️ 清空所有</button>
-            <button class="eng-btn eng-btn-outline eng-btn-sm ${state._engHistoryDeleteMode ? 'eng-active' : ''}" data-action="eng-toggle-history-delete-mode">${state._engHistoryDeleteMode ? '✕ 完成' : '✏️ 管理'}</button>
-        </div>
-        <div class="eng-history-tabs">
-            <button class="eng-history-tab ${stateTab === 'search' ? 'eng-active' : ''}" data-action="eng-history-tab" data-tab="search">🔍 搜索历史</button>
-            <button class="eng-history-tab ${stateTab === 'copy' ? 'eng-active' : ''}" data-action="eng-history-tab" data-tab="copy">📝 抄写历史</button>
-        </div>
-        <div class="eng-history-search">
-            <input type="text" id="engHistoryFilter" placeholder="🔎 搜索历史记录…" value="${escapeHtml(filter)}" data-action="eng-history-filter">
-        </div>
-        <div class="eng-history-list ${state._engHistoryDeleteMode ? 'eng-delete-visible' : ''}" id="engHistoryList">${engRenderHistoryListHTML()}</div>
-    </div>`;
-}
-
-function engRenderThought() {
-    const thoughts = engInitThoughts();
-    const count = thoughts.length;
-    const items = thoughts.map((item, index) => {
-        const timeStr = engFormatTime(item.time);
-        const isCore = ['把学英语当成一个大型开放世界游戏', '要用英语去追我的兴趣', '每天问自己', '别再想"跟读"了', '彻底"枪毙"语法书', '给AI下"封口令"', '你不是"不会说"'].some(k => item.content.includes(k));
-        const tag = isCore ? '核心理念' : '感悟';
-        return `<div class="eng-thought-item">
-            <div class="eng-thought-content">${escapeHtml(item.content)}</div>
-            <div class="eng-thought-meta">
-                <span class="eng-thought-time">${timeStr}</span>
-                <span class="eng-thought-tag">${tag}</span>
-                <button class="eng-del-btn" data-action="eng-thought-del" data-index="${index}" title="删除">✕</button>
-            </div>
-        </div>`;
-    }).join('');
-    return `
-    ${engHeaderHTML()}
-    <div class="eng-card">
-        <div class="eng-card-title">💬 英语学习感悟 <span class="eng-thought-count">(${count})</span></div>
-        <div class="eng-card-desc">记录你的学习心得、灵感和成长瞬间</div>
-        <div class="eng-row" style="margin-bottom:10px;">
-            <input type="text" id="engThoughtInput" placeholder="写一句你的感悟…" data-action="eng-thought-input">
-            <button class="eng-btn eng-btn-primary eng-btn-sm" data-action="eng-thought-save">📝 记录</button>
-        </div>
-        <div id="engThoughtList">${items || '<div class="eng-thought-empty">还没有感悟，写一条吧 ✍️</div>'}</div>
-    </div>`;
-}
-
-function engRenderMore() {
-    const { appid, secret, apiKeys } = engGetBaiduCreds();
-    const maskedAppid = appid ? appid : '';
-    const maskedSecret = secret ? '••••••••' : '';
-    const maskedApiKeys = apiKeys ? '••••••••' : '';
-    return `
-    ${engHeaderHTML()}
-    <div class="eng-card">
-        <div class="eng-card-title">📖 游戏规则</div>
-        <div class="eng-rules">
-            <div class="eng-rule-head">🎯 等级系统</div>
-            <div>• 每获得 <strong>10</strong> 正反馈积分升 1 级</div>
-            <div>• 满级 <strong>1999</strong> 级</div>
-            <div>• 符号进阶：4个低级换1个高级</div>
-            <div class="eng-rule-head" style="margin-top:6px;">🏅 等级符号对应：</div>
-            <div class="eng-legend-grid">
-                <div class="eng-legend-item"><span class="eng-sym">⚓</span> Anchor <span class="eng-level">1 级</span></div>
-                <div class="eng-legend-item"><span class="eng-sym">🧭</span> Compass <span class="eng-level">4 级</span></div>
-                <div class="eng-legend-item"><span class="eng-sym">⛵</span> Sail <span class="eng-level">16 级</span></div>
-                <div class="eng-legend-item"><span class="eng-sym">🌊</span> Wave <span class="eng-level">64 级</span></div>
-                <div class="eng-legend-item"><span class="eng-sym">🌍</span> Globe <span class="eng-level">256 级</span></div>
-                <div class="eng-legend-item"><span class="eng-sym">🌌</span> Galaxy <span class="eng-level">500 级</span></div>
-            </div>
-            <div class="eng-special-rule">🌟 达到 500 级获得第一个 🌌，之后每 500 级增加一个 🌌（2000 级时拥有 4 个 🌌）</div>
-        </div>
-    </div>
-
-    <div class="eng-card">
-        <div class="eng-card-title">🔑 翻译 API 设置</div>
-        <div class="eng-card-desc">填入百度翻译开放平台的三个信息，保存后抄写工坊即可使用准确翻译（浏览器自动走 CORS 代理）</div>
-        <div class="eng-row">
-            <input type="text" id="engBaiduAppid" placeholder="① 百度翻译 AppID" value="${escapeHtml(maskedAppid)}" data-action="eng-baidu-appid">
-        </div>
-        <div class="eng-row" style="margin-top:8px;">
-            <input type="text" id="engBaiduKey" placeholder="② 百度翻译 密钥（已保存则显示 ••••）" value="${escapeHtml(maskedSecret)}" data-action="eng-baidu-key">
-        </div>
-        <div class="eng-row" style="margin-top:8px;">
-            <input type="text" id="engApiKeys" placeholder="③ API Keys（如使用聚合翻译服务时填写，可留空）" value="${escapeHtml(maskedApiKeys)}" data-action="eng-api-keys">
-        </div>
-        <div class="eng-row" style="margin-top:8px;">
-            <button class="eng-btn eng-btn-green eng-btn-sm" data-action="eng-baidu-save">💾 保存</button>
-            <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-baidu-test">🧪 测试连接</button>
-            <span class="eng-baidu-status" id="engBaiduStatus"></span>
-        </div>
-        <div class="eng-text-muted">🔗 ① AppID 与 ② 密钥：在 https://fanyi-api.baidu.com 开放平台创建应用获取；③ API Keys 为可选备用（支持 OpenAI 兼容接口，填「密钥」或「openai|密钥|https://接口地址」）</div>
-    </div>
-
-    <div class="eng-card">
-        <div class="eng-card-title">🔧 关于</div>
-        <div class="eng-text-muted">英语游乐场 v2.0 · 标签页版 · 满级1999 · 已集成成长小树</div>
-    </div>`;
-}
-
-function renderHotList(groupId) {
-    const types = HOT_GROUPS[groupId] || HOT_GROUPS['mixed'];
-    const cached = state.data.hotCache;
-    const tabs = types.map(t => `
-        <button class="hot-tab ${state.currentSubTab[`hot_${groupId}`] === t ? 'active' : ''}" data-action="hot-platform" data-group="${groupId}" data-type="${t}">${HOT_TYPES[t] || t}</button>
-    `).join('');
-    const currentType = state.currentSubTab[`hot_${groupId}`] || types[0];
-    const data = cached[currentType];
-    const list = data && data.list ? data.list : [];
-    const updated = data && data.update_time ? new Date(data.update_time).toLocaleString('zh-CN') : (state._loadingHot ? '加载中' : '未获取');
-    const emptyState = state._loadingHot
-        ? '<div class="empty-state"><span class="emoji">🔥</span>正在加载热榜...</div>'
-        : `<div class="empty-state"><span class="emoji">🔥</span>暂无数据，<button class="btn btn-primary btn-sm" data-action="hot-refresh" data-group="${groupId}" style="margin-left:6px">点击刷新</button></div>`;
-    return `
-        <div class="card-header">
-            <div class="card-title">🔥 ${{ mixed: '综合热榜', politics: '时事新闻', international: '国际热点' }[groupId] || '综合热榜'}</div>
-            <button class="btn btn-secondary" data-action="hot-refresh" data-group="${groupId}" style="font-size:12px">刷新</button>
-        </div>
-        <div class="hot-tabs">${tabs}</div>
-        <div class="hot-update">更新于 ${updated}</div>
-        <div class="news-list">
-            ${list.length ? list.slice(0, 20).map((n, i) => `
-                <div class="news-item" data-action="open-link" data-link="${n.url || '#'}" style="cursor:pointer">
-                    <div class="news-num">${n.index || i + 1}</div>
-                    <div>
-                        <div>${escapeHtml(n.title)}</div>
-                        <div class="news-category">${HOT_TYPES[currentType] || currentType} · 热度 ${n.hot_value || '-'}</div>
-                    </div>
-                </div>
-            `).join('') : emptyState}
-        </div>
-    `;
-}
-
-async function loadHotData() {
-    if (state._loadingHot) return;
-    state._loadingHot = true;
-    const groupId = state.currentSubTab.hot || 'mixed';
-    const types = HOT_GROUPS[groupId] || HOT_GROUPS['mixed'];
-    await loadHotJson();
-    await fetchHotForTypes(types);
-    const currentType = state.currentSubTab[`hot_${groupId}`] || types[0];
-    // 如果当前类型还没选，默认
-    if (!state.currentSubTab[`hot_${groupId}`]) state.currentSubTab[`hot_${groupId}`] = currentType;
-    state._loadingHot = false;
-    renderHotDOM();
-}
-
-function renderHotDOM() {
-    const wrap = document.getElementById('hotListWrap');
-    if (!wrap) return;
-    const groupId = state.currentSubTab.hot || 'mixed';
-    wrap.innerHTML = renderHotList(groupId);
-}
-
-async function loadHotJson() {
-    try {
-        const res = await fetch('./hot.json?t=' + Date.now());
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!data || !data.list) return;
-        const fileAge = data.updatedAt ? Date.now() - new Date(data.updatedAt).getTime() : 0;
-        if (fileAge > 2 * 60 * 60 * 1000) return; // hot.json 超过 2 小时忽略
-        data.list.forEach(group => {
-            if (group && group.type && group.list) {
-                state.data.hotCache[group.type] = { ...group, ts: Date.now() };
-            }
-        });
-    } catch (e) {
-        console.log('hot.json 不存在或不可用，使用实时 API');
-    }
-}
-
-async function fetchHotForTypes(types) {
-    const stale = 10; // 缓存 10 分钟，点击刷新可强制更新
-    for (const type of types) {
-        const cached = state.data.hotCache[type];
-        if (cached && cached.ts && (Date.now() - cached.ts < stale * 60 * 1000)) continue;
-        try {
-            if (HOT_INTERNATIONAL_FEEDS[type]) {
-                // 国际热点走 RSS（rss2json 转 JSON，免 key 且带 CORS），与国内源（uapis）隔离
-                const data = await fetchInternationalHot(type);
-                if (data && data.list) {
-                    state.data.hotCache[type] = { ...data, ts: Date.now() };
-                }
-            } else {
-                const res = await fetch(`${API.hot}?type=${type}&limit=20`);
-                const data = await res.json();
-                if (data && data.list) {
-                    state.data.hotCache[type] = { ...data, ts: Date.now() };
-                }
-            }
-        } catch (e) {
-            console.warn('热榜获取失败', type, e);
-        }
-    }
-    saveState();
-}
-
-// 国际热点：拉取 RSS 并规范成与国内热榜一致的结构 { type, update_time, list:[{index,title,url,hot_value}] }
-async function fetchInternationalHot(type) {
-    const feed = HOT_INTERNATIONAL_FEEDS[type];
-    if (!feed) return null;
-    const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.feed)}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (!data || data.status !== 'ok') return null;
-    const list = (data.items || []).slice(0, 20).map((it, i) => ({
-        index: i + 1,
-        title: (it.title || '').replace(/<!\[CDATA\[|\]\]>/g, '').trim(),
-        url: it.link || '#',
-        hot_value: '',
-        source: feed.name
-    }));
-    return { type, update_time: (data.feed && data.feed.modified) || new Date().toISOString(), list };
-}
 
 
 // ==================== 变美情报局模块 ====================
@@ -10801,10 +8596,6 @@ function initEvents() {
         if (menuEl && menuEl.style.display === 'block' && !e.target.closest('.checkin-module-select')) {
             menuEl.style.display = 'none';
         }
-        // 点击抄写工坊行外时，收起所有已展开的铅笔删除态
-        if (!e.target.closest('.eng-row-actions')) {
-            engCloseAllRowEdit();
-        }
         const el = e.target.closest('[data-action]');
         if (!el) return;
         const action = el.dataset.action;
@@ -11029,9 +8820,14 @@ function initEvents() {
             syncModuleInputs();
             const i = +el.dataset.i;
             const all = getAllModules();
-            all[i].hidden = !all[i].hidden;
+            const willHide = !el.checked;
             // 至少保留一个可见板块，避免侧边栏全空
-            if (!all.some(m => !m.hidden)) all[i].hidden = false;
+            if (willHide && !all.some((m, k) => k !== i && !m.hidden)) {
+                toast('至少保留一个显示的板块');
+                buildModuleManager();
+                return;
+            }
+            all[i].hidden = willHide;
             state.data.modulesUpdatedAt = now();
             buildModuleManager();
             renderSidebar();
@@ -11522,191 +9318,6 @@ function initEvents() {
             return;
         }
 
-        // ========== 探索英语（eng-*） ==========
-        if (action === 'eng-translate') {
-            engRunLesson();
-            return;
-        }
-        if (action === 'eng-add-row') {
-            engAddRow();
-            return;
-        }
-        if (action === 'eng-remove-row') {
-            engRemoveRow();
-            return;
-        }
-        if (action === 'eng-row-edit') {
-            const rowIdx = parseInt(el.getAttribute('data-row'), 10);
-            if (!isNaN(rowIdx)) engRowEditToggle(rowIdx);
-            return;
-        }
-        if (action === 'eng-row-delete') {
-            const rowIdx = parseInt(el.getAttribute('data-row'), 10);
-            if (!isNaN(rowIdx)) engDeleteRow(rowIdx);
-            return;
-        }
-        if (action === 'eng-row-add-above') {
-            const rowIdx = parseInt(el.getAttribute('data-row'), 10);
-            if (!isNaN(rowIdx)) engInsertRow(rowIdx, 'above');
-            return;
-        }
-        if (action === 'eng-row-add-below') {
-            const rowIdx = parseInt(el.getAttribute('data-row'), 10);
-            if (!isNaN(rowIdx)) engInsertRow(rowIdx, 'below');
-            return;
-        }
-        if (action === 'eng-row-move-up') {
-            const rowIdx = parseInt(el.getAttribute('data-row'), 10);
-            if (!isNaN(rowIdx)) engMoveRow(rowIdx, 'up');
-            return;
-        }
-        if (action === 'eng-row-move-down') {
-            const rowIdx = parseInt(el.getAttribute('data-row'), 10);
-            if (!isNaN(rowIdx)) engMoveRow(rowIdx, 'down');
-            return;
-        }
-        if (action === 'eng-save-table') {
-            engSaveTableToHistory();
-            return;
-        }
-        if (action === 'eng-ai-doubao') {
-            engAiOpen('https://www.doubao.com/chat/new');
-            return;
-        }
-        if (action === 'eng-ai-qianwen') {
-            engAiOpen('https://tongyi.aliyun.com/qianwen/');
-            return;
-        }
-        if (action === 'eng-ai-deepseek') {
-            engAiOpen('https://chat.deepseek.com/');
-            return;
-        }
-        if (action === 'eng-copy') {
-            engCopyCurrent();
-            return;
-        }
-        if (action === 'eng-reset-copy') {
-            engResetCopy();
-            return;
-        }
-        if (action === 'eng-search') {
-            engDoSearch();
-            return;
-        }
-        if (action === 'eng-translate-search') {
-            engTranslateAndSearch();
-            return;
-        }
-        if (action === 'eng-pill') {
-            const inp = document.getElementById('engSearchInput');
-            if (inp) inp.value = el.dataset.q;
-            engDoSearch(el.dataset.q);
-            return;
-        }
-        if (action === 'eng-thought-save') {
-            const inp = document.getElementById('engThoughtInput');
-            const content = inp ? inp.value.trim() : '';
-            if (content) {
-                engAddThought(content);
-                if (inp) inp.value = '';
-                render();
-            }
-            return;
-        }
-        if (action === 'eng-thought-del') {
-            engDelThought(parseInt(el.dataset.index));
-            render();
-            return;
-        }
-        if (action === 'eng-history-tab') {
-            state.currentSubTab.engHistoryTab = el.dataset.tab;
-            render();
-            return;
-        }
-        if (action === 'eng-history-toggle') {
-            const detail = document.getElementById(`eng-${el.dataset.kind}-detail-${el.dataset.index}`);
-            const icon = el.querySelector('.eng-expand-icon');
-            if (detail) detail.classList.toggle('eng-open');
-            if (icon) icon.classList.toggle('eng-open');
-            el.classList.toggle('eng-open');
-            return;
-        }
-        if (action === 'eng-clear-history') {
-            if (typeof uiConfirm === 'function') {
-                uiConfirm('确定要清空英语游乐场所有历史记录吗？', { isDanger: true }).then(ok => {
-                    if (ok) engClearAllHistory();
-                });
-            } else {
-                if (confirm('确定要清空英语游乐场所有历史记录吗？')) engClearAllHistory();
-            }
-            return;
-        }
-        if (action === 'eng-toggle-history-delete-mode') {
-            state._engHistoryDeleteMode = !state._engHistoryDeleteMode;
-            render();
-            return;
-        }
-        if (action === 'eng-delete-history-item') {
-            e.stopPropagation();
-            const kind = el.getAttribute('data-kind');
-            const index = parseInt(el.getAttribute('data-index'), 10);
-            if (kind && !isNaN(index)) {
-                engDeleteHistoryItem(kind, index);
-            }
-            return;
-        }
-        if (action === 'eng-baidu-save') {
-            const appid = (document.getElementById('engBaiduAppid') || {}).value || '';
-            const key = (document.getElementById('engBaiduKey') || {}).value || '';
-            const apiKeys = (document.getElementById('engApiKeys') || {}).value || '';
-            localStorage.setItem('engPlay_baiduAppid', appid.trim());
-            localStorage.setItem('engPlay_baiduKey', key.trim());
-            localStorage.setItem('engPlay_apiKeys', apiKeys.trim());
-            const st = document.getElementById('engBaiduStatus');
-            if (st) st.textContent = '已保存 ✅';
-            engToast('翻译 API 已保存');
-            return;
-        }
-        if (action === 'eng-baidu-test') {
-            const st = document.getElementById('engBaiduStatus');
-            const { appid, secret } = engGetBaiduCreds();
-            if (!appid || !secret) {
-                if (st) st.textContent = '请先填写 ①AppID 与 ②密钥 并保存';
-                return;
-            }
-            if (st) st.textContent = '⏳ 测试中（最长 15s）…';
-            // 只测百度第一层，不再走完整链路，绝不假死
-            let finished = false;
-            const finish = (msg) => {
-                if (finished) return;
-                finished = true;
-                if (st) st.textContent = msg;
-            };
-            const overallTimer = setTimeout(() => finish('⏱ 超时：网络受限或代理不可用，建议先确认浏览器联网正常'), 15000);
-            (async () => {
-                try {
-                    const result = await Promise.race([
-                        engFetchBaidu(appid, secret, '你好'),
-                        new Promise(resolve => setTimeout(() => resolve(null), 14000))
-                    ]);
-                    clearTimeout(overallTimer);
-                    if (!result) {
-                        finish('❌ 全部 CORS 代理失败：网络受限，浏览器无法直连百度翻译 API');
-                    } else if (String(result).startsWith('[百度错误')) {
-                        finish(`❌ ${result}`);
-                    } else if (result && result !== '你好') {
-                        finish(`✅ 成功：${result}`);
-                    } else {
-                        finish('❌ 密钥可能不正确（未返回翻译）');
-                    }
-                } catch (err) {
-                    clearTimeout(overallTimer);
-                    finish(`❌ 测试异常：${err && err.message ? err.message : '未知'}`);
-                }
-            })();
-            return;
-        }
-
         if (action === 'hot-platform') {
             state.currentSubTab[`hot_${el.dataset.group}`] = el.dataset.type;
             render();
@@ -11993,12 +9604,6 @@ function initEvents() {
             // 实时输入不做跳转；真正跳转在回车 / 点击「搜索」按钮时处理
             return;
         }
-        if (action === 'eng-history-filter') {
-            state._engHistoryFilter = el.value;
-            const list = document.getElementById('engHistoryList');
-            if (list) list.innerHTML = engRenderHistoryListHTML();
-            return;
-        }
     });
 
     document.getElementById('content').addEventListener('change', e => {
@@ -12055,9 +9660,6 @@ function initEvents() {
         else if (el.id === 'checkInName') { e.preventDefault(); document.querySelector('[data-action="add-checkin"]')?.click(); }
         else if (el.classList && el.classList.contains('checkInNameInput')) { e.preventDefault(); el.closest('.category-add-card')?.querySelector('[data-action="add-checkin-from-category"]')?.click(); }
         else if (el.id === 'readingSearchInput') { e.preventDefault(); openDoubanBookSearch(el.value); }
-        else if (el.id === 'engTranslateInput') { e.preventDefault(); engRunLesson(); }
-        else if (el.id === 'engSearchInput') { e.preventDefault(); engDoSearch(); }
-        else if (el.id === 'engThoughtInput') { e.preventDefault(); const btn = document.querySelector('[data-action="eng-thought-save"]'); if (btn) btn.click(); }
     });
 }
 
@@ -12090,16 +9692,67 @@ function buildModuleManager() {
     if (!wrap) return;
     const all = getAllModules();
     wrap.innerHTML = all.map((m, i) => `
-        <div class="module-row" data-idx="${i}">
+        <div class="module-row" draggable="true" data-idx="${i}">
             <div class="module-row-ctrl">
                 <button class="mod-btn" data-action="module-up" data-i="${i}" ${i === 0 ? 'disabled' : ''} title="上移">▲</button>
                 <button class="mod-btn" data-action="module-down" data-i="${i}" ${i === all.length - 1 ? 'disabled' : ''} title="下移">▼</button>
             </div>
+            <span class="mod-drag" title="按住拖动排序">≡</span>
             <input class="mod-icon input-mini" data-field="icon" data-i="${i}" value="${escapeHtml(m.icon || '')}" maxlength="4" title="图标 emoji">
             <input class="mod-name input flex1" data-field="name" data-i="${i}" value="${escapeHtml(m.name)}" placeholder="板块名称">
-            <button class="mod-toggle ${m.hidden ? 'off' : 'on'}" data-action="module-toggle" data-i="${i}">${m.hidden ? '🙈 已隐藏' : '👁 显示中'}</button>
+            <label class="mod-vis ${m.hidden ? 'off' : 'on'}" title="取消勾选可隐藏该板块（仍可在本设置页进入）">
+                <input type="checkbox" data-action="module-toggle" data-i="${i}" ${m.hidden ? '' : 'checked'}>
+                <span>${m.hidden ? '已隐藏' : '显示中'}</span>
+            </label>
         </div>
     `).join('');
+    initModuleManagerDnD();
+}
+
+// 导航排序：HTML5 拖拽（按住 ≡ 或整行拖动），松手落在谁身上就插到谁前面
+function initModuleManagerDnD() {
+    const wrap = document.getElementById('moduleManager');
+    if (!wrap || wrap.dataset.dnd) return;
+    wrap.dataset.dnd = '1';
+    let dragIdx = null;
+    wrap.addEventListener('dragstart', e => {
+        const row = e.target.closest('.module-row');
+        if (!row) return;
+        dragIdx = +row.dataset.idx;
+        row.classList.add('dragging');
+        if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', String(dragIdx)); } catch (err) { /* ignore */ }
+        }
+    });
+    wrap.addEventListener('dragend', () => {
+        wrap.querySelectorAll('.module-row').forEach(r => r.classList.remove('dragging', 'drag-over'));
+        dragIdx = null;
+    });
+    wrap.addEventListener('dragover', e => {
+        e.preventDefault();
+        const row = e.target.closest('.module-row');
+        wrap.querySelectorAll('.module-row').forEach(r => r.classList.remove('drag-over'));
+        if (row && +row.dataset.idx !== dragIdx) row.classList.add('drag-over');
+    });
+    wrap.addEventListener('drop', e => {
+        e.preventDefault();
+        const row = e.target.closest('.module-row');
+        if (!row || dragIdx === null) return;
+        const to = +row.dataset.idx;
+        if (isNaN(to) || to === dragIdx) return;
+        syncModuleInputs();
+        const all = getAllModules();
+        if (dragIdx < 0 || dragIdx >= all.length || to < 0 || to >= all.length) return;
+        const moved = all.splice(dragIdx, 1)[0];
+        all.splice(to, 0, moved);
+        state.data.modulesUpdatedAt = now();
+        buildModuleManager();
+        renderSidebar();
+        saveState();
+        if (state.supabase) syncToCloud();
+        toast('导航顺序已调整，排第一的板块 = 打开工作台时的首页');
+    });
 }
 
 function updateStorageMeter() {
@@ -12403,42 +10056,82 @@ function toggleTheme() {
     toast(state.data.settings.theme === 'dark' ? '已切换到夜间模式 🌙' : '已切换到日间模式 ☀️');
 }
 
-// ==================== 英语打卡（三级目录 + 艾宾浩斯复习曲线） ====================
+
+// ==================== 英语打卡（三级目录 + FSRS 背诵复习 + 积分成就） ====================
 // 数据结构（state.data.engcheck，随云端同步，跨设备一致）：
-//   books:   一级目录（书）      [{id, name, order, createdAt}]
-//   lessons: 二级目录（课）      [{id, bookId, name, order, createdAt}]
-//   tasks:   三级任务记录        key = `${lessonId}|${taskId}`
-//             value = { startedAt: epochMs, reviews: [epochMs,...] }
-//             reviews 长度 = 已完成的复习节点数（0~8）
-// 艾宾浩斯 8 复习节点（首次打卡后起算）：
-//   5分钟 → 30分钟 → 12小时 → 1天 → 2天 → 4天 → 7天 → 15天
-//   全部完成即「已掌握」。
+//   books:   一级目录（书）   [{id, name, order, createdAt}]
+//   lessons: 二级目录（课）   [{id, bookId, name, order, createdAt}]
+//   tasks:   三级任务记录     key = `${lessonId}|${taskId}` → { at: epochMs }
+//             泛听/精听/跟读/说译/练题：完成即可，不设复习曲线
+//   fsrs:    背书复习记录     key = lessonId → { s, d, n, lapses, last, due, grade }
+//             FSRS 简化版（整篇课文背书）：每次复习对整篇四选一自评
+//             （Again/Hard/Good/Easy）→ 更新难度 D、稳定性 S → 推算下次复习时间。
+//             目标留存 0.9，初始 S=1 天 / D=5，最大间隔 120 天。
+//   score / achievements / days / streak / bestStreak / lastStudyDate：
+//             积分 · 成就 · 每日学习 · 连续学习（继承自原探索英语的积分成就体系）
 
 const EC_TASK_GROUPS = [
-    { id: 'input', name: '输入板块', icon: '📥', sub: '听 · 读' },
-    { id: 'output', name: '输出板块', icon: '📤', sub: '说 · 写' }
+    { id: 'input', name: '输入板块', icon: '📥', sub: '听 · 读', cls: 'ec-group-input' },
+    { id: 'output', name: '输出板块', icon: '📤', sub: '说 · 写', cls: 'ec-group-output' }
 ];
 
 const EC_TASKS = [
-    { id: 'listen-broad', group: 'input', icon: '🎧', name: '泛听', desc: '听音 Familiar —— 不停顿，抓大意' },
-    { id: 'listen-close', group: 'input', icon: '🎯', name: '精听', desc: '听音 Detail —— 逐句听写，弄懂每句话' },
-    { id: 'read-aloud', group: 'input', icon: '📖', name: '跟读', desc: '听读 Repeat —— 模仿语音语调大声跟读' },
-    { id: 'speak-trans', group: 'output', icon: '🗣️', name: '说译', desc: '说 Output —— 看图说英文 / 看中文说英文' },
-    { id: 'write-drill', group: 'output', icon: '✍️', name: '练题', desc: '写 Output —— 课后习题 / 考试卷子 / 小作文' }
+    { id: 'listen-broad', group: 'input', icon: '🎧', name: '泛听', desc: '听音 Familiar —— 不停顿，抓大意', points: 2 },
+    { id: 'listen-close', group: 'input', icon: '🎯', name: '精听', desc: '听音 Detail —— 逐句听写，弄懂每句话', points: 2 },
+    { id: 'read-aloud', group: 'input', icon: '📖', name: '跟读', desc: '听读 Repeat —— 模仿语音语调大声跟读', points: 2 },
+    { id: 'speak-trans', group: 'output', icon: '🗣️', name: '说译', desc: '说 Output —— 看图说英文 / 看中文说英文', points: 2 },
+    { id: 'write-drill', group: 'output', icon: '✍️', name: '练题', desc: '写 Output —— 课后习题 / 考试卷子 / 小作文', points: 2 }
 ];
 
-// 艾宾浩斯复习节点（单位：分钟）：5分钟、30分钟、12小时、1天、2天、4天、7天、15天
-const EC_NODES_MIN = [5, 30, 720, 1440, 2880, 5760, 10080, 21600];
-const EC_NODE_LABELS = ['5分钟', '30分钟', '12小时', '1天', '2天', '4天', '7天', '15天'];
+// 背书四档自评（看整篇背诵的流畅度，不是单个词）
+const EC_GRADES = [
+    { id: 1, name: 'Again', label: '忘了', desc: '大面积卡壳，要看书提示才能继续', tip: '当天额外多读跟读 2~3 遍再进入周期', cls: 'g-again' },
+    { id: 2, name: 'Hard', label: '艰难', desc: '大体能背完，但多处停顿、明显口误', tip: '间隔只拉长一点点，很快再来', cls: 'g-hard' },
+    { id: 3, name: 'Good', label: '合格', desc: '独立完整背完，少量短暂停顿（首选）', tip: '稳定性稳步上涨，最理想的反馈', cls: 'g-good' },
+    { id: 4, name: 'Easy', label: '熟练', desc: '流畅脱稿，任意抽查都没问题', tip: '上涨较多，但有 120 天上限', cls: 'g-easy' }
+];
 
+// FSRS 参数：目标留存 0.9 / 初始 S=1 天 D=5 / 最大间隔 120 天 / S≥60 天视为已掌握
+const EC_FSRS = { target: 0.9, s0: 1.0, d0: 5.0, maxInterval: 120, masteredS: 60 };
+
+// 成就定义
+const EC_ACHIEVEMENTS = [
+    { id: 'first-book', icon: '📚', name: '书单启程', desc: '添加第一本书' },
+    { id: 'first-task', icon: '🌱', name: '第一步', desc: '完成第一个学习任务' },
+    { id: 'first-recite', icon: '🎙️', name: '首背成功', desc: '完成第一次背书入库' },
+    { id: 'streak7', icon: '🔥', name: '七日不断', desc: '连续 7 天学习英语' },
+    { id: 'points100', icon: '💯', name: '百分学员', desc: '累计获得 100 积分' },
+    { id: 'lesson-all', icon: '✍️', name: '一课全攻', desc: '完成一节课的全部任务' },
+    { id: 'recite-master', icon: '🏆', name: '背诵大师', desc: '3 节课背诵达到已掌握' },
+    { id: 'points500', icon: '👑', name: '五百达人', desc: '累计获得 500 积分' }
+];
+
+// ---------- 数据 ----------
 function ecData() {
-    if (!state.data.engcheck || typeof state.data.engcheck !== 'object') state.data.engcheck = { books: [], lessons: [], tasks: {} };
-    if (!Array.isArray(state.data.engcheck.books)) state.data.engcheck.books = [];
-    if (!Array.isArray(state.data.engcheck.lessons)) state.data.engcheck.lessons = [];
-    if (!state.data.engcheck.tasks || typeof state.data.engcheck.tasks !== 'object') state.data.engcheck.tasks = {};
-    return state.data.engcheck;
+    let d = state.data.engcheck;
+    if (!d || typeof d !== 'object') { d = {}; state.data.engcheck = d; }
+    if (!Array.isArray(d.books)) d.books = [];
+    if (!Array.isArray(d.lessons)) d.lessons = [];
+    if (!d.tasks || typeof d.tasks !== 'object') d.tasks = {};
+    if (!d.fsrs || typeof d.fsrs !== 'object') d.fsrs = {};
+    if (!d.achievements || typeof d.achievements !== 'object') d.achievements = {};
+    if (!d.days || typeof d.days !== 'object') d.days = {};
+    // 旧版 tasks 记录 {startedAt, reviews} → 新版 { at }
+    Object.keys(d.tasks).forEach(k => {
+        const rec = d.tasks[k];
+        if (rec && rec.startedAt && !rec.at) d.tasks[k] = { at: rec.startedAt };
+    });
+    if (typeof d.score !== 'number') {
+        // 继承原探索英语的历史积分（保留之前的学习积累）
+        let legacy = 0;
+        try { legacy = parseInt(localStorage.getItem('engPlay_score')) || 0; } catch (e) { /* ignore */ }
+        d.score = legacy;
+    }
+    if (typeof d.streak !== 'number') d.streak = 0;
+    if (typeof d.bestStreak !== 'number') d.bestStreak = 0;
+    if (typeof d.lastStudyDate !== 'string') d.lastStudyDate = '';
+    return d;
 }
-
 function ecBookById(id) { return ecData().books.find(b => b.id === id) || null; }
 function ecLessonById(id) { return ecData().lessons.find(l => l.id === id) || null; }
 function ecLessonsOf(bookId) {
@@ -12447,22 +10140,130 @@ function ecLessonsOf(bookId) {
 function ecTaskKey(lessonId, taskId) { return lessonId + '|' + taskId; }
 function ecGetTask(lessonId, taskId) { return ecData().tasks[ecTaskKey(lessonId, taskId)] || null; }
 
-// ---------- 艾宾浩斯调度逻辑（纯函数，可单测） ----------
-function ecStatus(rec) {
-    if (!rec || !rec.startedAt) return 'new';
-    if ((rec.reviews || []).length >= EC_NODES_MIN.length) return 'mastered';
-    return 'doing';
+// ---------- 等级 / 积分 / 连续学习 ----------
+function ecGetLevel(score) { return Math.min(Math.floor((score || 0) / 10) + 1, 1999); }
+function ecLevelSymbols(level) {
+    if (level <= 0) return '⚓';
+    let galaxyCount = 0;
+    let remaining = level;
+    if (level >= 500) {
+        galaxyCount = Math.floor((level - 500) / 500) + 1;
+        remaining = level - galaxyCount * 500;
+        if (remaining < 0) { remaining = level; galaxyCount = 0; }
+    }
+    const symbols = [];
+    for (let i = 0; i < galaxyCount; i++) symbols.push('🌌');
+    const tiers = [
+        { symbol: '🌍', value: 256 }, { symbol: '🌊', value: 64 }, { symbol: '⛵', value: 16 },
+        { symbol: '🧭', value: 4 }, { symbol: '⚓', value: 1 }
+    ];
+    for (const tier of tiers) {
+        const count = Math.floor(remaining / tier.value);
+        remaining = remaining % tier.value;
+        for (let i = 0; i < count; i++) symbols.push(tier.symbol);
+    }
+    if (symbols.length === 0) symbols.push('⚓');
+    return symbols.join(' ');
 }
-function ecDueAt(rec) {
-    if (!rec || !rec.startedAt) return null;
-    const n = (rec.reviews || []).length;
-    if (n >= EC_NODES_MIN.length) return null;
-    return rec.startedAt + EC_NODES_MIN[n] * 60000;
+function ecAddScore(n) {
+    const d = ecData();
+    d.score = Math.max(0, (d.score || 0) + n);
 }
-function ecIsDue(rec, ts) {
-    const due = ecDueAt(rec);
-    return !!due && (ts || Date.now()) >= due;
+function ecLogStudy() {
+    const d = ecData();
+    const day = today();
+    d.days[day] = (d.days[day] || 0) + 1;
+    if (d.lastStudyDate !== day) {
+        const y = new Date(); y.setDate(y.getDate() - 1);
+        d.streak = (d.lastStudyDate === dateStr(y)) ? (d.streak || 0) + 1 : 1;
+        if (d.streak > (d.bestStreak || 0)) d.bestStreak = d.streak;
+        d.lastStudyDate = day;
+    }
 }
+function ecUnlock(id) {
+    const d = ecData();
+    if (d.achievements[id]) return false;
+    d.achievements[id] = now();
+    return true;
+}
+function ecLessonsFullyDone() {
+    const d = ecData();
+    return d.lessons.filter(l => EC_TASKS.every(t => d.tasks[ecTaskKey(l.id, t.id)])).length;
+}
+function ecReciteMasteredCount() {
+    const d = ecData();
+    return Object.keys(d.fsrs).filter(k => d.fsrs[k] && d.fsrs[k].s >= EC_FSRS.masteredS).length;
+}
+function ecCheckAchievements() {
+    const d = ecData();
+    const newly = [];
+    const tryUnlock = (id, cond) => { if (cond && ecUnlock(id)) newly.push(id); };
+    tryUnlock('first-book', d.books.length > 0);
+    tryUnlock('first-task', Object.keys(d.tasks).length > 0);
+    tryUnlock('first-recite', Object.keys(d.fsrs).length > 0);
+    tryUnlock('streak7', (d.streak || 0) >= 7);
+    tryUnlock('points100', (d.score || 0) >= 100);
+    tryUnlock('points500', (d.score || 0) >= 500);
+    tryUnlock('lesson-all', ecLessonsFullyDone() >= 1);
+    tryUnlock('recite-master', ecReciteMasteredCount() >= 3);
+    if (newly.length) {
+        const names = newly.map(id => (EC_ACHIEVEMENTS.find(a => a.id === id) || {}).name).filter(Boolean);
+        toast('🏆 解锁成就：' + names.join('、'));
+    }
+}
+// 完成一次学习动作后的统一收尾：积分/连续/成就/保存/同步/重绘
+function ecAfterAction(msg) {
+    ecCheckAchievements();
+    saveState(); queueSync(); render();
+    if (msg) toast(msg);
+}
+
+// ---------- FSRS 简化版（整篇课文背书） ----------
+// 可提取性 R = (1 + t/9S)^-1（t=S 天时 R=0.9，正好是目标留存）
+function ecRetrievability(s, elapsedDays) {
+    return 1 / (1 + Math.max(0, elapsedDays) / (9 * Math.max(0.3, s)));
+}
+function ecFsrsLearn(nowTs) {
+    return { s: EC_FSRS.s0, d: EC_FSRS.d0, n: 0, lapses: 0, last: nowTs, due: nowTs + EC_FSRS.s0 * 86400000, grade: 0 };
+}
+// 复习打分：grade 1=Again 2=Hard 3=Good 4=Easy
+function ecFsrsReview(rec, grade, nowTs) {
+    const s = Math.max(0.3, rec.s || EC_FSRS.s0);
+    const d = Math.min(10, Math.max(1, rec.d || EC_FSRS.d0));
+    const elapsedDays = rec.last ? Math.max(0, (nowTs - rec.last) / 86400000) : 0;
+    const R = ecRetrievability(s, elapsedDays);
+    let s2, d2;
+    if (grade === 1) {
+        // Again：稳定性大幅回落，难度上升，很短间隔再来
+        s2 = Math.max(0.3, s * 0.5);
+        d2 = Math.min(10, d + 0.7);
+        rec.lapses++;
+    } else {
+        // 准时复习 R≈0.9 → 全额增长；拖得越久 R 越低 → 增长越少（迟到宽容）
+        const rFactor = Math.max(0, (R - 0.35) / 0.55);
+        if (grade === 2) { s2 = s * (1 + 0.4 * rFactor); d2 = Math.min(10, d + 0.15); }
+        else if (grade === 3) { s2 = s * (1 + 1.0 * rFactor); d2 = d; }
+        else { s2 = s * (1 + 1.8 * rFactor); d2 = Math.max(1, d - 0.2); }
+        // 难度调制：难的课增长慢（D=5 ×1.0，D=8 ×0.85，D=2 ×1.15）
+        s2 *= (1.25 - 0.05 * d);
+    }
+    rec.s = Math.min(EC_FSRS.maxInterval, Math.max(0.3, s2));
+    rec.d = Math.min(10, Math.max(1, d2));
+    rec.n++;
+    rec.last = nowTs;
+    rec.grade = grade;
+    rec.due = nowTs + rec.s * 86400000;
+    return rec;
+}
+// 背诵状态：new / due / waiting / mastered
+function ecReciteStatus(rec, nowTs) {
+    if (!rec || !rec.last) return 'new';
+    if ((rec.s || 0) >= EC_FSRS.masteredS) return 'mastered';
+    if (nowTs >= (rec.due || 0)) return 'due';
+    return 'waiting';
+}
+
+// ---------- 展示工具 ----------
 function ecFmtDT(ts) {
     const d = new Date(ts);
     const p = n => String(n).padStart(2, '0');
@@ -12472,77 +10273,63 @@ function ecRelText(ts) {
     const diff = ts - Date.now();
     const abs = Math.abs(diff);
     let s;
-    if (abs < 60000) s = '1分钟';
-    else if (abs < 3600000) s = Math.floor(abs / 60000) + '分钟';
+    if (abs < 3600000) s = Math.max(1, Math.floor(abs / 60000)) + '分钟';
     else if (abs < 86400000) s = Math.floor(abs / 3600000) + '小时';
     else s = Math.floor(abs / 86400000) + '天';
     return diff < 0 ? ('已逾期' + s) : (s + '后');
 }
-function ecDots(rec) {
-    const done = rec ? (rec.reviews || []).length : 0;
-    let html = '<span class="ec-dots">';
-    for (let i = 0; i < EC_NODES_MIN.length; i++) {
-        html += `<span class="ec-dot${i < done ? ' on' : ''}"></span>`;
-    }
-    return html + `</span><span class="ec-dots-num">${done}/8</span>`;
+function ecSDays(s) {
+    if (s >= 30) return (s / 30).toFixed(1).replace(/\.0$/, '') + ' 个月';
+    return (Math.round(s * 10) / 10) + ' 天';
 }
-function ecStatusBadge(rec) {
-    const st = ecStatus(rec);
-    if (st === 'new') return '<span class="ec-badge ec-badge-new">未开始</span>';
-    if (st === 'mastered') return '<span class="ec-badge ec-badge-ok">已掌握 ✅</span>';
-    if (ecIsDue(rec)) {
-        const due = ecDueAt(rec);
-        const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
-        if (due < dayStart.getTime()) return '<span class="ec-badge ec-badge-late">待复习 · 逾期</span>';
-        return '<span class="ec-badge ec-badge-due">待复习</span>';
-    }
-    return '<span class="ec-badge ec-badge-doing">学习中</span>';
+function ecLessonProgress(lessonId) {
+    const d = ecData();
+    const done = EC_TASKS.filter(t => d.tasks[ecTaskKey(lessonId, t.id)]).length;
+    return { done, total: EC_TASKS.length };
 }
 
 // ---------- 统计 ----------
-function ecBookStats(bookId) {
-    const d = ecData();
-    const lessons = ecLessonsOf(bookId);
-    let total = lessons.length * EC_TASKS.length, started = 0, mastered = 0;
-    lessons.forEach(l => EC_TASKS.forEach(t => {
-        const rec = d.tasks[ecTaskKey(l.id, t.id)];
-        if (rec && rec.startedAt) {
-            started++;
-            if ((rec.reviews || []).length >= EC_NODES_MIN.length) mastered++;
-        }
-    }));
-    return { lessons: lessons.length, total, started, mastered };
-}
 function ecGlobalStats() {
     const d = ecData();
-    let due = 0, overdue = 0, todayDone = 0, mastered = 0;
+    const nowTs = Date.now();
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     const dayStartMs = dayStart.getTime();
+    let due = 0, overdue = 0, todayDone = 0, mastered = 0;
+    Object.keys(d.fsrs).forEach(k => {
+        const rec = d.fsrs[k];
+        if (!rec || !rec.last) return;
+        if ((rec.s || 0) >= EC_FSRS.masteredS) { mastered++; return; }
+        if (nowTs >= (rec.due || 0)) { due++; if ((rec.due || 0) < dayStartMs) overdue++; }
+    });
     Object.keys(d.tasks).forEach(k => {
         const rec = d.tasks[k];
-        if (!rec || !rec.startedAt) return;
-        const n = (rec.reviews || []).length;
-        (rec.reviews || []).forEach(t => { if (t >= dayStartMs) todayDone++; });
-        if (n >= EC_NODES_MIN.length) { mastered++; return; }
-        const dueAt = ecDueAt(rec);
-        if (dueAt && Date.now() >= dueAt) { due++; if (dueAt < dayStartMs) overdue++; }
+        if (rec && rec.at && rec.at >= dayStartMs) todayDone++;
     });
     return { due, overdue, todayDone, mastered };
 }
-function ecDueTasks() {
+function ecDueRecites() {
     const d = ecData();
+    const nowTs = Date.now();
     const list = [];
     d.books.forEach(b => ecLessonsOf(b.id).forEach(l => {
-        EC_TASKS.forEach(t => {
-            const rec = d.tasks[ecTaskKey(l.id, t.id)];
-            if (!rec || !rec.startedAt) return;
-            if ((rec.reviews || []).length >= EC_NODES_MIN.length) return;
-            const dueAt = ecDueAt(rec);
-            if (dueAt && Date.now() >= dueAt) list.push({ book: b, lesson: l, task: t, rec, dueAt });
-        });
+        const rec = d.fsrs[l.id];
+        if (!rec || !rec.last) return;
+        if ((rec.s || 0) >= EC_FSRS.masteredS) return;
+        if (nowTs >= (rec.due || 0)) list.push({ book: b, lesson: l, rec });
     }));
-    list.sort((a, b) => a.dueAt - b.dueAt);
+    list.sort((a, b) => (a.rec.due || 0) - (b.rec.due || 0));
     return list;
+}
+function ecBookStats(bookId) {
+    const lessons = ecLessonsOf(bookId);
+    const d = ecData();
+    let tasksDone = 0, taskTotal = lessons.length * EC_TASKS.length, recited = 0, mastered = 0;
+    lessons.forEach(l => {
+        EC_TASKS.forEach(t => { if (d.tasks[ecTaskKey(l.id, t.id)]) tasksDone++; });
+        const rec = d.fsrs[l.id];
+        if (rec && rec.last) { recited++; if ((rec.s || 0) >= EC_FSRS.masteredS) mastered++; }
+    });
+    return { lessons: lessons.length, tasksDone, taskTotal, recited, mastered };
 }
 
 // ---------- 操作 ----------
@@ -12556,8 +10343,7 @@ async function ecAddBook() {
     const d = ecData();
     if (d.books.some(b => b.name === name)) { toast('这本书已在书单里'); return; }
     d.books.push({ id: uuid(), name, order: ecNextOrder(d.books), createdAt: now() });
-    saveState(); queueSync(); render();
-    toast('📚 已添加《' + name + '》，去添加课程吧');
+    ecAfterAction('📚 已添加《' + name + '》，去添加课程吧');
 }
 async function ecRenameBook(id) {
     const book = ecBookById(id);
@@ -12567,8 +10353,7 @@ async function ecRenameBook(id) {
     const v = String(name).trim();
     if (!v) { toast('名称不能为空'); return; }
     book.name = v;
-    saveState(); queueSync(); render();
-    toast('已重命名');
+    ecAfterAction('已重命名');
 }
 async function ecDeleteBook(id) {
     const book = ecBookById(id);
@@ -12579,11 +10364,13 @@ async function ecDeleteBook(id) {
     const d = ecData();
     const lessonIds = d.lessons.filter(l => l.bookId === id).map(l => l.id);
     d.lessons = d.lessons.filter(l => l.bookId !== id);
-    Object.keys(d.tasks).forEach(k => { if (lessonIds.some(lid => k.startsWith(lid + '|'))) delete d.tasks[k]; });
+    lessonIds.forEach(lid => {
+        Object.keys(d.tasks).forEach(k => { if (k.startsWith(lid + '|')) delete d.tasks[k]; });
+        delete d.fsrs[lid];
+    });
     d.books = d.books.filter(b => b.id !== id);
-    if (state._ecBookId === id) state._ecBookId = null;
-    saveState(); queueSync(); render();
-    toast('🗑️ 已删除《' + book.name + '》');
+    if (state._ecBookId === id) { state._ecBookId = null; state._ecLessonId = null; }
+    ecAfterAction('🗑️ 已删除《' + book.name + '》');
 }
 async function ecAddLesson() {
     const bookId = state._ecBookId;
@@ -12594,8 +10381,7 @@ async function ecAddLesson() {
     const d = ecData();
     if (d.lessons.some(l => l.bookId === bookId && l.name === name)) { toast('该课程已存在'); return; }
     d.lessons.push({ id: uuid(), bookId, name, order: ecNextOrder(d.lessons), createdAt: now() });
-    saveState(); queueSync(); render();
-    toast('✅ 已添加「' + name + '」');
+    ecAfterAction('✅ 已添加「' + name + '」');
 }
 async function ecBatchLessons() {
     const bookId = state._ecBookId;
@@ -12616,8 +10402,29 @@ async function ecBatchLessons() {
         existNames.add(name);
         added++;
     }
-    saveState(); queueSync(); render();
-    toast(added ? `✅ 已批量生成 ${added} 节课程` : '这些课程都已存在，没有新增');
+    ecAfterAction(added ? `✅ 已批量生成 ${added} 节课程` : '这些课程都已存在，没有新增');
+}
+// 批量导入名称：每行一个课程名（可带编号/标题），直接粘贴导入
+async function ecImportLessons() {
+    const bookId = state._ecBookId;
+    if (!bookId) return;
+    const ta = document.getElementById('ecImportNames');
+    const raw = (ta && ta.value ? ta.value : '');
+    const names = raw.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!names.length) { toast('请先粘贴课程名称，每行一个'); return; }
+    if (names.length > 500) { toast('一次最多导入 500 节，请分批'); return; }
+    const d = ecData();
+    const existNames = new Set(d.lessons.filter(l => l.bookId === bookId).map(l => l.name));
+    let added = 0, skipped = 0;
+    names.forEach(name => {
+        const n = name.slice(0, 60);
+        if (existNames.has(n)) { skipped++; return; }
+        d.lessons.push({ id: uuid(), bookId, name: n, order: ecNextOrder(d.lessons), createdAt: now() });
+        existNames.add(n);
+        added++;
+    });
+    if (ta) ta.value = '';
+    ecAfterAction(added ? `✅ 已导入 ${added} 节课${skipped ? `（${skipped} 个重名已跳过）` : ''}` : '都已存在，没有新增');
 }
 async function ecRenameLesson(id) {
     const lesson = ecLessonById(id);
@@ -12627,8 +10434,8 @@ async function ecRenameLesson(id) {
     const v = String(name).trim();
     if (!v) { toast('名称不能为空'); return; }
     lesson.name = v;
-    saveState(); queueSync(); render();
-    toast('已重命名');
+    state._ecEditLessonId = null;
+    ecAfterAction('已重命名');
 }
 async function ecDeleteLesson(id) {
     const lesson = ecLessonById(id);
@@ -12638,45 +10445,94 @@ async function ecDeleteLesson(id) {
     const d = ecData();
     d.lessons = d.lessons.filter(l => l.id !== id);
     Object.keys(d.tasks).forEach(k => { if (k.startsWith(id + '|')) delete d.tasks[k]; });
+    delete d.fsrs[id];
     if (state._ecLessonId === id) state._ecLessonId = null;
-    saveState(); queueSync(); render();
-    toast('🗑️ 已删除「' + lesson.name + '」');
+    state._ecEditLessonId = null;
+    ecAfterAction('🗑️ 已删除「' + lesson.name + '」');
 }
-function ecDoCheckIn(lessonId, taskId) {
+// 普通任务打卡（完成/取消完成，可反复）
+function ecToggleTask(lessonId, taskId) {
+    const d = ecData();
     const key = ecTaskKey(lessonId, taskId);
-    const tasks = ecData().tasks;
-    const rec = tasks[key];
-    const ts = Date.now();
     const taskDef = EC_TASKS.find(t => t.id === taskId);
-    if (!rec || !rec.startedAt) {
-        tasks[key] = { startedAt: ts, reviews: [] };
-        saveState(); queueSync(); render();
-        toast('🎯 「' + (taskDef ? taskDef.name : '') + '」已打卡！' + EC_NODE_LABELS[0] + '后提醒第一次复习');
+    const pts = taskDef ? taskDef.points : 2;
+    if (d.tasks[key]) {
+        delete d.tasks[key];
+        ecAddScore(-pts);
+        ecAfterAction('已取消「' + (taskDef ? taskDef.name : '') + '」');
+    } else {
+        d.tasks[key] = { at: Date.now() };
+        ecAddScore(pts);
+        ecLogStudy();
+        ecAfterAction('🎯 「' + (taskDef ? taskDef.name : '') + '」完成！+' + pts + ' 分');
+    }
+}
+// 背诵：mode = 'learn'（新课入库）或 1/2/3/4（四档自评）
+function ecReciteAction(lessonId, mode) {
+    const d = ecData();
+    const nowTs = Date.now();
+    if (mode === 'learn') {
+        if (d.fsrs[lessonId] && d.fsrs[lessonId].last) { toast('这一课已入库'); return; }
+        d.fsrs[lessonId] = ecFsrsLearn(nowTs);
+        ecAddScore(5);
+        ecLogStudy();
+        ecAfterAction('📖 已入库！首次复习安排在 1 天后，+5 分');
         return;
     }
-    if ((rec.reviews || []).length >= EC_NODES_MIN.length) { toast('该任务已全部掌握 ✅'); return; }
-    const due = ecDueAt(rec);
-    if (due && ts < due) { toast('还没到复习时间，' + ecRelText(due) + '后再来'); return; }
-    rec.reviews.push(ts);
-    saveState(); queueSync(); render();
-    const done = rec.reviews.length;
-    if (done >= EC_NODES_MIN.length) toast('🏆 8 次复习全部完成，该任务已掌握！');
-    else toast('⏰ 复习完成 ' + done + '/8，下次复习：' + EC_NODE_LABELS[done] + '后');
+    const rec = d.fsrs[lessonId];
+    if (!rec || !rec.last) { toast('请先点「开始背诵」入库'); return; }
+    const grade = parseInt(mode, 10);
+    if (isNaN(grade) || grade < 1 || grade > 4) return;
+    ecFsrsReview(rec, grade, nowTs);
+    if (grade === 1) ecAddScore(0);
+    else if (grade === 2) ecAddScore(1);
+    else if (grade === 3) ecAddScore(2);
+    else ecAddScore(3);
+    ecLogStudy();
+    const g = EC_GRADES.find(x => x.id === grade);
+    let msg = `「${g ? g.name : ''}」${rec.s >= EC_FSRS.masteredS ? ' 🏆 这一课已掌握！' : '下次复习：' + ecRelText(rec.due)}`;
+    ecAfterAction(msg);
 }
 
 // ---------- 渲染 ----------
 function renderEngCheckPage(tab) {
     if (tab === 'ec-review') return ecRenderReview();
+    if (tab === 'ec-achieve') return ecRenderAchieve();
     return ecRenderDrill();
 }
 
-function ecCurveCard() {
-    const nodes = EC_NODE_LABELS.map((n, i) => `<span class="ec-node${i === 0 ? ' first' : ''}">${n}</span>`).join('<span class="ec-arrow">→</span>');
+// 模块头部：等级 + 积分 + 连续学习
+function ecHeaderHTML() {
+    const d = ecData();
+    const lv = ecGetLevel(d.score);
+    const nextLvScore = lv * 10;
+    const pct = Math.min(100, Math.round(((d.score || 0) % 10) / 10 * 100));
     return `
-    <div class="card ec-curve-card">
-        <div class="card-header"><div class="card-title">📈 艾宾浩斯复习曲线</div></div>
-        <div class="ec-curve">${nodes}</div>
-        <div class="ec-curve-tip">每项任务首次打卡后，按上面 8 个节点提醒复习；8 次复习全部完成，该任务即标记为「已掌握」。</div>
+    <div class="card ec-head">
+        <div class="ec-head-main">
+            <div class="ec-head-lv"><span class="ec-head-symbols">${ecLevelSymbols(lv)}</span><span class="ec-head-lvnum">Lv.${lv}</span></div>
+            <div class="ec-head-score">⭐ ${(d.score || 0).toLocaleString()} 分</div>
+        </div>
+        <div class="ec-head-sub">
+            <span>🔥 连续 ${d.streak || 0} 天</span>
+            <span>距 Lv.${lv + 1} 还差 ${Math.max(0, nextLvScore - (d.score || 0))} 分</span>
+        </div>
+        <div class="ec-bar"><div class="ec-bar-fill" style="width:${pct}%"></div></div>
+    </div>`;
+}
+
+// FSRS 说明卡（替代原艾宾浩斯曲线卡）
+function ecFsrsCard() {
+    const grades = EC_GRADES.map(g => `<span class="ec-grade-chip ${g.cls}">${g.name} · ${g.label}</span>`).join('');
+    return `
+    <div class="card ec-fsrs-card">
+        <div class="card-header"><div class="card-title">🧠 背诵复习 · FSRS 算法</div></div>
+        <div class="ec-fsrs-flow">${grades}</div>
+        <div class="ec-curve-tip">
+            只对「背书」这一项走复习曲线：每学完一课就入库一条记录，到复习时间合上书尝试<b>独立背诵整篇</b>，
+            按流畅度四选一打分 → 系统自动更新难度 D / 稳定性 S → 推算下次复习日期。<br>
+            难得越多刷、越熟越少刷；迟到几天再背也能识别遗忘程度，不会一下子排到几个月后（最大间隔 120 天）。
+        </div>
     </div>`;
 }
 
@@ -12685,35 +10541,42 @@ function ecRenderBooks() {
     const books = [...d.books].sort((a, b) => (a.order || 0) - (b.order || 0));
     const list = books.map(b => {
         const st = ecBookStats(b.id);
-        const pct = st.total ? Math.round(st.mastered / st.total * 100) : 0;
+        const pct = st.taskTotal ? Math.round(st.tasksDone / st.taskTotal * 100) : 0;
+        const editing = state._ecEditBookId === b.id;
         return `
         <div class="card ec-book-card">
             <div class="ec-book-main" data-action="ec-open-book" data-id="${b.id}">
                 <div class="ec-book-icon">📚</div>
                 <div class="ec-book-info">
                     <div class="ec-book-name">${escapeHtml(b.name)}</div>
-                    <div class="ec-book-meta">${st.lessons} 节课 · 已掌握 ${st.mastered}/${st.total} 项</div>
+                    <div class="ec-book-meta">${st.lessons} 节课 · 任务 ${st.tasksDone}/${st.taskTotal} · 背诵 ${st.recited}/${st.lessons}</div>
                     <div class="ec-bar"><div class="ec-bar-fill" style="width:${pct}%"></div></div>
                 </div>
                 <div class="ec-book-go">›</div>
             </div>
-            <div class="ec-book-actions">
-                <button class="btn btn-sm btn-secondary" data-action="ec-rename-book" data-id="${b.id}">✏️ 重命名</button>
-                <button class="btn btn-sm btn-secondary" data-action="ec-delete-book" data-id="${b.id}">🗑️ 删除</button>
+            <div class="ec-row-actions">
+                ${editing ? `
+                    <button class="btn btn-sm btn-secondary" data-action="ec-rename-book" data-id="${b.id}">✏️ 重命名</button>
+                    <button class="btn btn-sm btn-danger" data-action="ec-delete-book" data-id="${b.id}">🗑️ 删除</button>
+                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-book" data-id="${b.id}">✕ 收起</button>
+                ` : `
+                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-book" data-id="${b.id}" title="编辑">✏️</button>
+                `}
             </div>
         </div>`;
     }).join('');
     return `
+    ${ecHeaderHTML()}
     <div class="card">
         <div class="card-header"><div class="card-title">📚 我的书单（一级目录）</div></div>
         <div class="ec-add-row">
             <input type="text" class="input" id="ecBookNameInput" placeholder="书本名称，如：新概念英语一" maxlength="30">
             <button class="btn btn-primary" data-action="ec-add-book">添加</button>
         </div>
-        <div class="ec-hint">先建一本书，再在书里添加课程（二级目录），每节课按听/读/说/写打卡（三级目录）。</div>
+        <div class="ec-hint">先建一本书，再在书里添加课程（二级目录），每节课按听 / 读 / 说 / 写打卡 + 背书复习（三级目录）。</div>
     </div>
     ${books.length ? list : `<div class="card ec-empty"><div class="ec-empty-icon">📚</div><div>还没有书单</div><div class="ec-hint">在上方输入书名，添加第一本书吧</div></div>`}
-    ${ecCurveCard()}`;
+    ${ecFsrsCard()}`;
 }
 
 function ecRenderLessons() {
@@ -12721,21 +10584,26 @@ function ecRenderLessons() {
     if (!book) { state._ecBookId = null; return ecRenderBooks(); }
     const lessons = ecLessonsOf(book.id);
     const list = lessons.map(l => {
-        let mastered = 0;
-        EC_TASKS.forEach(t => {
-            const rec = ecGetTask(l.id, t.id);
-            if (rec && (rec.reviews || []).length >= EC_NODES_MIN.length) mastered++;
-        });
+        const pg = ecLessonProgress(l.id);
+        const rec = ecData().fsrs[l.id];
+        const rs = ecReciteStatus(rec, Date.now());
+        const reciteTag = rs === 'new' ? '未背诵' : rs === 'mastered' ? '🏆 已掌握' : rs === 'due' ? '⏰ 待背诵' : `📖 ${ecSDays(rec.s || 0)}后`;
+        const editing = state._ecEditLessonId === l.id;
         return `
         <div class="card ec-lesson-card">
             <div class="ec-lesson-main" data-action="ec-open-lesson" data-id="${l.id}">
                 <div class="ec-lesson-name">${escapeHtml(l.name)}</div>
-                <div class="ec-lesson-meta">已掌握 ${mastered}/${EC_TASKS.length} 项</div>
+                <div class="ec-lesson-meta">任务 ${pg.done}/${pg.total} · ${reciteTag}</div>
                 <div class="ec-book-go">›</div>
             </div>
-            <div class="ec-lesson-actions">
-                <button class="btn btn-sm btn-secondary" data-action="ec-rename-lesson" data-id="${l.id}">✏️</button>
-                <button class="btn btn-sm btn-secondary" data-action="ec-delete-lesson" data-id="${l.id}">🗑️</button>
+            <div class="ec-row-actions">
+                ${editing ? `
+                    <button class="btn btn-sm btn-secondary" data-action="ec-rename-lesson" data-id="${l.id}">✏️ 重命名</button>
+                    <button class="btn btn-sm btn-danger" data-action="ec-delete-lesson" data-id="${l.id}">🗑️ 删除</button>
+                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-lesson" data-id="${l.id}">✕ 收起</button>
+                ` : `
+                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-lesson" data-id="${l.id}" title="编辑">✏️</button>
+                `}
             </div>
         </div>`;
     }).join('');
@@ -12759,32 +10627,87 @@ function ecRenderLessons() {
             </div>
             <div class="ec-hint">例：前缀 Lesson + 1 ~ 144 → 生成 Lesson 1 到 Lesson 144；前缀留空则只生成数字。</div>
         </div>
+        <div class="ec-batch">
+            <div class="ec-batch-title">📋 批量导入名称（每行一个，可直接粘贴整本书的目录）</div>
+            <div class="ec-add-row" style="align-items:flex-start">
+                <textarea class="input" id="ecImportNames" rows="4" placeholder="每行一个课程名，例如：&#10;Lesson 1 Excuse me&#10;Lesson 2 Is this your&#10;Unit 3 复习课"></textarea>
+            </div>
+            <div class="ec-add-row">
+                <button class="btn btn-secondary" data-action="ec-import-lessons">📥 导入</button>
+                <span class="ec-hint" style="margin:0">支持中英文混排；重名会自动跳过</span>
+            </div>
+        </div>
     </div>
-    ${lessons.length ? list : `<div class="card ec-empty"><div class="ec-empty-icon">📖</div><div>还没有课程</div><div class="ec-hint">用上方表单添加，或批量生成整本书的课程</div></div>`}`;
+    ${lessons.length ? list : `<div class="card ec-empty"><div class="ec-empty-icon">📖</div><div>还没有课程</div><div class="ec-hint">用上方表单添加，或批量生成 / 批量导入整本书的课程</div></div>`}`;
 }
 
+// 普通任务行（完成即可，无复习曲线）
 function ecTaskRow(lessonId, taskDef) {
     const rec = ecGetTask(lessonId, taskDef.id);
-    const st = ecStatus(rec);
-    const due = ecDueAt(rec);
-    let btn;
-    if (st === 'new') btn = `<button class="btn btn-sm btn-primary" data-action="ec-checkin" data-lesson="${lessonId}" data-task="${taskDef.id}">🎯 开始打卡</button>`;
-    else if (st === 'mastered') btn = `<button class="btn btn-sm btn-secondary" disabled>✅ 已掌握</button>`;
-    else if (ecIsDue(rec)) btn = `<button class="btn btn-sm btn-primary" data-action="ec-checkin" data-lesson="${lessonId}" data-task="${taskDef.id}">⏰ 完成复习</button>`;
-    else btn = `<button class="btn btn-sm btn-secondary" disabled>下次 ${ecRelText(due)}</button>`;
-    const nextLine = st === 'mastered'
-        ? `<span class="ec-task-next ec-ok">8 次复习全部完成 🎉</span>`
-        : (st === 'new' ? `<span class="ec-task-next">打卡后按曲线提醒复习</span>` : `<span class="ec-task-next">下次复习：${ecFmtDT(due)}（${ecRelText(due)}）</span>`);
+    const done = !!rec;
+    const btn = done
+        ? `<button class="btn btn-sm btn-secondary" data-action="ec-task" data-lesson="${lessonId}" data-task="${taskDef.id}">↩️ 取消完成</button>`
+        : `<button class="btn btn-sm btn-primary" data-action="ec-task" data-lesson="${lessonId}" data-task="${taskDef.id}">🎯 打卡完成</button>`;
     return `
-    <div class="ec-task">
+    <div class="ec-task${done ? ' ec-task-done' : ''}">
         <div class="ec-task-head">
             <span class="ec-task-icon">${taskDef.icon}</span>
             <span class="ec-task-name">${taskDef.name}</span>
-            ${ecStatusBadge(rec)}
+            ${done ? '<span class="ec-badge ec-badge-ok">已完成 ✅</span>' : `<span class="ec-badge ec-badge-new">未完成 · ${taskDef.points} 分</span>`}
         </div>
         <div class="ec-task-desc">${taskDef.desc}</div>
-        <div class="ec-task-progress">${ecDots(rec)}${nextLine}</div>
         <div class="ec-task-btn">${btn}</div>
+    </div>`;
+}
+
+// 背诵面板（FSRS）
+function ecRecitePanel(lessonId) {
+    const d = ecData();
+    const rec = d.fsrs[lessonId];
+    const st = ecReciteStatus(rec, Date.now());
+    let body;
+    if (st === 'new') {
+        body = `
+            <div class="ec-recite-new">
+                <div class="ec-task-desc">学完这一课后，把整篇课文加入背诵复习池：系统按 FSRS 曲线安排复习，难的课多刷、熟的课少刷。</div>
+                <button class="btn btn-primary" data-action="ec-recite" data-lesson="${lessonId}" data-mode="learn">📖 学完这一课，开始背诵（+5 分）</button>
+            </div>`;
+    } else if (st === 'mastered') {
+        body = `
+            <div class="ec-recite-meta">
+                <span class="ec-badge ec-badge-ok">🏆 已掌握</span>
+                <span>稳定性 ${ecSDays(rec.s)} · 成功复习 ${rec.n} 次 · 难度 D=${rec.d.toFixed(1)}</span>
+            </div>
+            <div class="ec-hint">已超过 60 天间隔，这一课背得很牢了。想自检可以随时再背一次。</div>
+            <div class="ec-recite-actions">${EC_GRADES.map(g => `<button class="ec-grade-btn ${g.cls}" data-action="ec-recite" data-lesson="${lessonId}" data-mode="${g.id}" title="${g.desc}">${g.name}</button>`).join('')}</div>`;
+    } else if (st === 'due') {
+        const late = rec.due < new Date().setHours(0, 0, 0, 0);
+        body = `
+            <div class="ec-recite-meta">
+                <span class="ec-badge ${late ? 'ec-badge-late' : 'ec-badge-due'}">${late ? '待背诵 · 已逾期' : '待背诵'}</span>
+                <span>应复习：${ecFmtDT(rec.due)}（${ecRelText(rec.due)}） · 稳定性 ${ecSDays(rec.s)} · 难度 D=${rec.d.toFixed(1)} · 已成功 ${rec.n} 次</span>
+            </div>
+            <div class="ec-recite-tip">合上书，尝试独立背诵整篇课文，然后按流畅度打分：</div>
+            <div class="ec-recite-actions">${EC_GRADES.map(g => `
+                <button class="ec-grade-btn ${g.cls}" data-action="ec-recite" data-lesson="${lessonId}" data-mode="${g.id}">
+                    <span class="ec-grade-name">${g.name} · ${g.label}</span>
+                    <span class="ec-grade-desc">${g.desc}</span>
+                </button>`).join('')}</div>`;
+    } else {
+        body = `
+            <div class="ec-recite-meta">
+                <span class="ec-badge ec-badge-doing">学习中</span>
+                <span>下次复习：${ecFmtDT(rec.due)}（${ecRelText(rec.due)}） · 稳定性 ${ecSDays(rec.s)} · 难度 D=${rec.d.toFixed(1)} · 已成功 ${rec.n} 次</span>
+            </div>
+            <div class="ec-hint">还没到复习时间，到时再来背这一课。</div>`;
+    }
+    return `
+    <div class="card ec-group-recite">
+        <div class="ec-group-head">
+            <span class="ec-group-title">📖 背诵板块 · 整篇课文</span>
+            <span class="ec-group-sub">FSRS 复习曲线</span>
+        </div>
+        <div class="ec-group-body">${body}</div>
     </div>`;
 }
 
@@ -12795,11 +10718,12 @@ function ecRenderLesson() {
     const groups = EC_TASK_GROUPS.map(g => {
         const rows = EC_TASKS.filter(t => t.group === g.id).map(t => ecTaskRow(lesson.id, t)).join('');
         return `
-        <div class="card">
-            <div class="card-header">
-                <div class="card-title">${g.icon} ${g.name} · ${g.sub}</div>
+        <div class="card ${g.cls}">
+            <div class="ec-group-head">
+                <span class="ec-group-title">${g.icon} ${g.name} · ${g.sub}</span>
+                <span class="ec-group-sub">完成即可，不设复习</span>
             </div>
-            ${rows}
+            <div class="ec-group-body">${rows}</div>
         </div>`;
     }).join('');
     return `
@@ -12808,36 +10732,90 @@ function ecRenderLesson() {
             <div class="card-title">${escapeHtml(book ? book.name : '')} › ${escapeHtml(lesson.name)}</div>
             <button class="btn btn-sm btn-secondary" data-action="ec-back-lessons">‹ 返回课程</button>
         </div>
-        <div class="ec-hint">三级目录：每节课按「听 / 读 / 说 / 写」四项打卡，系统按艾宾浩斯曲线自动安排 8 次复习。</div>
+        <div class="ec-hint">三级目录：每节课按「听 / 读 / 说 / 写」打卡，再加一整篇课文背诵（FSRS 复习）。</div>
     </div>
+    ${ecRecitePanel(lesson.id)}
     ${groups}`;
 }
 
 function ecRenderReview() {
     const stats = ecGlobalStats();
-    const dueList = ecDueTasks();
-    const rows = dueList.map(it => `
-        <div class="ec-due-row${it.dueAt < new Date().setHours(0, 0, 0, 0) ? ' late' : ''}">
+    const dueList = ecDueRecites();
+    const rows = dueList.map(it => {
+        const late = (it.rec.due || 0) < new Date().setHours(0, 0, 0, 0);
+        return `
+        <div class="ec-due-row${late ? ' late' : ''}">
             <div class="ec-due-info">
-                <div class="ec-due-title">${it.task.icon} ${it.task.name}<span class="ec-due-path">${escapeHtml(it.book.name)} › ${escapeHtml(it.lesson.name)}</span></div>
-                <div class="ec-due-meta">${ecDots(it.rec)}应复习：${ecFmtDT(it.dueAt)}（${ecRelText(it.dueAt)}）</div>
+                <div class="ec-due-title">📖 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span></div>
+                <div class="ec-due-meta">应复习：${ecFmtDT(it.rec.due)}（${ecRelText(it.rec.due)}） · 稳定性 ${ecSDays(it.rec.s)} · D=${it.rec.d.toFixed(1)}</div>
+                <div class="ec-recite-actions ec-recite-inline">${EC_GRADES.map(g => `<button class="ec-grade-btn ${g.cls} ec-grade-mini" data-action="ec-recite" data-lesson="${it.lesson.id}" data-mode="${g.id}" title="${g.desc}">${g.name}</button>`).join('')}</div>
             </div>
-            <button class="btn btn-sm btn-primary" data-action="ec-checkin" data-lesson="${it.lesson.id}" data-task="${it.task.id}">复习</button>
-        </div>`).join('');
+        </div>`;
+    }).join('');
+    const d = ecData();
     return `
+    ${ecHeaderHTML()}
     <div class="card">
         <div class="card-header"><div class="card-title">⏰ 复习中心</div></div>
         <div class="ec-stats">
-            <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">待复习</div></div>
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">待背诵</div></div>
             <div class="ec-stat"><div class="ec-stat-num ec-stat-late">${stats.overdue}</div><div class="ec-stat-label">已逾期</div></div>
             <div class="ec-stat"><div class="ec-stat-num">${stats.todayDone}</div><div class="ec-stat-label">今日完成</div></div>
             <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.mastered}</div><div class="ec-stat-label">已掌握</div></div>
         </div>
     </div>
-    ${ecCurveCard()}
+    ${ecFsrsCard()}
     <div class="card">
-        <div class="card-header"><div class="card-title">📋 待复习清单</div><span style="font-size:12px;color:var(--text-secondary)">按应复习时间排序</span></div>
-        ${dueList.length ? rows : `<div class="ec-empty"><div class="ec-empty-icon">🎉</div><div>当前没有待复习的任务</div><div class="ec-hint">去「书单课目」给新课打卡，这里会按曲线提醒</div></div>`}
+        <div class="card-header"><div class="card-title">📋 待背诵清单</div><span style="font-size:12px;color:var(--text-secondary)">按应复习时间排序</span></div>
+        ${dueList.length ? rows : `<div class="ec-empty"><div class="ec-empty-icon">🎉</div><div>当前没有待背诵的课文</div><div class="ec-hint">去「书单课目」学新课，到这里按时复习</div></div>`}
+    </div>`;
+}
+
+// 成就榜 Tab
+function ecRenderAchieve() {
+    const d = ecData();
+    const lv = ecGetLevel(d.score);
+    const grid = EC_ACHIEVEMENTS.map(a => {
+        const unlocked = !!d.achievements[a.id];
+        return `
+        <div class="ec-ach-item${unlocked ? '' : ' ec-locked'}">
+            <span class="ec-ach-icon">${unlocked ? a.icon : '🔒'}</span>
+            <div class="ec-ach-info">
+                <div class="ec-ach-name">${a.name}</div>
+                <div class="ec-ach-desc">${a.desc}</div>
+            </div>
+        </div>`;
+    }).join('');
+    // 最近 7 天学习条
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+        const dt = new Date(); dt.setDate(dt.getDate() - i);
+        const key = dateStr(dt);
+        const cnt = d.days[key] || 0;
+        days.push({ key, cnt, label: (dt.getMonth() + 1) + '/' + dt.getDate() });
+    }
+    const strip = days.map(x => `
+        <div class="ec-day${x.cnt ? ' on' : ''}" title="${x.key}：完成 ${x.cnt} 项">
+            <span class="ec-day-dot">${x.cnt ? '✓' : ''}</span>
+            <span class="ec-day-label">${x.label}</span>
+        </div>`).join('');
+    const studyDays = Object.keys(d.days).length;
+    return `
+    ${ecHeaderHTML()}
+    <div class="card">
+        <div class="card-header"><div class="card-title">📊 学习数据</div></div>
+        <div class="ec-stats">
+            <div class="ec-stat"><div class="ec-stat-num">${(d.score || 0).toLocaleString()}</div><div class="ec-stat-label">总积分</div></div>
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${d.streak || 0}</div><div class="ec-stat-label">连续天数</div></div>
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${d.bestStreak || 0}</div><div class="ec-stat-label">最长连续</div></div>
+            <div class="ec-stat"><div class="ec-stat-num">${studyDays}</div><div class="ec-stat-label">学习天数</div></div>
+        </div>
+        <div class="ec-day-strip">${strip}</div>
+        <div class="ec-hint">最近 7 天：有打卡的日子会点亮 ✓</div>
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">🏆 成就墙</div></div>
+        <div class="ec-ach-grid">${grid}</div>
     </div>`;
 }
 
@@ -12858,16 +10836,21 @@ document.addEventListener('click', async e => {
     if (action === 'ec-add-book') { ecAddBook(); return; }
     if (action === 'ec-rename-book') { ecRenameBook(el.dataset.id); return; }
     if (action === 'ec-delete-book') { ecDeleteBook(el.dataset.id); return; }
-    if (action === 'ec-open-book') { state._ecBookId = el.dataset.id; state._ecLessonId = null; render(); return; }
+    if (action === 'ec-edit-book') { state._ecEditBookId = state._ecEditBookId === el.dataset.id ? null : el.dataset.id; render(); return; }
+    if (action === 'ec-open-book') { state._ecBookId = el.dataset.id; state._ecLessonId = null; state._ecEditBookId = null; render(); return; }
     if (action === 'ec-back-books') { state._ecBookId = null; render(); return; }
     if (action === 'ec-add-lesson') { ecAddLesson(); return; }
     if (action === 'ec-batch-lessons') { ecBatchLessons(); return; }
+    if (action === 'ec-import-lessons') { ecImportLessons(); return; }
     if (action === 'ec-rename-lesson') { ecRenameLesson(el.dataset.id); return; }
     if (action === 'ec-delete-lesson') { ecDeleteLesson(el.dataset.id); return; }
-    if (action === 'ec-open-lesson') { state._ecLessonId = el.dataset.id; render(); return; }
+    if (action === 'ec-edit-lesson') { state._ecEditLessonId = state._ecEditLessonId === el.dataset.id ? null : el.dataset.id; render(); return; }
+    if (action === 'ec-open-lesson') { state._ecLessonId = el.dataset.id; state._ecEditLessonId = null; render(); return; }
     if (action === 'ec-back-lessons') { state._ecLessonId = null; render(); return; }
-    if (action === 'ec-checkin') { ecDoCheckIn(el.dataset.lesson, el.dataset.task); return; }
+    if (action === 'ec-task') { ecToggleTask(el.dataset.lesson, el.dataset.task); return; }
+    if (action === 'ec-recite') { ecReciteAction(el.dataset.lesson, el.dataset.mode); return; }
 });
+
 
 function init() {
     loadState();
