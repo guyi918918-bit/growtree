@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261025f';
+const APP_BUILD = '20261025g';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -2696,7 +2696,7 @@ const state = {
         bookRead: [], // 阅读板块：看过的书（收藏书屋数据源），元素为 {title, author, tags, markedAt}
         // 英语打卡（三级目录 + FSRS 背诵复习 + 积分成就）：
         // books=一级(书)、lessons=二级(课)、tasks=三级(任务记录)、fsrs=背书复习记录
-        engcheck: { books: [], lessons: [], tasks: {}, fsrs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' }
+        engcheck: { books: [], lessons: [], tasks: {}, fsrs: {}, tombs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' }
     },
     supabase: null,
     syncStatus: 'offline',
@@ -2986,7 +2986,7 @@ function migrateData() {
     if (!Array.isArray(state.data.bookRead)) state.data.bookRead = [];
     state.data.settings = state.data.settings || { theme: state.settings && state.settings.theme ? state.settings.theme : 'light' };
     // 英语打卡数据兼容：老账号没有该字段时补空结构（新增模块自动追加逻辑会保证导航里出现）
-    if (!state.data.engcheck || typeof state.data.engcheck !== 'object') state.data.engcheck = { books: [], lessons: [], tasks: {}, fsrs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' };
+    if (!state.data.engcheck || typeof state.data.engcheck !== 'object') state.data.engcheck = { books: [], lessons: [], tasks: {}, fsrs: {}, tombs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' };
     if (!Array.isArray(state.data.engcheck.books)) state.data.engcheck.books = [];
     if (!Array.isArray(state.data.engcheck.lessons)) state.data.engcheck.lessons = [];
     if (!state.data.engcheck.tasks || typeof state.data.engcheck.tasks !== 'object') state.data.engcheck.tasks = {};
@@ -3560,9 +3560,9 @@ async function _syncFromCloudCore(force = false) {
                 if (shouldPushYjxs) {
                     pushYjxsToIframe();
                 }
-                // 英语打卡合并保护：本地 updatedAt 更新 → 整组保留本地（覆盖刚做的打卡/新增）；
-                // 云端更新 → 用云端（3480 已替换）；时间戳都缺（旧数据首次升级）→ 按键/按 id 并集兜底，
-                // 本地新增的 tasks 键、books/lessons id 绝不丢，fsrs 取 last 较新的一条。
+                // 英语打卡合并保护（墓碑机制，见 ecMergeEngcheck 注释）：
+                // 取消完成→键级墓碑；清零→clearedAt/fsrsClearedAt 时间分界线；
+                // 对端新增的 tasks 键并入（手机打卡电脑端刷新也有），本地删过的键不并入。
                 state.data.engcheck = ecMergeEngcheck(localEc, state.data.engcheck, localEcAt, cloudEcAt);
                 const after = syncDataSnapshot(state.data);
                 if (before !== after) {
@@ -10202,6 +10202,10 @@ function toggleTheme() {
 //             note = 显示在课程名下方的灰色小字（语法要点/备注，可选）
 //   tasks:   三级任务记录     key = `${lessonId}|${taskId}` → { at: epochMs }
 //             完成即可打卡，不设复习曲线；完成时间精确到分钟展示，且可点击补录修改（默认系统时间）
+//   tombs:   键级墓碑         key = tasks 键 → ts（取消完成/删任务定义时写入）
+//             跨设备合并时，对端残留的旧记录若早于墓碑时间 → 判定为删除、不并入（取消完成据此同步）
+//   clearedAt / fsrsClearedAt：清零时间分界线（epochMs，见 ecClearRecords）
+//             合并时另一端早于该时点的 tasks / fsrs 旧记录一律丢弃（清零据此跨设备生效）
 //   fsrs:    背书复习记录     key = lessonId → { s, d, n, lapses, last, due, grade }
 //             FSRS 简化版（整篇课文背书）：初学即可四选一自评入池（Again/Hard/Good/Easy），
 //             之后每次复习对整篇四选一打分 → 更新难度 D、稳定性 S → 推算下次复习时间；
@@ -10378,40 +10382,106 @@ function ecAfterAction(msg) {
     if (msg) toast(msg);
 }
 
-// 英语打卡同步合并（_syncFromCloudCore 拉取后调用，防「点击成功一秒后又变回未完成」）：
-// - 本地 updatedAt 更新 → 整组保留本地（刚做的打卡/书单/课程优先）
-// - 云端更新 → 用云端
-// - 时间戳都缺（旧数据首次升级）→ 按键/按 id 并集兜底：本地新增的 tasks 键、books/lessons id
-//   绝不丢；fsrs 同课取 last 较新的一条；score/streak 取大者防倒退
+// 英语打卡同步合并（_syncFromCloudCore 拉取后调用）。
+// 墓碑机制——两类删除操作跨设备生效（否则并集逻辑会把删掉的记录「复活」）：
+// ① 取消完成/删任务定义 → tombs[key] = ts（键级墓碑，见 ecTomb）
+// ② 学习记录清零 → clearedAt / fsrsClearedAt = ts（全局时间分界线，见 ecClearRecords）
+// - 任一端清零过：以清零较新一端为基底，另一端只并入清零时点之后的新记录，旧记录全丢弃
+// - 无清零：按 updatedAt 定权威端；对端「本地没有的 tasks 键」并入（手机打卡电脑端刷新也有），
+//   但本地删过的键（墓碑）不并入（取消完成跨设备生效，不会被云端旧记录复活）
 function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
     if (!localEc) return cloudEc;
     if (!cloudEc) return localEc;
-    if (localEcAt && (!cloudEcAt || String(localEcAt) >= String(cloudEcAt))) return localEc;
-    // 云端更新、或时间戳都缺（旧数据首次升级）：以云端为基底，本地新增键/id 并集保留
-    const merged = { ...cloudEc, ...localEc };
-    merged.tasks = { ...(cloudEc.tasks || {}) };
-    Object.keys(localEc.tasks || {}).forEach(k => { merged.tasks[k] = localEc.tasks[k]; });
-    merged.fsrs = { ...(cloudEc.fsrs || {}) };
-    Object.keys(localEc.fsrs || {}).forEach(k => {
-        const lr = localEc.fsrs[k], cr = merged.fsrs[k];
-        if (!cr || (lr.last || 0) >= (cr.last || 0)) merged.fsrs[k] = lr;
-    });
+    const taskCut = Math.max(Number(localEc.clearedAt) || 0, Number(cloudEc.clearedAt) || 0);
+    const fsrsCut = Math.max(Number(localEc.fsrsClearedAt) || 0, Number(cloudEc.fsrsClearedAt) || 0);
     const byId = (arr) => { const m = new Map(); (arr || []).forEach(x => { if (x && x.id != null) m.set(x.id, x); }); return m; };
-    const bMap = byId(cloudEc.books), lMap = byId(cloudEc.lessons);
-    (localEc.books || []).forEach(b => { if (b && b.id != null && !bMap.has(b.id)) bMap.set(b.id, b); });
-    (localEc.lessons || []).forEach(l => { if (l && l.id != null && !lMap.has(l.id)) lMap.set(l.id, l); });
-    merged.books = Array.from(bMap.values());
-    merged.lessons = Array.from(lMap.values());
-    merged.score = Math.max(cloudEc.score || 0, localEc.score || 0);
-    merged.achievements = { ...(cloudEc.achievements || {}), ...(localEc.achievements || {}) };
-    if ((localEc.lastStudyDate || '') > (cloudEc.lastStudyDate || '')) {
-        merged.lastStudyDate = localEc.lastStudyDate;
-        merged.streak = Math.max(cloudEc.streak || 0, localEc.streak || 0);
-        merged.bestStreak = Math.max(cloudEc.bestStreak || 0, localEc.bestStreak || 0);
-        merged.days = { ...(cloudEc.days || {}), ...(localEc.days || {}) };
+    // tasks 合并：win 优先；lose 独有的键并入（打卡跨设备同步），但满足以下之一则丢弃：
+    // ① cut 之前的旧记录（清零分界线前）② 本地墓碑删除过（取消完成，墓碑时间 ≥ 记录时间）
+    const mergeTasks = (win, lose, cut) => {
+        const out = {};
+        const tombs = { ...(win.tombs || {}) };
+        Object.keys(win.tasks || {}).forEach(k => {
+            if (!cut || (Number(win.tasks[k] && win.tasks[k].at) || 0) >= cut) out[k] = win.tasks[k];
+        });
+        Object.keys(lose.tasks || {}).forEach(k => {
+            if (out[k] !== undefined) return;
+            const r = lose.tasks[k];
+            const at = Number(r && r.at) || 0;
+            if (cut && at < cut) return;
+            const t = Number(tombs[k]) || 0;
+            if (t && t >= at) return;
+            out[k] = r;
+        });
+        // 清理失效墓碑（对应记录已不存在于任何一端，墓碑没必要保留）
+        Object.keys(tombs).forEach(k => { if (out[k] === undefined) delete tombs[k]; });
+        return { tasks: out, tombs };
+    };
+    const mergeFsrs = (win, lose, cut) => {
+        const out = {};
+        Object.keys(win.fsrs || {}).forEach(k => {
+            if (!cut || (Number(win.fsrs[k] && win.fsrs[k].last) || 0) >= cut) out[k] = win.fsrs[k];
+        });
+        Object.keys(lose.fsrs || {}).forEach(k => {
+            if (out[k] !== undefined) return;
+            const r = lose.fsrs[k];
+            if (cut && (Number(r && r.last) || 0) < cut) return;
+            out[k] = r;
+        });
+        return out;
+    };
+    const mergeCatalog = (win, lose) => {
+        const bMap = byId(win.books), lMap = byId(win.lessons);
+        (lose.books || []).forEach(b => { if (b && b.id != null && !bMap.has(b.id)) bMap.set(b.id, b); });
+        (lose.lessons || []).forEach(l => { if (l && l.id != null && !lMap.has(l.id)) lMap.set(l.id, l); });
+        return { books: Array.from(bMap.values()), lessons: Array.from(lMap.values()) };
+    };
+    const newerAt = (localEcAt && cloudEcAt && String(localEcAt) > String(cloudEcAt)) ? localEcAt : (cloudEcAt || localEcAt || '');
+
+    if (taskCut || fsrsCut) {
+        // ---- 分支 A：任一端清零过 ----
+        // 权威端 = 清零较新的一端（tasks/fsrs 分别可能在不同端清零，取清零总和较新方近似）
+        const localClearSum = (Number(localEc.clearedAt) || 0) + (Number(localEc.fsrsClearedAt) || 0);
+        const cloudClearSum = (Number(cloudEc.clearedAt) || 0) + (Number(cloudEc.fsrsClearedAt) || 0);
+        const win = localClearSum >= cloudClearSum ? localEc : cloudEc;
+        const lose = win === localEc ? cloudEc : localEc;
+        const merged = { ...win };
+        const tk = mergeTasks(win, lose, taskCut);
+        merged.tasks = tk.tasks;
+        merged.tombs = tk.tombs;
+        merged.fsrs = mergeFsrs(win, lose, fsrsCut);
+        Object.assign(merged, mergeCatalog(win, lose));
+        merged.clearedAt = taskCut;
+        merged.fsrsClearedAt = fsrsCut;
+        merged.updatedAt = newerAt;
+        return merged;
     }
-    merged.updatedAt = (localEcAt && cloudEcAt && String(localEcAt) > String(cloudEcAt)) ? localEcAt : (cloudEcAt || localEcAt || '');
+    // ---- 分支 B/C：无清零，按 updatedAt 定权威端 + 墓碑保护删除 ----
+    const localWin = !!(localEcAt && (!cloudEcAt || String(localEcAt) >= String(cloudEcAt)));
+    const win = localWin ? localEc : cloudEc;
+    const lose = localWin ? cloudEc : localEc;
+    const merged = { ...win };
+    const tk = mergeTasks(win, lose, 0);
+    merged.tasks = tk.tasks;
+    merged.tombs = tk.tombs;
+    merged.fsrs = mergeFsrs(win, lose, 0);
+    Object.assign(merged, mergeCatalog(win, lose));
+    // 本地刚操作过（可能刚取消完成扣了分）→ 标量以本地为准，防对端旧快照把分数顶回去；
+    // 云端权威 → score 取大者防倒退（对端加分不许丢）
+    merged.score = localWin ? (win.score || 0) : Math.max(win.score || 0, lose.score || 0);
+    merged.achievements = { ...(lose.achievements || {}), ...(win.achievements || {}) };
+    merged.streak = Math.max(win.streak || 0, lose.streak || 0);
+    merged.bestStreak = Math.max(win.bestStreak || 0, lose.bestStreak || 0);
+    merged.days = { ...(lose.days || {}), ...(win.days || {}) };
+    if ((lose.lastStudyDate || '') > (win.lastStudyDate || '')) merged.lastStudyDate = lose.lastStudyDate;
+    merged.updatedAt = newerAt;
     return merged;
+}
+// 键级墓碑：记录「这个 tasks 键被我删了」。跨设备合并时，若对端还留着该键的旧记录，
+// 只要墓碑时间 ≥ 记录时间就判定为「删除」而非「对端新增」，不并入——取消完成据此跨设备生效。
+function ecTomb(key) {
+    const d = ecData();
+    d.tombs = d.tombs || {};
+    d.tombs[key] = Date.now();
 }
 
 // ---------- FSRS 简化版（整篇课文背书） ----------
@@ -10813,7 +10883,7 @@ async function ecDelBookTask(bookId, taskId) {
     const ok = await uiConfirm(`将删除《${book.name}》的任务「${def.name}」及 ${cnt} 条完成记录（积分不扣回），且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
     if (!ok) return;
     book.tasks = (Array.isArray(book.tasks) ? book.tasks : ecCloneDefaultTasks()).filter(t => t.id !== taskId);
-    d.lessons.forEach(l => { if (l.bookId === bookId) delete d.tasks[ecTaskKey(l.id, taskId)]; });
+    d.lessons.forEach(l => { if (l.bookId === bookId) { const k = ecTaskKey(l.id, taskId); delete d.tasks[k]; ecTomb(k); } });
     ecAfterAction('🗑️ 已删除任务「' + def.name + '」');
 }
 // 普通任务打卡（完成/取消完成，可反复）
@@ -10824,6 +10894,7 @@ function ecToggleTask(lessonId, taskId) {
     const pts = taskDef ? (taskDef.points || 2) : 2;
     if (d.tasks[key]) {
         delete d.tasks[key];
+        ecTomb(key); // 键级墓碑：取消完成要能跨设备生效，不被云端旧记录并集复活
         ecAddScore(-pts);
         ecAfterAction('已取消「' + (taskDef ? taskDef.name : '') + '」');
     } else {
@@ -10875,7 +10946,7 @@ async function ecClearRecords() {
     const v = await uiModal({
         title: '🧹 学习记录清零',
         isDanger: true,
-        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin-bottom:10px">把<b>任务完成记录（${taskCnt} 条）</b>和<b>背诵复习记录（${fsrsCnt} 条）</b>清空，所有课程回到「未开始」状态；<b>书单和课程目录会保留</b>，不用重新建。</div>
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin-bottom:10px">把<b>任务完成记录（${taskCnt} 条）</b>和<b>背诵复习记录（${fsrsCnt} 条）</b>清空，所有课程回到「未开始」状态；<b>书单和课程目录会保留</b>，不用重新建。<b style="color:var(--text)">清零后会自动同步到其他设备</b>（手机/电脑刷新后都会归零）。</div>
                <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600;padding:9px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="ecClrTasks" checked> 清零任务完成记录（${taskCnt} 条）</label>
                <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600;padding:9px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="ecClrFsrs" checked> 清零背诵复习记录（${fsrsCnt} 条）</label>
                <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600;padding:9px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer"><input type="checkbox" id="ecClrAll"> 连积分 / 连续学习 / 成就一起清零（当前 ${d.score || 0} 分）</label>`,
@@ -10888,8 +10959,10 @@ async function ecClearRecords() {
     });
     if (v == null) return;
     if (!v.tasks && !v.fsrs && !v.all) { toast('没有选择要清零的内容'); return; }
-    if (v.tasks) d.tasks = {};
-    if (v.fsrs) d.fsrs = {};
+    // 全局时间分界线（墓碑）：合并时另一端早于该时点的旧记录一律丢弃，
+    // 否则并集逻辑会把清零前的旧记录「复活」→ 一端清零、另一端刷新后还在。
+    if (v.tasks) { d.tasks = {}; d.clearedAt = Date.now(); }
+    if (v.fsrs) { d.fsrs = {}; d.fsrsClearedAt = Date.now(); }
     if (v.all) {
         d.score = 0; d.streak = 0; d.bestStreak = 0;
         d.days = {}; d.achievements = {}; d.lastStudyDate = '';

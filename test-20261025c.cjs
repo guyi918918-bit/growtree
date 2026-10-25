@@ -99,6 +99,11 @@ ok('ec-clear-records 按钮与 handler', APP.includes('data-action="ec-clear-rec
 ok('ecClearRecords 函数存在', /async function ecClearRecords/.test(APP));
 ok('清零弹窗三个勾选项齐全', ['ecClrTasks', 'ecClrFsrs', 'ecClrAll'].every(id => APP.includes('id="' + id + '"')));
 ok('清零保留书单目录语义', /书单和课程目录会保留/.test(APP));
+// v20261025g：墓碑机制静态检查
+ok('ecTomb 键级墓碑函数存在', /function ecTomb\(key\)/.test(APP));
+ok('清零弹窗提示跨设备同步', /清零后会自动同步到其他设备/.test(APP));
+ok('ecMergeEngcheck 含清零分界线逻辑', /taskCut = Math\.max/.test(APP) && /fsrsCut = Math\.max/.test(APP));
+ok('合并函数含墓碑阻挡逻辑', /if \(t && t >= at\) return;/.test(APP));
 
 // ============ 二、FSRS 算法单测（回归） ============
 console.log('—— FSRS 算法 ——');
@@ -114,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, state };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, state };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async () => null, async () => confirmAnswer,
         async (opts) => { if (opts && opts.getValue) return opts.getValue(); return true; },
@@ -472,11 +477,12 @@ console.log('—— v20261025d 新功能 ——');
         tasks: { 'l1|listen-broad': { at: 111 } },
         fsrs: {}, score: 10, achievements: {}, days: {}, streak: 1, bestStreak: 1, lastStudyDate: '2026-10-24'
     }, over || {});
-    // 场景 1：本地刚打卡（updatedAt 新）→ 整组保留本地，云端旧快照不许冲掉
+    // 场景 1：本地刚打卡（updatedAt 新）→ 本地权威：打卡键与分数不被云端旧快照冲掉；
+    // 同时云端独有的新键仍会并入（v20261025g 起不再整组返回，改为墓碑合并）
     const local1 = mkEc({ updatedAt: '2026-10-25T04:00:00.000Z' });
     const cloud1 = mkEc({ updatedAt: '2026-10-25T03:00:00.000Z', tasks: {}, score: 2 });
     const r1 = EC.ecMergeEngcheck(local1, cloud1, '2026-10-25T04:00:00.000Z', '2026-10-25T03:00:00.000Z');
-    ok('本地新→整组保留本地', r1 === local1 && !!r1.tasks['l1|listen-broad'] && r1.score === 10);
+    ok('本地新→本地打卡键与分数保留', !!r1.tasks['l1|listen-broad'] && r1.score === 10);
     // 场景 2：云端更新（多设备）→ 云端数据生效，本地独有键并集保留
     const local2 = mkEc({ updatedAt: '2026-10-25T03:00:00.000Z' });
     const cloud2 = mkEc({ updatedAt: '2026-10-25T04:00:00.000Z', score: 30 });
@@ -612,6 +618,100 @@ console.log('—— v20261025f 自定义时间与清零 ——');
                 }, 20);
             }, 20);
         }, 20);
+    }, 20);
+}
+
+// ============ 十三、v20261025g：墓碑机制——清零/取消跨设备同步（修复端到端不同步） ============
+console.log('—— v20261025g 墓碑同步机制 ——');
+{
+    const EC = makeEC();
+    const mkEc = (over) => Object.assign({
+        books: [{ id: 'b1', name: '书一', order: 1, createdAt: 'x' }],
+        lessons: [{ id: 'l1', bookId: 'b1', name: 'Lesson 1', order: 1, createdAt: 'x' }],
+        tasks: {}, fsrs: {}, score: 10, achievements: {}, days: {}, streak: 1, bestStreak: 1, lastStudyDate: '2026-10-24'
+    }, over || {});
+    const T = Date.now();
+    const Y = '2026-10-25T';
+
+    // A. 用户报的 bug：手机清零后上传，电脑端旧数据（201 分 + 43 条任务）拉取后不得复活
+    const phoneCleared = mkEc({ tasks: {}, fsrs: {}, score: 0, streak: 0, bestStreak: 0, days: {}, clearedAt: T, fsrsClearedAt: T, updatedAt: Y + '05:00:00.000Z' });
+    const pcOld = mkEc({ tasks: { 'l1|listen-broad': { at: T - 86400000 }, 'l1|listen-detail': { at: T - 86400000 } }, score: 201, streak: 5, updatedAt: Y + '04:00:00.000Z' });
+    const rA = EC.ecMergeEngcheck(pcOld, phoneCleared, Y + '04:00:00.000Z', Y + '05:00:00.000Z');
+    ok('清零同步：电脑端拉取后旧任务记录丢弃', Object.keys(rA.tasks).length === 0);
+    ok('清零同步：电脑端拉取后积分归零', rA.score === 0);
+    ok('清零同步：电脑端拉取后连续天数归零', rA.streak === 0);
+    ok('清零同步：书单与课程目录仍保留', rA.books.length === 1 && rA.lessons.length === 1);
+
+    // B. 清零后又打了新卡 → 新记录（at ≥ 清零时点）必须保留
+    const phoneReCheckin = mkEc({ tasks: { 'l1|listen-broad': { at: T + 3600000 } }, score: 2, clearedAt: T, fsrsClearedAt: T, updatedAt: Y + '06:00:00.000Z' });
+    const rB = EC.ecMergeEngcheck(pcOld, phoneReCheckin, Y + '04:00:00.000Z', Y + '06:00:00.000Z');
+    ok('清零后的新打卡记录保留', !!rB.tasks['l1|listen-broad']);
+    ok('清零后的新打卡加分生效', rB.score === 2);
+
+    // C. 反向：电脑清零后，手机端旧数据（含背诵记录）拉取后同样归零
+    const pcCleared = mkEc({ tasks: {}, fsrs: {}, score: 0, streak: 0, bestStreak: 0, days: {}, clearedAt: T, fsrsClearedAt: T, updatedAt: Y + '07:00:00.000Z' });
+    const phoneOld = mkEc({ tasks: { 'l1|listen-broad': { at: T - 86400000 } }, fsrs: { l1: { s: 2, d: 5, n: 1, lapses: 0, last: T - 86400000, due: T + 86400000, grade: 3 } }, score: 100, updatedAt: Y + '04:00:00.000Z' });
+    const rC = EC.ecMergeEngcheck(phoneOld, pcCleared, Y + '04:00:00.000Z', Y + '07:00:00.000Z');
+    ok('反向清零：手机端拉取后旧任务丢弃', Object.keys(rC.tasks).length === 0);
+    ok('反向清零：手机端拉取后旧背诵记录丢弃', Object.keys(rC.fsrs).length === 0);
+    ok('反向清零：手机端拉取后积分归零', rC.score === 0);
+
+    // D. 边界：只勾「清零任务」没勾「清零背诵」→ 只写 clearedAt，背诵记录与积分不动
+    const phoneClearTasksOnly = mkEc({ tasks: {}, fsrs: { l1: { s: 2, d: 5, n: 1, lapses: 0, last: T - 86400000, due: T, grade: 3 } }, score: 50, clearedAt: T, updatedAt: Y + '08:00:00.000Z' });
+    const pcOld2 = mkEc({ tasks: { 'l1|listen-broad': { at: T - 86400000 } }, fsrs: { l1: { s: 3, d: 5, n: 2, lapses: 0, last: T - 43200000, due: T, grade: 3 } }, score: 50, updatedAt: Y + '04:00:00.000Z' });
+    const rD = EC.ecMergeEngcheck(pcOld2, phoneClearTasksOnly, Y + '04:00:00.000Z', Y + '08:00:00.000Z');
+    ok('只清任务：旧任务记录丢弃', Object.keys(rD.tasks).length === 0);
+    ok('只清任务：背诵记录仍保留', !!rD.fsrs.l1);
+    ok('只清任务：积分不动', rD.score === 50);
+
+    // E. 取消完成墓碑：电脑端取消（tombs），手机端旧记录不得复活
+    const T1 = T - 7200000, T2 = T - 3600000;
+    const pcCancel = mkEc({ tasks: {}, tombs: { 'l1|listen-broad': T2 }, score: 8, updatedAt: Y + '09:00:00.000Z' });
+    const phoneStillDone = mkEc({ tasks: { 'l1|listen-broad': { at: T1 } }, score: 10, updatedAt: Y + '04:00:00.000Z' });
+    const rE = EC.ecMergeEngcheck(pcCancel, phoneStillDone, Y + '09:00:00.000Z', Y + '04:00:00.000Z');
+    ok('取消完成跨设备：手机端旧记录被墓碑挡住', !rE.tasks['l1|listen-broad']);
+    ok('取消完成跨设备：扣分生效', rE.score === 8);
+
+    // F. 打卡跨设备同步：手机打卡上传新键，电脑端拉取后必须有
+    const phoneCheckin = mkEc({ tasks: { 'l1|listen-broad': { at: T + 60000 } }, score: 12, updatedAt: Y + '10:00:00.000Z' });
+    const pcOld3 = mkEc({ tasks: {}, score: 10, updatedAt: Y + '04:00:00.000Z' });
+    const rF = EC.ecMergeEngcheck(pcOld3, phoneCheckin, Y + '04:00:00.000Z', Y + '10:00:00.000Z');
+    ok('手机打卡电脑端刷新也有', !!rF.tasks['l1|listen-broad']);
+    ok('手机打卡加分同步', rF.score === 12);
+
+    // G. 两端 updatedAt 相同（同时操作/时钟接近）：对端新键不丢
+    const SAME = Y + '11:00:00.000Z';
+    const pcSame = mkEc({ tasks: { 'l1|listen-broad': { at: T + 120000 } }, score: 12, updatedAt: SAME });
+    const phoneSame = mkEc({ tasks: { 'l1|listen-detail': { at: T + 180000 } }, score: 12, updatedAt: SAME });
+    const rG = EC.ecMergeEngcheck(pcSame, phoneSame, SAME, SAME);
+    ok('同时戳操作：两端打卡键都保留', !!rG.tasks['l1|listen-broad'] && !!rG.tasks['l1|listen-detail']);
+
+    // H. 运行时：ecToggleTask 取消完成写墓碑
+    const EC2 = makeEC();
+    const d2 = EC2.ecData();
+    d2.books.push({ id: 'b1', name: '书', order: 1, createdAt: 'x' });
+    d2.lessons.push({ id: 'l1', bookId: 'b1', name: 'L1', order: 1, createdAt: 'x' });
+    EC2.ecToggleTask('l1', 'listen-broad');
+    EC2.ecToggleTask('l1', 'listen-broad');
+    ok('取消完成后 tasks 键删除', !d2.tasks['l1|listen-broad']);
+    ok('取消完成写入键级墓碑', (d2.tombs['l1|listen-broad'] || 0) > 0);
+
+    // I. 运行时：ecClearRecords 写时间分界线（异步）
+    const EC3 = makeEC();
+    const d3 = EC3.ecData();
+    d3.books.push({ id: 'b1', name: '书', order: 1, createdAt: 'x' });
+    d3.lessons.push({ id: 'l1', bookId: 'b1', name: 'L1', order: 1, createdAt: 'x' });
+    d3.tasks['l1|listen-broad'] = { at: Date.now() - 86400000 };
+    d3.fsrs.l1 = EC3.ecFsrsLearn(Date.now() - 86400000);
+    d3.score = 30;
+    const beforeClear = Date.now();
+    EC3._el('ecClrTasks').checked = true;
+    EC3._el('ecClrFsrs').checked = true;
+    EC3._el('ecClrAll').checked = false;
+    EC3.ecClearRecords();
+    setTimeout(() => {
+        ok('清零写 tasks 时间分界线', d3.clearedAt >= beforeClear);
+        ok('清零写 fsrs 时间分界线', d3.fsrsClearedAt >= beforeClear);
     }, 20);
 }
 
