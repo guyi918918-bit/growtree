@@ -83,6 +83,22 @@ ok('课程页渲染推荐卡', /ecTodayRecommendHTML\(book\.id\)/.test(APP));
 ok('完成课程标记 done class', /ec-lesson-done' : ''/.test(APP));
 ok('未开始课程显示锁', /ec-lock" title="还没开始这一课"/.test(APP));
 ok('编辑按钮在行内右侧', /ec-lesson-side/.test(APP) && /ec-edit-btn/.test(APP));
+// ============ v20261025f：手机排版 + 自定义打卡时间 + 学习记录清零 ============
+ok('课程卡两列布局（info+side）', /<div class="ec-lesson-info">/.test(APP) && /\.ec-lesson-info \{/.test(CSS));
+ok('CSS 有完成时间可点击样式', /\.ec-time-edit/.test(CSS));
+ok('语法小字字号缩小到 11px', /\.ec-lesson-note \{\s*\n\s*font-size: 11px/.test(CSS));
+ok('课程进度行字号缩小到 11px', /\.ec-lesson-meta \{ font-size: 11px/.test(CSS));
+ok('任务描述/复习信息字号缩小', /\.ec-task-desc \{ font-size: 11px/.test(CSS) && /\.ec-due-meta \{ font-size: 11px/.test(CSS));
+ok('手机端 480px 适配块存在', /@media \(max-width: 480px\) \{[\s\S]*?\.ec-lesson-main \{ padding: 11px 12px/.test(CSS));
+ok('手机端卡片头可换行', /\.ec-page \.card-header \{ flex-wrap: wrap/.test(CSS));
+ok('ec-edit-time 入口与 handler', APP.includes('data-action="ec-edit-time"') && /if \(action === 'ec-edit-time'\)/.test(APP));
+ok('ecEditTaskTime 函数存在', /async function ecEditTaskTime/.test(APP));
+ok('ecToLocalInput 辅助函数存在', /function ecToLocalInput/.test(APP));
+ok('自定义时间用 datetime-local 弹窗', APP.includes('type="datetime-local"') && APP.includes('ecTaskTimeInput'));
+ok('ec-clear-records 按钮与 handler', APP.includes('data-action="ec-clear-records"') && /if \(action === 'ec-clear-records'\)/.test(APP));
+ok('ecClearRecords 函数存在', /async function ecClearRecords/.test(APP));
+ok('清零弹窗三个勾选项齐全', ['ecClrTasks', 'ecClrFsrs', 'ecClrAll'].every(id => APP.includes('id="' + id + '"')));
+ok('清零保留书单目录语义', /书单和课程目录会保留/.test(APP));
 
 // ============ 二、FSRS 算法单测（回归） ============
 console.log('—— FSRS 算法 ——');
@@ -98,8 +114,8 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, state };');
-    const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '' }; return elCache[id]; }, addEventListener: () => {} };
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, state };');
+    const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async () => null, async () => confirmAnswer,
         async (opts) => { if (opts && opts.getValue) return opts.getValue(); return true; },
         () => 'id' + Math.random().toString(36).slice(2, 8), () => new Date().toISOString(),
@@ -544,6 +560,59 @@ console.log('—— v20261025e 课程列表 ——');
     EC.state._ecEditLessonId = 'l4';
     html = EC.ecRenderLessons();
     ok('展开编辑才显示操作按钮组', html.includes('ec-row-actions') && html.includes('ec-rename-lesson') && html.includes('ec-delete-lesson'));
+}
+
+// ============ 十二、v20261025f：自定义打卡时间 + 学习记录清零 ============
+console.log('—— v20261025f 自定义时间与清零 ——');
+{
+    const EC = makeEC();
+    const d = EC.ecData();
+    d.books.push({ id: 'b1', name: '新概念英语一', order: 1, createdAt: 'x' });
+    d.lessons.push({ id: 'l1', bookId: 'b1', name: 'Lesson 1', order: 1, createdAt: 'x' });
+    // ① 默认系统时间
+    EC.ecToggleTask('l1', 'listen-broad');
+    ok('打卡默认记录系统时间', Math.abs((d.tasks['l1|listen-broad'].at || 0) - Date.now()) < 5000);
+    // ② ecToLocalInput 本地时区格式
+    ok('ecToLocalInput 输出本地 datetime 格式', EC.ecToLocalInput(new Date(2026, 8, 1, 10, 30).getTime()) === '2026-09-01T10:30');
+    // ③ 补录过去时间
+    EC._inputs.ecTaskTimeInput = '2026-09-01T10:30';
+    EC.ecEditTaskTime('l1', 'listen-broad');
+    setTimeout(() => {
+        ok('完成时间可补录为过去日期', d.tasks['l1|listen-broad'].at === new Date('2026-09-01T10:30').getTime());
+        // ④ 渲染：任务行完成时间可点击
+        EC.state._ecLessonId = 'l1';
+        const html = EC.ecRenderLesson();
+        ok('任务行完成时间可点击修改', html.includes('ec-time-edit') && html.includes('data-action="ec-edit-time"') && html.includes('完成于 09-01'));
+        // ⑤ 验证失败（空值）不改动原记录
+        EC._el('ecTaskTimeInput').value = '';
+        const before = d.tasks['l1|listen-broad'].at;
+        EC.ecEditTaskTime('l1', 'listen-broad');
+        setTimeout(() => {
+            ok('空时间验证失败不改动原记录', d.tasks['l1|listen-broad'].at === before);
+            // ⑥ 学习记录清零（不连带积分）
+            d.score = 50; d.streak = 3; d.bestStreak = 5; d.achievements['first-task'] = 'x';
+            d.fsrs.l1 = { s: 2, d: 5, n: 1, lapses: 0, last: Date.now() - 86400000, due: Date.now() + 86400000, grade: 3 };
+            EC._el('ecClrTasks').checked = true;
+            EC._el('ecClrFsrs').checked = true;
+            EC._el('ecClrAll').checked = false;
+            EC.ecClearRecords();
+            setTimeout(() => {
+                ok('清零后任务记录清空', Object.keys(d.tasks).length === 0);
+                ok('清零后背诵记录清空', Object.keys(d.fsrs).length === 0);
+                ok('清零保留书单与课程目录', d.books.length === 1 && d.lessons.length === 1);
+                ok('未勾选连带时积分/连续/成就保留', d.score === 50 && d.streak === 3 && !!d.achievements['first-task']);
+                // ⑦ 连带积分一起清零
+                d.tasks['l1|listen-broad'] = { at: Date.now() };
+                EC._el('ecClrTasks').checked = true;
+                EC._el('ecClrAll').checked = true;
+                EC.ecClearRecords();
+                setTimeout(() => {
+                    ok('连带清零后积分归零', d.score === 0 && d.streak === 0 && d.bestStreak === 0);
+                    ok('连带清零后旧成就清除（first-book 按现状重建）', !d.achievements['first-task'] && !!d.achievements['first-book'] && d.lastStudyDate === '');
+                }, 20);
+            }, 20);
+        }, 20);
+    }, 20);
 }
 
 // 等待异步断言后汇总

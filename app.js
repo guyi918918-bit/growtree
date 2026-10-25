@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261025e';
+const APP_BUILD = '20261025f';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -10201,7 +10201,7 @@ function toggleTheme() {
 //   lessons: 二级目录（课）   [{id, bookId, name, note, order, createdAt}]
 //             note = 显示在课程名下方的灰色小字（语法要点/备注，可选）
 //   tasks:   三级任务记录     key = `${lessonId}|${taskId}` → { at: epochMs }
-//             完成即可打卡，不设复习曲线；完成时间精确到分钟展示
+//             完成即可打卡，不设复习曲线；完成时间精确到分钟展示，且可点击补录修改（默认系统时间）
 //   fsrs:    背书复习记录     key = lessonId → { s, d, n, lapses, last, due, grade }
 //             FSRS 简化版（整篇课文背书）：初学即可四选一自评入池（Again/Hard/Good/Easy），
 //             之后每次复习对整篇四选一打分 → 更新难度 D、稳定性 S → 推算下次复习时间；
@@ -10833,6 +10833,69 @@ function ecToggleTask(lessonId, taskId) {
         ecAfterAction('🎯 「' + (taskDef ? taskDef.name : '') + '」完成！+' + pts + ' 分');
     }
 }
+// epochMs → datetime-local 输入框值（本地时区 YYYY-MM-DDTHH:mm）
+function ecToLocalInput(ts) {
+    const d = new Date(ts || Date.now());
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// 修改某个任务的完成时间：默认就是系统打卡时间，之前学过的课可补录实际日期（不能晚于现在）
+async function ecEditTaskTime(lessonId, taskId) {
+    const rec = ecGetTask(lessonId, taskId);
+    if (!rec) return;
+    const taskDef = ecFindTaskDef(lessonId, taskId);
+    const name = taskDef ? taskDef.name : '任务';
+    const v = await uiModal({
+        title: '🕐 修改完成时间',
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin-bottom:8px">「${escapeHtml(name)}」的完成时间。之前就学过的课，可以改成实际学习的日期；不改就是当前的系统打卡时间。</div>
+               <input type="datetime-local" id="ecTaskTimeInput" value="${ecToLocalInput(rec.at)}" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px">
+               <div class="ec-hint" style="margin-top:6px">不能晚于当前时间；保存后跨设备同步。</div>`,
+        getValue: () => {
+            const el = document.getElementById('ecTaskTimeInput');
+            const raw = (el && el.value) || '';
+            if (!raw) { toast('请选择完成时间'); return null; }
+            let ts = new Date(raw).getTime();
+            if (isNaN(ts)) { toast('时间格式不正确'); return null; }
+            if (ts > Date.now()) ts = Date.now();
+            return ts;
+        },
+        okText: '保存'
+    });
+    if (v == null) return;
+    rec.at = v;
+    ecAfterAction('🕐 完成时间已更新为 ' + ecFmtWeek(v));
+}
+// 学习记录清零（测试期重来用）：清任务完成记录 + 背诵记录，书单/课程目录保留；
+// 可选连积分/连续学习/成就一起清零。逐个取消完成太麻烦时的批量重置。
+async function ecClearRecords() {
+    const d = ecData();
+    const taskCnt = Object.keys(d.tasks).length;
+    const fsrsCnt = Object.keys(d.fsrs).length;
+    if (!taskCnt && !fsrsCnt && !(d.score || 0)) { toast('当前没有学习记录'); return; }
+    const v = await uiModal({
+        title: '🧹 学习记录清零',
+        isDanger: true,
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin-bottom:10px">把<b>任务完成记录（${taskCnt} 条）</b>和<b>背诵复习记录（${fsrsCnt} 条）</b>清空，所有课程回到「未开始」状态；<b>书单和课程目录会保留</b>，不用重新建。</div>
+               <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600;padding:9px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="ecClrTasks" checked> 清零任务完成记录（${taskCnt} 条）</label>
+               <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600;padding:9px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="ecClrFsrs" checked> 清零背诵复习记录（${fsrsCnt} 条）</label>
+               <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600;padding:9px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer"><input type="checkbox" id="ecClrAll"> 连积分 / 连续学习 / 成就一起清零（当前 ${d.score || 0} 分）</label>`,
+        getValue: () => ({
+            tasks: !!(document.getElementById('ecClrTasks') || {}).checked,
+            fsrs: !!(document.getElementById('ecClrFsrs') || {}).checked,
+            all: !!(document.getElementById('ecClrAll') || {}).checked
+        }),
+        okText: '确认清零'
+    });
+    if (v == null) return;
+    if (!v.tasks && !v.fsrs && !v.all) { toast('没有选择要清零的内容'); return; }
+    if (v.tasks) d.tasks = {};
+    if (v.fsrs) d.fsrs = {};
+    if (v.all) {
+        d.score = 0; d.streak = 0; d.bestStreak = 0;
+        d.days = {}; d.achievements = {}; d.lastStudyDate = '';
+    }
+    ecAfterAction('🧹 学习记录已清零，书单目录保留');
+}
 // 背诵：mode = 'learn'（旧入口，默认 Good 入库）或 1/2/3/4（四档自评；无记录时=初学入池）
 function ecReciteAction(lessonId, mode) {
     const d = ecData();
@@ -10998,6 +11061,7 @@ function ecRenderBooks() {
             <div class="card-title">📚 我的书单（一级目录）</div>
             <div class="ec-head-btns">
                 ${books.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-book-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
+                <button class="btn btn-sm btn-secondary" data-action="ec-clear-records" title="清空所有打卡/背诵记录，书单和课程目录保留（测试期重来用）">🧹 清零</button>
                 <button class="btn btn-sm ${addOpen ? 'btn-secondary' : 'btn-primary'}" data-action="ec-toggle-add">${addOpen ? '✕ 收起' : '➕ 新增'}</button>
             </div>
         </div>
@@ -11051,9 +11115,11 @@ function ecRenderLessons() {
         <div class="card ec-lesson-card${checked ? ' ec-sel' : ''}${selMode ? ' ec-selmode' : ''}${allDone ? ' ec-lesson-done' : ''}">
             ${selMode ? `<div class="ec-sel-cb" data-action="ec-lesson-sel" data-id="${l.id}">${checked ? '☑️' : '⬜'}</div>` : ''}
             <div class="ec-lesson-main" data-action="ec-open-lesson" data-id="${l.id}">
-                <div class="ec-lesson-name">${locked ? '<span class="ec-lock" title="还没开始这一课">🔒</span>' : ''}${escapeHtml(l.name)}${allDone ? ' <span class="ec-done-flag">✅</span>' : ''}</div>
-                ${l.note ? `<div class="ec-lesson-note">${escapeHtml(l.note)}</div>` : ''}
-                <div class="ec-lesson-meta">任务 ${pg.done}/${pg.total}${allDone ? ' · 已完成' : ''} · ${reciteTag}</div>
+                <div class="ec-lesson-info">
+                    <div class="ec-lesson-name">${locked ? '<span class="ec-lock" title="还没开始这一课">🔒</span>' : ''}${escapeHtml(l.name)}${allDone ? ' <span class="ec-done-flag">✅</span>' : ''}</div>
+                    ${l.note ? `<div class="ec-lesson-note">${escapeHtml(l.note)}</div>` : ''}
+                    <div class="ec-lesson-meta">任务 ${pg.done}/${pg.total}${allDone ? ' · 已完成' : ''} · ${reciteTag}</div>
+                </div>
                 <div class="ec-lesson-side">
                     <button class="ec-edit-btn" data-action="ec-edit-lesson" data-id="${l.id}" title="编辑">✏️</button>
                     <span class="ec-book-go">›</span>
@@ -11168,7 +11234,10 @@ function ecTaskRow(lessonId, taskDef) {
     const btn = done
         ? `<button class="btn btn-sm btn-secondary" data-action="ec-task" data-lesson="${lessonId}" data-task="${taskDef.id}">↩️ 取消完成</button>`
         : `<button class="btn btn-sm btn-primary" data-action="ec-task" data-lesson="${lessonId}" data-task="${taskDef.id}">🎯 打卡完成</button>`;
-    const timeLine = done && rec.at ? `<div class="ec-task-time">✅ 完成于 ${ecFmtWeek(rec.at)}</div>` : '';
+    // 完成时间默认取系统时间；之前就学过的课可点时间补录实际日期（ecEditTaskTime）
+    const timeLine = done && rec.at
+        ? `<button type="button" class="ec-task-time ec-time-edit" data-action="ec-edit-time" data-lesson="${lessonId}" data-task="${taskDef.id}" title="点击修改完成时间（补录之前学过的课）">✅ 完成于 ${ecFmtWeek(rec.at)} ✏️</button>`
+        : '';
     return `
     <div class="ec-task${done ? ' ec-task-done' : ''}">
         <div class="ec-task-head">
@@ -11452,6 +11521,8 @@ document.addEventListener('click', async e => {
     if (action === 'ec-open-lesson') { state._ecLessonId = el.dataset.id; state._ecEditLessonId = null; state._ecLessonSelMode = false; state._ecLessonSel = {}; state._ecAddOpen = false; render(); return; }
     if (action === 'ec-back-lessons') { state._ecLessonId = null; state._ecAddOpen = false; render(); return; }
     if (action === 'ec-task') { ecToggleTask(el.dataset.lesson, el.dataset.task); return; }
+    if (action === 'ec-edit-time') { ecEditTaskTime(el.dataset.lesson, el.dataset.task); return; }
+    if (action === 'ec-clear-records') { ecClearRecords(); return; }
     if (action === 'ec-recite') { ecReciteAction(el.dataset.lesson, el.dataset.mode); return; }
     if (action === 'ec-early-review') { state._ecEarlyId = state._ecEarlyId === el.dataset.lesson ? null : el.dataset.lesson; render(); return; }
     if (action === 'ec-toggle-add') { state._ecAddOpen = !state._ecAddOpen; render(); return; }

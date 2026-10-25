@@ -4205,7 +4205,7 @@ select.input {
 .ec-add-row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
 .ec-add-row .input { flex: 1; min-width: 0; }
 .ec-add-row textarea.input { resize: vertical; line-height: 1.6; font-size: 13px; }
-.ec-hint { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin-top: 4px; }
+.ec-hint { font-size: 11px; color: var(--text-secondary); line-height: 1.6; margin-top: 4px; }
 .ec-empty { text-align: center; padding: 28px 16px; color: var(--text-secondary); font-size: 14px; }
 .ec-empty-icon { font-size: 34px; margin-bottom: 8px; }
 .ec-empty .ec-hint { margin-top: 6px; }
@@ -4232,10 +4232,11 @@ select.input {
 .ec-book-icon { font-size: 26px; flex-shrink: 0; }
 .ec-book-info { flex: 1; min-width: 0; }
 .ec-book-name { font-size: 15px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ec-book-meta { font-size: 12px; color: var(--text-secondary); margin: 3px 0 6px; }
+.ec-book-meta { font-size: 11px; color: var(--text-secondary); margin: 3px 0 6px; }
 .ec-book-go { font-size: 20px; color: var(--text-secondary); flex-shrink: 0; }
-.ec-lesson-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ec-lesson-meta { font-size: 12px; color: var(--text-secondary); flex-shrink: 0; }
+.ec-lesson-name { min-width: 0; font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ec-lesson-info { flex: 1; min-width: 0; }
+.ec-lesson-meta { font-size: 11px; color: var(--text-secondary); }
 
 /* 行内编辑按钮（重命名/删除默认收起） */
 .ec-row-actions { display: flex; gap: 8px; padding: 0 16px 12px; flex-wrap: wrap; }
@@ -4258,9 +4259,9 @@ select.input {
 .ec-reco { cursor: pointer; border: 1px solid rgba(99,102,241,0.35); background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(52,199,89,0.06)); }
 .ec-reco:active { background: var(--surface-2); }
 .ec-reco-head { font-size: 12px; font-weight: 700; color: var(--primary); margin-bottom: 6px; }
-.ec-reco-name { font-size: 15px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ec-reco-name { font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ec-reco-tag { font-size: 11px; font-weight: 600; color: var(--primary); background: rgba(99,102,241,0.12); padding: 2px 8px; border-radius: 20px; }
-.ec-reco-meta { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+.ec-reco-meta { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
 .ec-reco-done { cursor: default; border-color: rgba(52,199,89,0.4); background: rgba(52,199,89,0.06); }
 
 /* 批量生成 / 批量导入 */
@@ -4277,7 +4278,7 @@ select.input {
 .ec-due-info { flex: 1; min-width: 0; }
 
 /* 复习评价即时反馈条：点完四档后行内显示加分/下次复习时间，几秒后随下次操作消失 */
-.ec-review-feedback { margin-top: 8px; padding: 8px 12px; border-radius: var(--radius-sm); background: rgba(52,199,89,0.12); border: 1px solid rgba(52,199,89,0.35); color: var(--text); font-size: 12px; font-weight: 600; line-height: 1.6; }
+.ec-review-feedback { margin-top: 8px; padding: 8px 12px; border-radius: var(--radius-sm); background: rgba(52,199,89,0.12); border: 1px solid rgba(52,199,89,0.35); color: var(--text); font-size: 11px; font-weight: 600; line-height: 1.6; }
 [data-theme="dark"] .ec-review-feedback { background: rgba(52,199,89,0.18); border-color: rgba(52,199,89,0.4); }
 
 /* 悦己享瘦模块（iframe 嵌入成长小树）——v20261025b 误删导致 iframe 高度塌陷只剩默认 150px，板块显示空白 */
@@ -4290,7 +4291,7 @@ select.input {
 .ec-task-head { display: flex; align-items: center; gap: 8px; }
 .ec-task-icon { font-size: 18px; }
 .ec-task-name { font-size: 14px; font-weight: 700; color: var(--text); }
-.ec-task-desc { font-size: 12px; color: var(--text-secondary); margin: 5px 0 8px; line-height: 1.5; }
+.ec-task-desc { font-size: 11px; color: var(--text-secondary); margin: 5px 0 8px; line-height: 1.5; }
 .ec-task-btn { display: flex; }
 .ec-task-done { background: rgba(52,199,89,0.05); }
 
@@ -4366,7 +4367,7 @@ select.input {
 [data-theme="dark"] .ec-grade-chip.g-hard { background: #3d2f1a; color: #ffcc80; }
 [data-theme="dark"] .ec-grade-chip.g-good { background: rgba(126,226,168,0.12); color: #7ee2a8; }
 [data-theme="dark"] .ec-grade-chip.g-easy { background: rgba(130,177,255,0.14); color: #82b1ff; }
-.ec-curve-tip { font-size: 12px; color: var(--text-secondary); line-height: 1.7; }
+.ec-curve-tip { font-size: 11px; color: var(--text-secondary); line-height: 1.7; }
 .ec-curve-tip b { color: var(--text); }
 
 /* 统计格 */
@@ -4387,7 +4388,7 @@ select.input {
 .ec-due-row.late { background: rgba(217,48,37,0.05); }
 .ec-due-title { font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .ec-due-path { font-size: 11px; font-weight: 400; color: var(--text-secondary); }
-.ec-due-meta { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+.ec-due-meta { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
 
 /* 7 天学习条 */
 .ec-day-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 12px; }
@@ -4426,14 +4427,16 @@ select.input {
 /* ============ v20261025c 新增 ============ */
 /* 课程名下方的灰色语法要点小字 */
 .ec-lesson-note {
-    font-size: 12px; color: var(--text-secondary); line-height: 1.55;
-    margin: 2px 0 4px; padding: 5px 10px;
+    font-size: 11px; color: var(--text-secondary); line-height: 1.5;
+    margin: 2px 0 3px; padding: 4px 9px;
     background: var(--surface-2); border-radius: 8px;
     word-break: break-word;
 }
-.ec-lesson-note-lg { margin: 0 16px 10px; font-size: 13px; }
-/* 任务完成时间（精确到分钟 + 星期几） */
-.ec-task-time { font-size: 12px; color: #1a7f37; font-weight: 600; margin: 0 0 8px; }
+.ec-lesson-note-lg { margin: 0 16px 10px; font-size: 12px; }
+/* 任务完成时间（精确到分钟 + 星期几）；v20261025f 起可点击补录修改 */
+.ec-task-time { font-size: 11px; color: #1a7f37; font-weight: 600; margin: 0 0 8px; }
+.ec-time-edit { display: block; max-width: 100%; border: none; background: none; padding: 0; font-family: inherit; text-align: left; cursor: pointer; }
+.ec-time-edit:hover { text-decoration: underline; }
 [data-theme="dark"] .ec-task-time { color: #7ee2a8; }
 /* 批量删除：选择框与高亮 */
 .ec-sel-cb {
@@ -4469,3 +4472,44 @@ select.input {
 .ec-tm-add { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
 /* 复习中心：提前复习按钮行 */
 .ec-due-btns { display: flex; gap: 8px; padding: 8px 0 2px; flex-wrap: wrap; }
+
+/* ============ v20261025f：手机端排版收紧 + 课程卡两列布局 ============ */
+/* 课程卡：左侧信息列（课名/语法小字/进度 纵向堆叠，小字获得整行宽度不再被挤压换行），右侧操作列 */
+.ec-lesson-main { align-items: center; }
+.ec-book-main { align-items: center; }
+
+/* 手机端（≤480px）：整体收紧 padding 与字号，一屏看更多课程 */
+@media (max-width: 480px) {
+    .ec-page .card-header { flex-wrap: wrap; }
+    .ec-page .card { padding: 14px; margin-bottom: 12px; }
+    .ec-head { padding: 12px; }
+    .ec-head-symbols { font-size: 14px; }
+    .ec-head-score { font-size: 14px; }
+    .ec-book-main, .ec-lesson-main { padding: 11px 12px; gap: 10px; }
+    .ec-book-icon { font-size: 22px; }
+    .ec-book-name { font-size: 14px; }
+    .ec-lesson-name { font-size: 13px; }
+    .ec-lesson-note { font-size: 10.5px; padding: 3px 8px; }
+    .ec-book-meta, .ec-lesson-meta { font-size: 10.5px; }
+    .ec-book-go { font-size: 18px; }
+    .ec-reco-name { font-size: 13.5px; }
+    .ec-reco-meta { font-size: 11px; }
+    .ec-reco-tag { font-size: 10px; }
+    .ec-task { padding: 11px 12px; }
+    .ec-task-name { font-size: 13px; }
+    .ec-task-desc { font-size: 10.5px; }
+    .ec-task-time { font-size: 10.5px; }
+    .ec-due-row { padding: 10px 12px; }
+    .ec-due-title { font-size: 13px; }
+    .ec-group-title { font-size: 13px; }
+    .ec-grade-name { font-size: 12px; }
+    .ec-grade-desc { font-size: 10px; }
+    .ec-fsrs-card .ec-curve-tip { font-size: 11px; }
+    .ec-hint { font-size: 10.5px; }
+    .ec-tm-desc { font-size: 10.5px; }
+    .ec-stat-num { font-size: 18px; }
+    .ec-stat-label { font-size: 10px; }
+    .ec-ach-name { font-size: 12px; }
+    .ec-ach-desc { font-size: 10px; }
+    .ec-day-label { font-size: 9px; }
+}
