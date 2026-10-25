@@ -75,6 +75,14 @@ ok('打分后清除行内展开', /state\._ecEarlyId = null;/.test(APP));
 ok('打分后记录即时反馈', /state\._ecLastReview = \{ id: lessonId/.test(APP));
 ok('复习三列表显示反馈条', /rvFeedback\(it\.lesson\.id\)/.test(APP));
 ok('课程页背诵面板显示反馈条', /ec-group-body">\$\{body\}\$\{rvHtml\}/.test(APP));
+// ============ v20261025e：课程列表 4 项 UI 优化 ============
+ok('CSS 有推荐卡样式', /\.ec-reco \{/.test(CSS) && /\.ec-reco-tag/.test(CSS) && /\.ec-reco-done/.test(CSS));
+ok('CSS 有完成态/锁/行内编辑按钮', /\.ec-lesson-card\.ec-lesson-done/.test(CSS) && /\.ec-lock/.test(CSS) && /\.ec-edit-btn/.test(CSS) && /\.ec-lesson-side/.test(CSS));
+ok('推荐函数存在', /function ecTodayRecommend\(/.test(APP) && /function ecTodayRecommendHTML\(/.test(APP));
+ok('课程页渲染推荐卡', /ecTodayRecommendHTML\(book\.id\)/.test(APP));
+ok('完成课程标记 done class', /ec-lesson-done' : ''/.test(APP));
+ok('未开始课程显示锁', /ec-lock" title="还没开始这一课"/.test(APP));
+ok('编辑按钮在行内右侧', /ec-lesson-side/.test(APP) && /ec-edit-btn/.test(APP));
 
 // ============ 二、FSRS 算法单测（回归） ============
 console.log('—— FSRS 算法 ——');
@@ -90,7 +98,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, state };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, state };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '' }; return elCache[id]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async () => null, async () => confirmAnswer,
         async (opts) => { if (opts && opts.getValue) return opts.getValue(); return true; },
@@ -491,6 +499,51 @@ console.log('—— v20261025d 新功能 ——');
     ok('课程页背诵面板显示反馈条', hLesson.includes('ec-review-feedback') && hLesson.includes('已评价'));
     const hReview = EC2.ecRenderReview();
     ok('复习页显示反馈条', hReview.includes('ec-review-feedback'));
+}
+
+// ============ 十一、v20261025e：当日推荐 / 卡片状态 / 行内编辑 ============
+console.log('—— v20261025e 课程列表 ——');
+{
+    const EC = makeEC();
+    const d = EC.ecData();
+    d.books.push({ id: 'b1', name: '新概念英语一', order: 1, createdAt: 'x' });
+    ['L1', 'L2', 'L3'].forEach((n, i) => d.lessons.push({ id: 'l' + (i + 1), bookId: 'b1', name: n, order: i + 1, createdAt: 'x' }));
+    // 推荐：L1/L2 未完成 → 推荐 L1
+    let reco = EC.ecTodayRecommend('b1');
+    ok('未完成时推荐第一个任务课', !!reco && reco.kind === 'task' && reco.lesson.id === 'l1');
+    let html = EC.ecTodayRecommendHTML('b1');
+    ok('推荐卡含课程名与进度', html.includes('今日推荐') && html.includes('L1') && html.includes('任务 0/5'));
+    // L1 全部完成 → 推荐 L2
+    d.books[0].tasks.forEach(t => { d.tasks['l1|' + t.id] = { at: Date.now() }; });
+    reco = EC.ecTodayRecommend('b1');
+    ok('L1 完成后推荐下一课 L2', !!reco && reco.kind === 'task' && reco.lesson.id === 'l2');
+    // 全部完成任务 + L1 背诵到点 → 推荐背诵 L1
+    d.books[0].tasks.forEach(t => { d.tasks['l2|' + t.id] = { at: Date.now() }; d.tasks['l3|' + t.id] = { at: Date.now() }; });
+    d.fsrs.l1 = { s: 2, d: 5, n: 1, lapses: 0, last: Date.now() - 5 * 86400000, due: Date.now() - 86400000, grade: 3 };
+    reco = EC.ecTodayRecommend('b1');
+    ok('任务全完成+有到点背诵→推荐背诵', !!reco && reco.kind === 'recite' && reco.lesson.id === 'l1');
+    html = EC.ecTodayRecommendHTML('b1');
+    ok('背诵推荐卡文案', html.includes('背诵到点') && html.includes('背书'));
+    // 全部完成且背诵已掌握 → 显示今日完成
+    d.fsrs.l1.s = 100;
+    reco = EC.ecTodayRecommend('b1');
+    ok('全部完成→无推荐', reco === null);
+    html = EC.ecTodayRecommendHTML('b1');
+    ok('全部完成显示庆祝卡', html.includes('今日推荐') && html.includes('都完成啦'));
+    // 渲染：卡片状态与按钮位置
+    EC.state._ecBookId = 'b1';
+    html = EC.ecRenderLessons();
+    ok('完成课程带 done 卡片 class', html.includes('ec-lesson-done'));
+    ok('默认无行内操作区（不占位）', !html.includes('ec-row-actions'));
+    ok('编辑按钮为行内小按钮', html.includes('ec-edit-btn') && html.includes('ec-lesson-side'));
+    // 构造一个 0 完成的新课验证锁标识
+    d.lessons.push({ id: 'l4', bookId: 'b1', name: 'L4 新课', order: 4, createdAt: 'x' });
+    html = EC.ecRenderLessons();
+    ok('未解锁课程显示🔒标识', /ec-lock" title="还没开始这一课">🔒/.test(html));
+    // 展开编辑态才有操作按钮组
+    EC.state._ecEditLessonId = 'l4';
+    html = EC.ecRenderLessons();
+    ok('展开编辑才显示操作按钮组', html.includes('ec-row-actions') && html.includes('ec-rename-lesson') && html.includes('ec-delete-lesson'));
 }
 
 // 等待异步断言后汇总

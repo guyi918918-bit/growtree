@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261025d';
+const APP_BUILD = '20261025e';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -10976,17 +10976,17 @@ function ecRenderBooks() {
                     <div class="ec-book-meta">${st.lessons} 节课 · 任务 ${st.tasksDone}/${st.taskTotal} · 背诵 ${st.recited}/${st.lessons}</div>
                     <div class="ec-bar"><div class="ec-bar-fill" style="width:${pct}%"></div></div>
                 </div>
-                <div class="ec-book-go">›</div>
+                <div class="ec-book-side">
+                    <button class="ec-edit-btn" data-action="ec-edit-book" data-id="${b.id}" title="编辑 / 管理打卡任务">✏️</button>
+                    <span class="ec-book-go">›</span>
+                </div>
             </div>
+            ${editing ? `
             <div class="ec-row-actions">
-                ${editing ? `
-                    <button class="btn btn-sm btn-secondary" data-action="ec-rename-book" data-id="${b.id}">✏️ 重命名</button>
-                    <button class="btn btn-sm btn-danger" data-action="ec-delete-book" data-id="${b.id}">🗑️ 删除</button>
-                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-book" data-id="${b.id}">✕ 收起</button>
-                ` : `
-                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-book" data-id="${b.id}" title="编辑 / 管理打卡任务">✏️</button>
-                `}
-            </div>
+                <button class="btn btn-sm btn-secondary" data-action="ec-rename-book" data-id="${b.id}">✏️ 重命名</button>
+                <button class="btn btn-sm btn-danger" data-action="ec-delete-book" data-id="${b.id}">🗑️ 删除</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-edit-book" data-id="${b.id}">✕ 收起</button>
+            </div>` : ''}
             ${editing ? ecTaskManageHTML(b) : ''}
         </div>`;
     }).join('');
@@ -11044,25 +11044,28 @@ function ecRenderLessons() {
         const reciteTag = rs === 'new' ? '未背诵' : rs === 'mastered' ? '🏆 已掌握' : rs === 'due' ? '⏰ 待背诵' : `📖 ${ecSDays(rec.s || 0)}后`;
         const editing = state._ecEditLessonId === l.id;
         const checked = !!sel[l.id];
+        // 卡片状态：全部完成=淡绿已完成；一项未做=未解锁🔒
+        const allDone = pg.total > 0 && pg.done >= pg.total;
+        const locked = pg.done === 0;
         return `
-        <div class="card ec-lesson-card${checked ? ' ec-sel' : ''}${selMode ? ' ec-selmode' : ''}">
+        <div class="card ec-lesson-card${checked ? ' ec-sel' : ''}${selMode ? ' ec-selmode' : ''}${allDone ? ' ec-lesson-done' : ''}">
             ${selMode ? `<div class="ec-sel-cb" data-action="ec-lesson-sel" data-id="${l.id}">${checked ? '☑️' : '⬜'}</div>` : ''}
             <div class="ec-lesson-main" data-action="ec-open-lesson" data-id="${l.id}">
-                <div class="ec-lesson-name">${escapeHtml(l.name)}</div>
+                <div class="ec-lesson-name">${locked ? '<span class="ec-lock" title="还没开始这一课">🔒</span>' : ''}${escapeHtml(l.name)}${allDone ? ' <span class="ec-done-flag">✅</span>' : ''}</div>
                 ${l.note ? `<div class="ec-lesson-note">${escapeHtml(l.note)}</div>` : ''}
-                <div class="ec-lesson-meta">任务 ${pg.done}/${pg.total} · ${reciteTag}</div>
-                <div class="ec-book-go">›</div>
+                <div class="ec-lesson-meta">任务 ${pg.done}/${pg.total}${allDone ? ' · 已完成' : ''} · ${reciteTag}</div>
+                <div class="ec-lesson-side">
+                    <button class="ec-edit-btn" data-action="ec-edit-lesson" data-id="${l.id}" title="编辑">✏️</button>
+                    <span class="ec-book-go">›</span>
+                </div>
             </div>
+            ${editing ? `
             <div class="ec-row-actions">
-                ${editing ? `
-                    <button class="btn btn-sm btn-secondary" data-action="ec-rename-lesson" data-id="${l.id}">✏️ 重命名</button>
-                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-note" data-id="${l.id}">📝 语法要点</button>
-                    <button class="btn btn-sm btn-danger" data-action="ec-delete-lesson" data-id="${l.id}">🗑️ 删除</button>
-                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-lesson" data-id="${l.id}">✕ 收起</button>
-                ` : `
-                    <button class="btn btn-sm btn-secondary" data-action="ec-edit-lesson" data-id="${l.id}" title="编辑">✏️</button>
-                `}
-            </div>
+                <button class="btn btn-sm btn-secondary" data-action="ec-rename-lesson" data-id="${l.id}">✏️ 重命名</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-edit-note" data-id="${l.id}">📝 语法要点</button>
+                <button class="btn btn-sm btn-danger" data-action="ec-delete-lesson" data-id="${l.id}">🗑️ 删除</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-edit-lesson" data-id="${l.id}">✕ 收起</button>
+            </div>` : ''}
         </div>`;
     }).join('');
     const addOpen = !!state._ecAddOpen;
@@ -11114,7 +11117,48 @@ function ecRenderLessons() {
             <button class="btn btn-sm btn-danger" data-action="ec-del-sel-lessons">删除所选</button>
         </div>` : ''}
     </div>
+    ${ecTodayRecommendHTML(book.id)}
     ${lessons.length ? list : `<div class="card ec-empty"><div class="ec-empty-icon">📖</div><div>还没有课程</div><div class="ec-hint">用上方表单添加，或批量生成 / 批量导入整本书的课程</div></div>`}`;
+}
+
+// 当日推荐：按顺序找第一个还有未完成任务的课程；全部完成则推送到点的背诵；都没有返回 null
+function ecTodayRecommend(bookId) {
+    const lessons = ecLessonsOf(bookId);
+    const d = ecData();
+    const todo = lessons.find(l => { const pg = ecLessonProgress(l.id); return pg.total > 0 && pg.done < pg.total; });
+    if (todo) return { kind: 'task', lesson: todo, pg: ecLessonProgress(todo.id) };
+    const due = lessons.find(l => {
+        const rec = d.fsrs[l.id];
+        return rec && rec.last && Date.now() >= (rec.due || 0) && (rec.s || 0) < EC_FSRS.masteredS;
+    });
+    if (due) return { kind: 'recite', lesson: due, rec: d.fsrs[due.id] };
+    return null;
+}
+
+function ecTodayRecommendHTML(bookId) {
+    const reco = ecTodayRecommend(bookId);
+    if (!reco) {
+        return `
+    <div class="card ec-reco ec-reco-done">
+        <div class="ec-reco-head">🎉 今日推荐</div>
+        <div class="ec-reco-name">这本书今天的任务都完成啦！</div>
+        <div class="ec-reco-meta">休息一下，或者去「复习中心」提前背下一课</div>
+    </div>`;
+    }
+    if (reco.kind === 'task') {
+        return `
+    <div class="card ec-reco" data-action="ec-open-lesson" data-id="${reco.lesson.id}">
+        <div class="ec-reco-head">🎯 今日推荐</div>
+        <div class="ec-reco-name">${escapeHtml(reco.lesson.name)} <span class="ec-reco-tag">任务 ${reco.pg.done}/${reco.pg.total}</span></div>
+        <div class="ec-reco-meta">按顺序继续打卡，完成这一课就追平进度啦 →</div>
+    </div>`;
+    }
+    return `
+    <div class="card ec-reco" data-action="ec-open-lesson" data-id="${reco.lesson.id}">
+        <div class="ec-reco-head">🎯 今日推荐</div>
+        <div class="ec-reco-name">${escapeHtml(reco.lesson.name)} <span class="ec-reco-tag">背诵到点</span></div>
+        <div class="ec-reco-meta">任务都完成了，这一课的背诵${ecRelText(reco.rec.due)}，去合书画背书 →</div>
+    </div>`;
 }
 
 // 普通任务行（完成即可，无复习曲线）
