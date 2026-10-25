@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20260824p';
+const APP_BUILD = '20261025a';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -19,6 +19,8 @@ const MODULES = [
     { id: 'hot', name: '今日热点', icon: '🔥' },
     { id: 'study', name: '学习提升', icon: '📚' },
     { id: 'english', name: '探索英语', icon: '🎮' },
+    { id: 'engcheck', name: '英语打卡', icon: '🗓️' },
+    { id: 'yjxs', name: '悦己享瘦', icon: '🌿' },
     { id: 'checkin', name: '认真打卡', icon: '✅' },
     { id: 'points', name: '积分系统', icon: '⭐' },
     { id: 'treehole', name: '与自己对话', icon: '💛' }
@@ -33,6 +35,7 @@ function getAllModules() {
     if (!Array.isArray(state.data.modules) || !state.data.modules.length) {
         state.data.modules = getDefaultModules();
     }
+    if (normalizeModules()) saveState();
     return state.data.modules;
 }
 function getModules() {
@@ -48,6 +51,23 @@ function getModuleName(id) {
     const m = getModuleById(id);
     return m ? m.name : (id || '');
 }
+function normalizeModules() {
+    let mods = state.data.modules;
+    if (!Array.isArray(mods)) { mods = getDefaultModules(); state.data.modules = mods; }
+    let changed = false;
+    const fi = mods.findIndex(m => m.id === 'fatloss');
+    if (fi >= 0) { mods.splice(fi, 1); changed = true; }
+    if (!mods.find(m => m.id === 'yjxs')) {
+        const def = MODULES.find(m => m.id === 'yjxs');
+        let at = fi >= 0 ? fi : mods.findIndex(m => m.id === 'checkin');
+        const entry = def ? { id: def.id, name: def.name, icon: def.icon, hidden: false } : { id: 'yjxs', name: '悦己享瘦', icon: '🌿', hidden: false };
+        if (at < 0) at = mods.length;
+        mods.splice(at, 0, entry);
+        changed = true;
+    }
+    return changed;
+}
+
 
 const API = {
     quote: 'https://v1.hitokoto.cn',
@@ -192,21 +212,19 @@ const HOT_TYPES = {
     'guangming-daily': '光明日报',
     'china-youth': '中国青年报',
     'bbc-world': 'BBC 国际',
-    'aljazeera': '半岛电视台',
-    'cnn-world': 'CNN 国际'
+    'aljazeera': '半岛电视台'
 };
 
 // 实际可用的热榜类型（uapis 接口对部分权威媒体不支持， politics 组使用可稳定返回数据的源）
 const HOT_GROUPS = {
     mixed: ['weibo', 'zhihu', 'bilibili', 'baidu', 'toutiao'],
     politics: ['toutiao', 'netease-news', 'sina-news', 'thepaper', 'huxiu', '36kr'],
-    international: ['bbc-world', 'aljazeera', 'cnn-world']
+    international: ['bbc-world', 'aljazeera']
 };
 // 国际热点：uapis 没有国际新闻类型，改用 RSS（经 rss2json 转 JSON，免 key 且带 CORS）聚合主流国际媒体
 const HOT_INTERNATIONAL_FEEDS = {
     'bbc-world': { name: 'BBC 国际', feed: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
-    'aljazeera': { name: '半岛电视台', feed: 'https://www.aljazeera.com/xml/rss/all.xml' },
-    'cnn-world': { name: 'CNN 国际', feed: 'https://rss.cnn.com/rss/edition_world.rss' }
+    'aljazeera': { name: '半岛电视台', feed: 'https://www.aljazeera.com/xml/rss/all.xml' }
 };
 
 // 常见纪念日（月-日）
@@ -2630,6 +2648,8 @@ const state = {
     _collapsedCategories: new Set(),
     _collapsedOther: new Set(),
     _checkInModule: 'basic',
+    _ecBookId: null,
+    _ecLessonId: null,
     _waterMode: null,
     _waterSelected: new Set(),
     settings: {
@@ -2666,7 +2686,9 @@ const state = {
         categoryOrder: null,
         beautyInspirations: [],
         bookRead: [], // 阅读板块：看过的书（收藏书屋数据源），元素为 {title, author, tags, markedAt}
-        engHistory: { search: [], copy: [], copyCount: 0 } // 探索英语历史：支持云端同步
+        engHistory: { search: [], copy: [], copyCount: 0 }, // 探索英语历史：支持云端同步
+        // 英语打卡（三级目录 + 艾宾浩斯复习曲线）：books=一级(书)、lessons=二级(课)、tasks=三级(每课任务记录)
+        engcheck: { books: [], lessons: [], tasks: {} }
     },
     supabase: null,
     syncStatus: 'offline',
@@ -2872,6 +2894,7 @@ function loadState() {
         if (state.settings.exchangeRule === undefined) state.settings.exchangeRule = '';
         migrateData();
         ensureDefaults();
+        repairZeroBasePoints();
         recalcPoints();
         recalcCourage();
     } catch (e) {
@@ -2900,6 +2923,7 @@ function migrateData() {
     state.data.wishBin = state.data.wishBin || [];
     state.data.hotCache = state.data.hotCache || {};
     state.data.apiCache = state.data.apiCache || {};
+    state.data.yjxs = state.data.yjxs || {};
     // 兼容老版：把静态默认分类迁移到用户可管理的 categories
     if (!state.data.categories || !Object.keys(state.data.categories).length) {
         state.data.categories = { ...DEFAULT_CHECKIN_CATEGORIES };
@@ -2969,6 +2993,11 @@ function migrateData() {
         }
     } catch (e) { /* ignore */ }
     state.data.settings = state.data.settings || { theme: state.settings && state.settings.theme ? state.settings.theme : 'light' };
+    // 英语打卡数据兼容：老账号没有该字段时补空结构（新增模块自动追加逻辑会保证导航里出现）
+    if (!state.data.engcheck || typeof state.data.engcheck !== 'object') state.data.engcheck = { books: [], lessons: [], tasks: {} };
+    if (!Array.isArray(state.data.engcheck.books)) state.data.engcheck.books = [];
+    if (!Array.isArray(state.data.engcheck.lessons)) state.data.engcheck.lessons = [];
+    if (!state.data.engcheck.tasks || typeof state.data.engcheck.tasks !== 'object') state.data.engcheck.tasks = {};
     // manageFilterCategory / manageSortPoints 已迁出 settings（独立 localStorage，避免被云端覆盖），此处不再初始化
     // 同步默认模块：仅当检测到旧模块名（夸夸金句/夸夸自己）时，按 MODULES 重排并刷新名称，
     // 否则保留用户/云端已同步的自定义顺序与隐藏状态，避免每次启动都强制覆盖。
@@ -3068,6 +3097,51 @@ function ensureDefaults() {
                 });
             });
         }
+    }
+}
+
+// 修复 x 版清零遗留：保留 base 记录但 points 被置 0，导致打卡显示完成却拿不到积分。
+// 启动时自动把「清零之后」且 points===0 的 base 记录恢复为对应打卡项默认分值，
+// 清零之前的旧记录保持 0 分，避免违背用户「历史积分从零开始」的意图。
+function repairZeroBasePoints() {
+    const pts = state.data.points;
+    if (!pts || !Array.isArray(pts.history)) return;
+    const clearedAt = state.data.game?._pointsClearedAt;
+    const clearedMs = clearedAt ? Date.parse(clearedAt) : 0;
+    let changed = false;
+    if (clearedMs) {
+        // 已清零（点过「全部清零」）：旧版清零时未真正清空 base 记录，残留一堆 0 分 base。
+        // 这些残留会干扰 doCheckIn 的「是否已打卡」判断，导致「打了卡却没积分、像归零」。
+        // 删除「清零时间戳之前」的残留；「清零之后」用户自己新产生的真实打卡保留，
+        // 若被旧同步误置 0 分则恢复默认分值。
+        const before = pts.history.length;
+        pts.history = pts.history.filter(h => {
+            const t = Date.parse(h.time || h.updatedAt || h.date || 0);
+            if (!isNaN(t) && t <= clearedMs) return false; // 清零前残留，删除
+            return true;
+        });
+        if (pts.history.length !== before) changed = true;
+        // 清零后仍遗留的 0 分 base（异常）：恢复默认分值
+        pts.history.forEach(h => {
+            if (h.type !== 'base' || h.points !== 0) return;
+            const item = state.data.checkIns.find(c => c.id === h.checkInId);
+            const mult = isDoubleDay(h.date) ? 2 : 1;
+            const basePts = (parseInt(item ? item.points : 0) || 10) * mult;
+            if (basePts > 0) { h.points = basePts; h.updatedAt = now(); changed = true; }
+        });
+    } else {
+        // 从未清零但存在 0 分 base（异常兜底）：恢复默认分值
+        pts.history.forEach(h => {
+            if (h.type !== 'base' || h.points !== 0) return;
+            const item = state.data.checkIns.find(c => c.id === h.checkInId);
+            const mult = isDoubleDay(h.date) ? 2 : 1;
+            const basePts = (parseInt(item ? item.points : 0) || 10) * mult;
+            if (basePts > 0) { h.points = basePts; h.updatedAt = now(); changed = true; }
+        });
+    }
+    if (changed) {
+        recalcPoints();
+        recalcCourage();
     }
 }
 
@@ -3188,13 +3262,53 @@ function mergeById(localArr, cloudArr, purgedIds) {
     const cloud = Array.isArray(cloudArr) ? cloudArr : [];
     const purged = new Set(Array.isArray(purgedIds) ? purgedIds : []);
     const map = new Map();
-    const makeKey = (prefix, x) => {
-        if (x && x.id && !purged.has(x.id)) return String(x.id);
-        const body = JSON.stringify(x || {}).slice(0, 120);
-        return `${prefix}_${x && x.time ? x.time : ''}_${x && x.date ? x.date : ''}_${body}`;
+    // 关键修复：无 id 的记录使用「与来源无关的」内容指纹作为 key，
+    // 避免同一条无 id 记录因 local/cloud 前缀不同而被保留成两份（历史流水重复累加）。
+    const makeKey = (x) => {
+        if (x && x.id && !purged.has(x.id)) return 'id_' + String(x.id);
+        const body = JSON.stringify(x || {}).slice(0, 160);
+        return `noId_${x && x.time ? x.time : ''}_${x && x.date ? x.date : ''}_${body}`;
     };
-    local.forEach(x => { if (x && !purged.has(x.id)) map.set(makeKey('local', x), x); });
-    cloud.forEach(x => { if (x && !purged.has(x.id)) { const k = makeKey('cloud', x); if (!map.has(k)) map.set(k, x); } });
+    local.forEach(x => { if (x && !purged.has(x && x.id)) map.set(makeKey(x), x); });
+    cloud.forEach(x => { if (x && !purged.has(x && x.id)) { const k = makeKey(x); if (!map.has(k)) map.set(k, x); } });
+    return Array.from(map.values());
+}
+
+// 积分流水合并：按业务语义去重，避免同一打卡/奖励在不同设备生成多条记录后重复计分。
+// mergeById 按 id/JSON 体去重，但 base 等无稳定 id 的记录在不同设备上 id/time 都不同，
+// 同步后会被保留成两条（如手机、电脑各打卡一次「运动」就 +20 而不是 +10），造成总积分不一致。
+function mergePointsHistory(localArr, cloudArr) {
+    const arr = [...(Array.isArray(localArr) ? localArr : []), ...(Array.isArray(cloudArr) ? cloudArr : [])];
+    const map = new Map();
+    const tsOf = (h) => {
+        const t = Date.parse(h && (h.updatedAt || h.time) ? (h.updatedAt || h.time) : 0);
+        return !isNaN(t) ? t : 0;
+    };
+    arr.forEach(h => {
+        if (!h || typeof h !== 'object') return;
+        let key;
+        if (h.type === 'base') {
+            key = `base:${h.checkInId || h.id || ''}:${h.date || ''}`;
+        } else if (h.type === 'streak') {
+            key = `streak:${h.checkInId || h.id || ''}:${h.date || ''}`;
+        } else if (h.type === 'dailyfull' || h.type === 'dailyhalf') {
+            key = `${h.type}:${h.date || ''}`;
+        } else if (h.type === 'content') {
+            key = `content:${h.date || ''}`;
+        } else if (h.type === 'achv') {
+            key = `achv:${h.reason || ''}`;
+        } else if (h.type === 'season') {
+            key = `season:${h.date || ''}:${h.reason || ''}`;
+        } else if (h.type === 'makeup') {
+            key = `makeup:${h.checkInId || h.id || ''}:${h.date || ''}`;
+        } else if (h.id) {
+            key = `id:${h.id}`;
+        } else {
+            key = `${h.type || 'misc'}:${h.date || ''}:${h.time || ''}:${JSON.stringify(h).slice(0, 80)}`;
+        }
+        const cur = map.get(key);
+        if (!cur || tsOf(h) > tsOf(cur)) map.set(key, h);
+    });
     return Array.from(map.values());
 }
 
@@ -3257,6 +3371,54 @@ function ensureSeason() {
     }
 }
 
+// 积分校准冲突解决：应用校准侧（积分/段位/心愿/补打卡）的修正，
+// 但保留双方已合并的真实 base 打卡记录，只应用校准侧的 adjustment/calibration 流水。
+// 这样「清零一端」不会把另一端的打卡完成状态也清空（避免今日小树 0/9 的同步 bug）。
+// 积分/段位同步冲突解决：任一侧曾「积分/段位全部清零」，以「较新清零时间戳」为准，
+// 把积分/段位/赛季/成就统一归零；但保留两端已合并的真实 base 打卡完成记录（仅把每条积分置 0），
+// 避免「一端清零把另一端真实打卡也删掉」或「两端积分/段位不一致」这类同步 bug。
+function resolvePointsCalibOnSync(cloud, localClearedAt) {
+    if (!cloud) return;
+    const cloudClearedAt = cloud.game?._pointsClearedAt || 0;
+    const lc = localClearedAt || 0;
+    const cc = cloudClearedAt || 0;
+    if (!lc && !cc) return;
+    // _pointsClearedAt 是 ISO 字符串时间戳（now() 返回字符串），不能用 Math.max（会得到 NaN），
+    // 改用字符串比较（ISO 8601 字典序即时间序），取「较新清零」一侧。
+    const useLocal = String(lc) >= String(cc);
+    const clearedAt = useLocal ? lc : cc;
+    const clearedGame = useLocal ? state.data.game : (cloud.game || {});
+    // 清零侧获胜：两端统一「从零开始」语义。
+    // 删除「清零时间戳之前」的 base 残留（避免 0 分 base 干扰 doCheckIn 的「是否已打卡」判断，
+    // 造成「打卡不累积 / 像归零」）；保留「清零之后」用户自己新产生的真实打卡，
+    // 若其被旧同步误置 0 分则恢复默认分值。
+    const clearedMs = Date.parse(clearedAt) || 0;
+    // 删除「清零时间戳之前」的全部积分流水（base/adjustment/streak/makeup 等），彻底从零；
+    // 仅保留「清零之后」用户自己新产生的真实打卡，若其被旧同步误置 0 分则恢复默认分值。
+    state.data.points.history = (state.data.points.history || []).filter(h => {
+        const t = Date.parse(h.time || h.updatedAt || h.date || 0);
+        if (clearedMs && !isNaN(t) && t <= clearedMs) return false;
+        return true;
+    }).map(h => {
+        if (h.type === 'base' && h.points === 0) {
+            const item = state.data.checkIns.find(c => c.id === h.checkInId);
+            const mult = isDoubleDay(h.date) ? 2 : 1;
+            const basePts = (parseInt(item ? item.points : 0) || 10) * mult;
+            if (basePts > 0) return { ...h, points: basePts, updatedAt: now() };
+        }
+        return h;
+    });
+    state.data.points.earned = 0;
+    state.data.points.used = 0;
+    state.data.game = { ...state.data.game, ...clearedGame, _pointsClearedAt: clearedAt };
+    if (!useLocal) {
+        state.data.wishes = cloud.wishes;
+        state.data.makeupLog = cloud.makeupLog;
+    }
+    recalcPoints();
+    recalcCourage();
+}
+
 async function syncFromCloud(force = false) {
     if (_syncLock || !state.supabase) return;
     return withSyncLock(() => _syncFromCloudCore(force));
@@ -3309,25 +3471,24 @@ async function _syncFromCloudCore(force = false) {
                     purgedIds: Array.isArray(state.data.purgedIds) ? state.data.purgedIds : []
                 };
 
-                // 积分校准冲突快照：当一侧已用「设置页积分校准」重置过，另一侧还是污染旧数据时，
-                // 以校准侧为准，避免云端/另一设备把 42388 这类错误积分又合并回来。
-                const localCalib = state.data.game?._pointsCalibrated;
-                const cloudCalib = cloud.game?._pointsCalibrated;
-                const deepCopy = v => { try { return JSON.parse(JSON.stringify(v)); } catch (e) { return v; } };
-                const localCalibSnap = {
-                    game: deepCopy(state.data.game),
-                    pointsHistory: deepCopy(localById.history),
-                    wishes: deepCopy(state.data.wishes || []),
-                    makeupLog: deepCopy(state.data.makeupLog || {})
-                };
-                const cloudCalibSnap = {
-                    game: deepCopy(cloud.game),
-                    pointsHistory: deepCopy(Array.isArray(cloud.points?.history) ? cloud.points.history : []),
-                    wishes: deepCopy(cloud.wishes || []),
-                    makeupLog: deepCopy(cloud.makeupLog || {})
-                };
+                // 同步前先记录本地「清零时间戳」，用于下方积分/段位冲突解决
+                // （必须在 state.data 被云端整包覆盖前捕获，否则会读到云端值而误判）。
+                const localClearedAt = state.data.game?._pointsClearedAt || 0;
+                // 悦己享瘦数据：用 exportedAt 时间戳判断哪边更新，避免刚产生的本地改动
+                // 被云端旧快照覆盖回去（这是点击打卡后「自己刷新又取消」的根因）。
+                const localYjxs = state.data.yjxs || {};
+                const localYjxsAt = localYjxs.exportedAt || '';
+                const cloudYjxs = cloudPayload.yjxs || {};
+                const cloudYjxsAt = cloudYjxs.exportedAt || '';
 
+                // 主题是设备本地 UI 偏好：先暂存，云端整组 settings 覆盖后立即还原，
+                // 否则云端旧快照（theme=light）会把本地夜间模式冲掉，
+                // 导致 iframe 重建时闪现夜间一秒后又被 yjxs-theme=light 推回日间。
+                const localTheme = state.data.settings && state.data.settings.theme;
                 state.data = { ...state.data, ...cloudPayload };
+                if (localTheme) state.data.settings.theme = localTheme;
+                // 重新应用主题（父页面属性 + 推送给悦己享瘦 iframe），保持两端一致
+                try { if (typeof applyTheme === 'function') applyTheme(); } catch (themeErr) { /* ignore */ }
                 // 板块配置以「最后修改时间」为准：哪边更新就用哪边，实现跨设备同步
                 if (localModules && cloudModules) {
                     if (cloudModulesUpdatedAt > localModulesUpdatedAt) {
@@ -3353,7 +3514,7 @@ async function _syncFromCloudCore(force = false) {
                 state.data.purgedIds = Array.from(new Set([...(localById.purgedIds || []), ...(state.data.purgedIds || [])]));
                 trimPurgedIds();
                 const mergedPurgedIds = state.data.purgedIds;
-                state.data.points.history = mergeById(localById.history, cloud.points?.history);
+                state.data.points.history = mergePointsHistory(localById.history, cloud.points?.history);
                 state.data.waterLogs = mergeById(localById.waterLogs, cloud.waterLogs, mergedPurgedIds);
                 state.data.praises = mergeById(localById.praises, cloud.praises, mergedPurgedIds);
                 state.data.wishes = mergeById(localById.wishes, cloud.wishes, mergedPurgedIds);
@@ -3378,33 +3539,26 @@ async function _syncFromCloudCore(force = false) {
                 recalcPoints();
                 recalcCourage();
 
-                // 积分校准冲突解决：哪边校准版本更新或相等，就以哪边的积分/段位/心愿/补打卡为准，
-                // 防止污染数据通过 mergeById 又累加回来。相等时以本地当前值为准（用户刚点的校准最可信）。
-                function calibBuildCompare(a, b) {
-                    if (!a) return b ? -1 : 0;
-                    if (!b) return 1;
-                    return String(a).localeCompare(String(b));
-                }
-                const calibCmp = calibBuildCompare(localCalib, cloudCalib);
-                if (calibCmp >= 0) {
-                    state.data.game = { ...state.data.game, ...localCalibSnap.game };
-                    state.data.points.history = localCalibSnap.pointsHistory;
-                    state.data.wishes = localCalibSnap.wishes;
-                    state.data.makeupLog = localCalibSnap.makeupLog;
-                    recalcPoints();
-                    recalcCourage();
-                } else {
-                    state.data.game = { ...state.data.game, ...cloudCalibSnap.game };
-                    state.data.points.history = cloudCalibSnap.pointsHistory;
-                    state.data.wishes = cloudCalibSnap.wishes;
-                    state.data.makeupLog = cloudCalibSnap.makeupLog;
-                    recalcPoints();
-                    recalcCourage();
-                }
+                // 积分/段位同步冲突解决：任一侧清零则两端统一归零（保留真实打卡记录）。
+                resolvePointsCalibOnSync(cloud, localClearedAt);
 
                 // 把同步时间戳推进到云端版本，避免后续轮询重复拉同一份数据
                 state.data.lastSyncAt = cloudUpdatedAt || state.data.lastSyncAt || now();
                 saveStateLocal();
+                // 悦己享瘦跨设备同步：只有云端数据确实比本地新，才接受并推回 iframe；
+                // 否则保留本地最新数据，避免把旧快照覆盖回 iframe 造成打卡被「取消」。
+                let shouldPushYjxs = false;
+                if (cloudYjxsAt && (!localYjxsAt || cloudYjxsAt > localYjxsAt)) {
+                    shouldPushYjxs = JSON.stringify(state.data.yjxs || {}) !== JSON.stringify(localYjxs);
+                } else if (localYjxsAt) {
+                    state.data.yjxs = localYjxs;
+                } else {
+                    // 双方都没有时间戳（首次同步或旧数据）：以云端为准，若不同则推回
+                    shouldPushYjxs = JSON.stringify(state.data.yjxs || {}) !== JSON.stringify(localYjxs);
+                }
+                if (shouldPushYjxs) {
+                    pushYjxsToIframe();
+                }
                 const after = syncDataSnapshot(state.data);
                 if (before !== after) {
                     if (isUserTyping()) {
@@ -3925,7 +4079,9 @@ function getRankStars() { return state.data.game ? (state.data.game.rankStars ||
 function getCourageCap() {
     const t = getTierInfo(getRankStars());
     const r = RANKS.find(x => x.key === t.rankKey);
-    return r ? r.cap : 60;
+    // 星能进度条至少以 100 为满格，确保任何段位都能攒满并自动 +1 星
+    // （修复低段位被钳在 cap<100 而"星能不更新"的问题）
+    return Math.max(COURAGE_STAR, r ? r.cap : 60);
 }
 
 // 游戏数据默认字段（幂等）
@@ -3946,10 +4102,10 @@ function ensureGameDefaults() {
     if (g.accountedEarnedStars > (g.rankStars || 0) + 200) {
         g.accountedEarnedStars = g.rankStars || 0;
     }
-    g.courage = g.courage || 0;
-    g.bonusStars = g.bonusStars || 0;
-    g.courageStars = g.courageStars || 0;
-    g.winStars = g.winStars || 0;
+    g.courage = parseFloat(g.courage) || 0;
+    g.bonusStars = parseInt(g.bonusStars) || 0;
+    g.courageStars = parseInt(g.courageStars) || 0;
+    g.winStars = parseInt(g.winStars) || 0;
     g.winAwarded = g.winAwarded || [];
     g.allFourDates = g.allFourDates || [];
     g.allFourCourageDates = g.allFourCourageDates || [];
@@ -3960,20 +4116,26 @@ function ensureGameDefaults() {
     g.seasonHistory = g.seasonHistory || [];
 }
 
-// 把「累计获得积分」的增量同步成星（1 星 = 100 积分），保持段位与积分挂钩但不因兑换下降
+// 把「本次新增积分」增量同步成星（1 星 = 100 积分）。
+// 关键修复：只处理"本次会话内新增的 earned"，绝不追补历史累计余额，
+// 避免被污染的超长历史流水（如 4w 分）一次性把段位拉到最强王者。
 function syncEarnedStars() {
     const g = state.data.game;
     if (!g) return;
-    const beforeKey = getTierInfo(g.rankStars || 0).rankKey;
-    const es = Math.floor((state.data.points.earned || 0) / 100);
-    const diff = es - (g.accountedEarnedStars || 0);
-    // 单次启动最多把 3 颗星从 earned 增量兑换成段位星，防止脏数据/异常流水导致青铜直接飞升王者。
+    const earned = state.data.points.earned || 0;
+    // 首次（或校准后）：以当前 earned 为基线，不追补历史，防止飞升
+    if (typeof g._lastSyncEarned !== 'number') g._lastSyncEarned = earned;
+    const delta = earned - g._lastSyncEarned;
+    if (delta <= 0) { g._lastSyncEarned = earned; return; }
+    const newStars = Math.floor(delta / 100);
+    if (newStars <= 0) { g._lastSyncEarned = earned; return; }
+    // 单次会话最多把 3 颗星从新增积分兑换成段位星，进一步防止异常流水飞升
     const MAX_SYNC_STARS_PER_SESSION = 3;
-    if (diff > 0) {
-        const add = Math.min(diff, MAX_SYNC_STARS_PER_SESSION);
-        g.rankStars = (g.rankStars || 0) + add;
-        g.accountedEarnedStars = (g.accountedEarnedStars || 0) + add;
-    }
+    const add = Math.min(newStars, MAX_SYNC_STARS_PER_SESSION);
+    const beforeKey = getTierInfo(g.rankStars || 0).rankKey;
+    g.rankStars = (g.rankStars || 0) + add;
+    g.accountedEarnedStars = (g.accountedEarnedStars || 0) + add;
+    g._lastSyncEarned = earned;
     const afterKey = getTierInfo(g.rankStars || 0).rankKey;
     if (beforeKey !== afterKey) {
         const rank = RANKS.find(r => r.key === afterKey) || {};
@@ -4001,7 +4163,7 @@ function addStars(n) {
     }
 }
 
-// 增加星能；满 100 自动加 1 颗星（受段位上限约束，低段位上限<100 不会触发）
+// 增加星能；满 100 自动加 1 颗星（进度条满格已统一为 100，任何段位都能攒满加星）
 function awardCourage(n) {
     const g = state.data.game;
     const cap = getCourageCap();
@@ -4058,17 +4220,18 @@ function recalcCourage() {
             activeAllFourDates.push(date);
         }
     });
-    // 已兑换成星的星能要从剩余值中扣除（星星不会回收）
-    total -= (g.courageStars || 0) * COURAGE_STAR;
-    // 若重算后剩余星能仍满 100，继续自动兑换成星（如赛季初/大量历史记录一次性结算）
-    while (total >= COURAGE_STAR) {
-        total -= COURAGE_STAR;
-        g.courageStars = (g.courageStars || 0) + 1;
-        g.bonusStars = (g.bonusStars || 0) + 1;
-        g.rankStars = (g.rankStars || 0) + 1;
+    // 本赛季星能 = 累计打卡换算；用「整除」得到已得星数，余数即当前进度。
+    // 不再用 lifetime courageStars 反减 total，修复「删除历史记录后星能恒为 0 / 不更新」的问题。
+    const earnedStars = Math.floor(total / COURAGE_STAR);
+    const remainder = total - earnedStars * COURAGE_STAR;
+    if (earnedStars > (g.courageStars || 0)) {
+        const add = earnedStars - (g.courageStars || 0);
+        g.courageStars = earnedStars;
+        g.bonusStars = (g.bonusStars || 0) + add;
+        g.rankStars = (g.rankStars || 0) + add;
         updateSeasonPeak();
     }
-    g.courage = Math.max(0, Math.min(cap, total));
+    g.courage = Math.max(0, Math.min(cap, remainder));
     g.allFourCourageDates = activeAllFourDates;
 }
 
@@ -4111,13 +4274,19 @@ function gameOnCheckIn(date) {
     if (date === todayD && !g.firstCheckInTime[todayD]) g.firstCheckInTime[todayD] = now();
 
     // 1) 每完成 1 项打卡 +5 星能
+    const cap = getCourageCap();
+    const beforeC = g.courage || 0;
     const gotStar = awardCourage(COURAGE_PER_ITEM);
+    if ((g.courage || 0) > beforeC && cap >= COURAGE_STAR) {
+        toast(`🌟 +${COURAGE_PER_ITEM} 星能 (${g.courage}/${cap})`);
+    }
 
     // 2) 全勤打卡：当天「基础打卡项」全部完成，额外 +10 星能（每天一次）
     if (isBasicModuleAllDone(todayD) && !g.allFourCourageDates.includes(todayD)) {
         g.allFourCourageDates.push(todayD);
         const s2 = awardCourage(COURAGE_ALL4_BONUS);
         if (s2) toast('🌟 星能满 100，白嫖 +1 星！');
+        else if ((g.courage || 0) < cap) toast(`🌟 +${COURAGE_ALL4_BONUS} 全勤星能`);
     }
     if (gotStar) toast('🌟 星能满 100，白嫖 +1 星！');
 
@@ -4300,19 +4469,13 @@ function transitionSeason(cur) {
 function initGame() {
     ensureGameDefaults();
     recalcPoints();
-    // 一次性校准：若历史积分（points.earned）与段位星严重不匹配，按积分恢复段位。
-    // 仅执行一次（标记 _pointsCalibrated），避免后续重复调整。
+    // 段位基线：以当前 rankStars 为准，绝不用历史累计 earned 一次性重算段位星。
+    // 历史流水一旦被污染（如同步重复写入导致 4w 分），旧逻辑会把 rankStars 直接拉到最强王者。
+    // 现改为：段位只通过 syncEarnedStars 的"本次新增积分"增量温和增长，不再追补历史。
     const g = state.data.game;
-    // 直接从 history 计算 earned，避免 state.data.points.earned 在校准前被覆盖
-    const earned = (state.data.points.history || []).reduce((s, x) => s + (x.points || 0), 0);
-    const targetStars = Math.floor(earned / 100);
-    if (!g._pointsCalibrated && targetStars > 0 && Math.abs((g.rankStars || 0) - targetStars) > 3) {
-        g.rankStars = targetStars;
-        g.accountedEarnedStars = targetStars;
-        g._pointsCalibrated = APP_BUILD;
-    } else if (!g._pointsCalibrated) {
-        g._pointsCalibrated = APP_BUILD;
-    }
+    if (!g._pointsCalibrated) g._pointsCalibrated = APP_BUILD;
+    // 初始化同步基线，使首次加载不追补历史余额
+    if (typeof g._lastSyncEarned !== 'number') g._lastSyncEarned = state.data.points.earned || 0;
     const cur = getCurrentSeason();
     if (!state.data.game.season || state.data.game.season.id !== cur.id) {
         transitionSeason(cur);
@@ -4320,9 +4483,6 @@ function initGame() {
     awardWinStreak();
     checkAchievements();
     recalcPoints();
-    // 关键：段位星只由「本次启动结算后」的 earned 增量产生，绝不用历史 earned 一次性追溯。
-    // ensureGameDefaults 已保证 accountedEarnedStars === rankStars，
-    // syncEarnedStars 仅处理增量（受 MAX_SYNC_STARS_PER_SESSION 限制），防止任何脏数据飞升。
     syncEarnedStars();
     recalcCourage();
     updateSeasonPeak();
@@ -4357,7 +4517,8 @@ function setCheckInState(item, date, done, double) {
             addPointsEntry({ checkInId: item.id, module: item.module, category: item.category, points: STREAK_BONUS[cycleStreak] * mult, type: 'streak', date, reason: `连续${streak}天` });
         }
     } else if (!done && existing) {
-        state.data.points.history = state.data.points.history.filter(h => !(h.checkInId === item.id && h.date === date && h.type !== 'makeup'));
+        // 只删除本次打卡产生的 base 与 streak 记录，保留每日完成度/成就/赛季等奖励
+        state.data.points.history = state.data.points.history.filter(h => !(h.checkInId === item.id && h.date === date && (h.type === 'base' || h.type === 'streak')));
     }
 }
 
@@ -4763,6 +4924,7 @@ function renderSidebar() {
 }
 
 function render() {
+    if (normalizeModules()) saveState();
     // 任何显式重绘都视为已"消费"掉后台轮询推迟的待渲染标记
     state._deferredRender = false;
     // 当前模块若被隐藏/不存在，回退到第一个可见模块，避免空白页
@@ -4780,6 +4942,42 @@ function render() {
     if (state.currentModule === 'home') loadHomeData();
     if (state.currentModule === 'hot') loadHotData();
     if (state.currentModule === 'beauty') loadBeautyData();
+    attachCheckinCalendarSwipe();
+}
+
+function attachCheckinCalendarSwipe() {
+    // 为认真打卡日历绑定左右滑动手势（月份切换）
+    const grids = document.querySelectorAll('[data-cal-swipe]');
+    grids.forEach(grid => {
+        if (grid.dataset.swipeBound) return;
+        grid.dataset.swipeBound = '1';
+        let sx = null, sy = null, tracking = false;
+        grid.addEventListener('touchstart', e => {
+            const t = e.touches && e.touches[0];
+            if (!t) return;
+            sx = t.clientX; sy = t.clientY; tracking = true;
+        }, { passive: true });
+        grid.addEventListener('touchmove', e => {
+            if (!tracking || sx == null || sy == null) return;
+            const t = e.touches && e.touches[0];
+            if (!t) return;
+            const dx = t.clientX - sx, dy = t.clientY - sy;
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+                try { e.preventDefault(); } catch (err) {}
+            }
+        }, { passive: false });
+        grid.addEventListener('touchend', e => {
+            if (!tracking || sx == null) return;
+            tracking = false;
+            const t = e.changedTouches && e.changedTouches[0];
+            if (!t) { sx = null; sy = null; return; }
+            const dx = t.clientX - sx, dy = t.clientY - sy;
+            sx = null; sy = null;
+            if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) {
+                shiftCheckinMonth(dx < 0 ? 1 : -1);
+            }
+        }, { passive: true });
+    });
 }
 
 function subTabs(tabs, current, module) {
@@ -4820,10 +5018,26 @@ function pointsSummaryCard() {
     `;
 }
 
+// 认真打卡日历当前查看月份（内存状态，不持久化；默认本月）
+function getCheckinMonth() {
+    if (!state._checkinMonth || typeof state._checkinMonth !== 'object' || state._checkinMonth.y == null) {
+        const now = new Date();
+        state._checkinMonth = { y: now.getFullYear(), m: now.getMonth() };
+    }
+    return state._checkinMonth;
+}
+function shiftCheckinMonth(delta) {
+    const cm = getCheckinMonth();
+    const d = new Date(cm.y, cm.m + delta, 1);
+    state._checkinMonth = { y: d.getFullYear(), m: d.getMonth() };
+    render();
+}
+
 // 打卡日历（紧凑）通用渲染 —— 纯内容版（外层卡片由调用方提供）
 function calendarBodyHTML() {
-    const year = new Date().getFullYear();
-    const month = new Date().getMonth();
+    const cm = getCheckinMonth();
+    const year = cm.y;
+    const month = cm.m;
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const days = [];
@@ -4836,8 +5050,12 @@ function calendarBodyHTML() {
     });
     const checkedDays = getCheckedDays();
     return `
-        <div class="accordion-hint">${year}年 ${month + 1}月 · 已打卡 <strong>${checkedDays}</strong> 天</div>
-        <div class="calendar calendar-compact">
+        <div class="calendar-nav" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <button class="btn btn-sm btn-secondary" data-action="checkin-month" data-delta="-1">‹</button>
+            <span style="font-weight:700;font-size:15px">${year}年 ${month + 1}月 · 已打卡 <strong>${checkedDays}</strong> 天</span>
+            <button class="btn btn-sm btn-secondary" data-action="checkin-month" data-delta="1">›</button>
+        </div>
+        <div class="calendar calendar-compact checkin-cal-swipe" data-cal-swipe>
             <div class="calendar-header">日</div>
             <div class="calendar-header">一</div>
             <div class="calendar-header">二</div>
@@ -4854,7 +5072,7 @@ function calendarBodyHTML() {
                 return `<div class="calendar-day ${isToday ? 'today' : ''} ${count > 0 ? 'checked' : ''}"><span class="cal-num">${d}</span><span class="cal-hearts">${hearts}</span></div>`;
             }).join('')}
         </div>
-        <div class="calendar-legend">💗 越多，代表今天打卡越积极（最多 5 颗）</div>
+        <div class="calendar-legend">💗 越多，代表今天打卡越积极（最多 5 颗）<br>可左右滑动或点击箭头切换月份</div>
     `;
 }
 
@@ -5384,6 +5602,19 @@ const moduleRenderers = {
         return `<div class="card tab-card">${subTabs(ENG_TABS, tab, 'english')}</div><div class="eng-page">${renderEnglishPage(tab)}</div>`;
     },
 
+    engcheck() {
+        const tabs = [
+            { id: 'ec-books', name: '书单课目', icon: '📚' },
+            { id: 'ec-review', name: '复习中心', icon: '⏰' }
+        ];
+        const tab = validSubTab('engcheck', tabs, 'ec-books');
+        return `<div class="card tab-card">${subTabs(tabs, tab, 'engcheck')}</div><div class="ec-page">${renderEngCheckPage(tab)}</div>`;
+    },
+
+    yjxs() {
+        return `<div class="yjxs-host"><iframe src="yuejixiangshou.html" title="悦己享瘦" loading="lazy" onload="pushYjxsToIframe()"></iframe></div>`;
+    },
+
     hot() {
         const tabs = [
             { id: 'mixed', name: '综合热榜', icon: '🔥' },
@@ -5817,8 +6048,9 @@ function scheduleWeeklyBody() {
 }
 
 function scheduleMonthlyBody() {
-    const year = new Date().getFullYear();
-    const month = new Date().getMonth();
+    const cm = getCheckinMonth();
+    const year = cm.y;
+    const month = cm.m;
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const days = [];
@@ -5829,8 +6061,15 @@ function scheduleMonthlyBody() {
     const checkedDays = getCheckedDays();
     return `
         <div class="card">
-            <div class="card-header"><div class="card-title">🗓️ ${year}年${month + 1}月打卡</div><span style="font-size:13px;color:var(--text-secondary)">已打卡 ${checkedDays} 天</span></div>
-            <div class="calendar calendar-compact">
+            <div class="card-header">
+                <div style="display:flex;align-items:center;gap:8px">
+                    <button class="btn btn-sm btn-secondary" data-action="checkin-month" data-delta="-1">‹</button>
+                    <div class="card-title">🗓️ ${year}年${month + 1}月打卡</div>
+                    <button class="btn btn-sm btn-secondary" data-action="checkin-month" data-delta="1">›</button>
+                </div>
+                <span style="font-size:13px;color:var(--text-secondary)">已打卡 ${checkedDays} 天</span>
+            </div>
+            <div class="calendar calendar-compact checkin-cal-swipe" data-cal-swipe>
                 <div class="calendar-header">日</div><div class="calendar-header">一</div><div class="calendar-header">二</div><div class="calendar-header">三</div><div class="calendar-header">四</div><div class="calendar-header">五</div><div class="calendar-header">六</div>
                 ${days.map(d => {
                     if (!d) return '<div class="calendar-day empty"></div>';
@@ -5841,7 +6080,7 @@ function scheduleMonthlyBody() {
                     return `<div class="calendar-day ${isToday ? 'today' : ''} ${count > 0 ? 'checked' : ''}"><span class="cal-num">${d}</span><span class="cal-hearts">${hearts}</span></div>`;
                 }).join('')}
             </div>
-            <div class="calendar-legend">💗 越多，代表今天打卡越积极（最多 5 颗）</div>
+            <div class="calendar-legend">💗 越多，代表今天打卡越积极（最多 5 颗）<br>可左右滑动或点击箭头切换月份</div>
         </div>
     `;
 }
@@ -8416,20 +8655,33 @@ function engRenderHistoryListHTML() {
                     <button class="eng-history-item-del" data-action="eng-delete-history-item" data-kind="search" data-index="${realIndex}" title="删除本条">✕</button>
                     <span class="eng-expand-icon">▾</span>
                 </div>
-                <div class="eng-history-detail" id="eng-search-detail-${realIndex}"><div class="eng-copy-detail-line"><strong>搜索内容：</strong>${escapeHtml(item.query)}</div></div>`;
+                <div class="eng-history-detail" id="eng-search-detail-${realIndex}">
+                    <div class="eng-copy-detail-wrap">
+                        <div class="eng-detail-time">${time}</div>
+                        <div class="eng-detail-query">${escapeHtml(item.query)}</div>
+                    </div>
+                </div>`;
             }).join('');
         }
     } else {
         const filtered = copyHistory.filter(item => String(item.zh || '').includes(filter) || String(item.en || '').toLowerCase().includes(filter));
         const renderCopyDetail = (item) => {
+            const fullTime = item.time ? new Date(item.time).toLocaleString('zh-CN') : '';
             let html = `<div class="eng-copy-detail-wrap">`;
-            html += `<div class="eng-copy-detail-line"><strong>中文原句：</strong>${escapeHtml(item.zh || '')}</div>`;
-            html += `<div class="eng-copy-detail-line"><strong>英文翻译：</strong>${item.en ? escapeHtml(item.en) : '<span class="eng-history-muted">（该记录未保存英文）</span>'}</div>`;
+            if (fullTime) html += `<div class="eng-detail-time">${fullTime}</div>`;
+            if (item.zh) {
+                html += `<div class="eng-detail-zh">${escapeHtml(item.zh)}</div>`;
+            }
+            if (item.en) {
+                html += `<div class="eng-detail-en">${escapeHtml(item.en)}</div>`;
+            } else if (item.zh) {
+                html += `<div class="eng-detail-en"><span class="eng-history-muted">该记录未保存英文翻译</span></div>`;
+            }
             if (item.pattern) {
-                html += `<div class="eng-copy-detail-line"><strong>句型分析：</strong>${escapeHtml(item.pattern)}</div>`;
+                html += `<div class="eng-detail-section"><div class="eng-detail-section-title">句型分析</div><div class="eng-detail-pattern">${escapeHtml(item.pattern)}</div></div>`;
             }
             if (item.table && Array.isArray(item.table.rows) && item.table.rows.length) {
-                html += `<table class="eng-manual-table" style="margin-bottom:10px;"><thead><tr><th class="eng-corner-cell">成分</th><th>英文</th><th>中文</th><th>备注</th></tr></thead><tbody>`;
+                html += `<div class="eng-detail-section"><div class="eng-detail-section-title">成分拆解</div><div class="eng-detail-table-wrap"><table class="eng-manual-table"><thead><tr><th class="eng-corner-cell">成分</th><th>英文</th><th>中文</th><th>备注</th></tr></thead><tbody>`;
                 item.table.rows.forEach((row, r) => {
                     const label = (item.table.labels && item.table.labels[r]) || `成分${r + 1}`;
                     html += `<tr><td class="eng-row-label">${escapeHtml(label)}</td>`;
@@ -8438,11 +8690,11 @@ function engRenderHistoryListHTML() {
                     });
                     html += `</tr>`;
                 });
-                html += `</tbody></table>`;
+                html += `</tbody></table></div></div>`;
             } else if (item.detail) {
-                html += item.detail;
-            } else {
-                html += `<div class="eng-empty">（该记录未保存表格详情）</div>`;
+                html += `<div class="eng-detail-section"><div class="eng-detail-section-title">原文详情</div>${item.detail}</div>`;
+            } else if (!item.zh && !item.en) {
+                html += `<div class="eng-empty">（该记录未保存详情）</div>`;
             }
             html += `</div>`;
             return html;
@@ -8686,9 +8938,260 @@ async function fetchInternationalHot(type) {
     return { type, update_time: (data.feed && data.feed.modified) || new Date().toISOString(), list };
 }
 
+
 // ==================== 变美情报局模块 ====================
 const BEAUTY_TREND_TYPES = ['xiaohongshu', 'douyin'];
 const BEAUTY_TREND_KEYWORDS = ['妆', '穿搭', '发型', '护肤', '美甲', '变美', '口红', '眼影', '睫毛', '眉毛', '腮红', '高光', '遮瑕', '粉底液', 'ootd', '韩系', '日系', '法式', '千金', '纯欲', '清冷', '氛围感', '多巴胺', '美拉德', '通勤', '约会', '聚会', '新手'];
+const BEAUTY_PROVINCE_CITIES = {
+  '北京': ['北京'],
+  '天津': ['天津'],
+  '上海': ['上海'],
+  '重庆': ['重庆'],
+  '河北': ['石家庄','唐山','秦皇岛','邯郸','邢台','保定','张家口','承德','沧州','廊坊','衡水'],
+  '山西': ['太原','大同','阳泉','长治','晋城','朔州','晋中','运城','忻州','临汾','吕梁'],
+  '内蒙古': ['呼和浩特','包头','乌海','赤峰','通辽','鄂尔多斯','呼伦贝尔','巴彦淖尔','乌兰察布','兴安','锡林郭勒','阿拉善'],
+  '辽宁': ['沈阳','大连','鞍山','抚顺','本溪','丹东','锦州','营口','阜新','辽阳','盘锦','铁岭','朝阳','葫芦岛'],
+  '吉林': ['长春','吉林','四平','辽源','通化','白山','松原','白城','延边'],
+  '黑龙江': ['哈尔滨','齐齐哈尔','鸡西','鹤岗','双鸭山','大庆','伊春','佳木斯','七台河','牡丹江','黑河','绥化','大兴安岭'],
+  '江苏': ['南京','无锡','徐州','常州','苏州','南通','连云港','淮安','盐城','扬州','镇江','泰州','宿迁'],
+  '浙江': ['杭州','宁波','温州','嘉兴','湖州','绍兴','金华','衢州','舟山','台州','丽水'],
+  '安徽': ['合肥','芜湖','蚌埠','淮南','马鞍山','淮北','铜陵','安庆','黄山','阜阳','宿州','滁州','六安','宣城','池州','亳州'],
+  '福建': ['福州','厦门','莆田','三明','泉州','漳州','南平','龙岩','宁德'],
+  '江西': ['南昌','景德镇','萍乡','九江','新余','鹰潭','赣州','吉安','宜春','抚州','上饶'],
+  '山东': ['济南','青岛','淄博','枣庄','东营','烟台','潍坊','济宁','泰安','威海','日照','临沂','德州','聊城','滨州','菏泽'],
+  '河南': ['郑州','开封','洛阳','平顶山','安阳','鹤壁','新乡','焦作','濮阳','许昌','漯河','三门峡','南阳','商丘','信阳','周口','驻马店','济源'],
+  '湖北': ['武汉','黄石','十堰','宜昌','襄阳','鄂州','荆门','孝感','荆州','黄冈','咸宁','随州','恩施'],
+  '湖南': ['长沙','株洲','湘潭','衡阳','邵阳','岳阳','常德','张家界','益阳','郴州','永州','怀化','娄底'],
+  '广东': ['广州','韶关','深圳','珠海','汕头','佛山','江门','湛江','茂名','肇庆','惠州','梅州','汕尾','河源','阳江','清远','东莞','中山','潮州','揭阳','云浮'],
+  '广西': ['南宁','柳州','桂林','梧州','北海','防城港','钦州','贵港','玉林','百色','贺州','河池','来宾','崇左'],
+  '海南': ['海口','三亚','三沙','儋州','五指山','琼海','文昌','万宁','东方','定安','屯昌','澄迈','临高','白沙','昌江','乐东','陵水','保亭','琼中'],
+  '四川': ['成都','自贡','攀枝花','泸州','德阳','绵阳','广元','遂宁','内江','乐山','南充','眉山','宜宾','广安','达州','雅安','巴中','资阳','阿坝','甘孜','凉山'],
+  '贵州': ['贵阳','六盘水','遵义','安顺','毕节','铜仁','黔西南','黔东南','黔南'],
+  '云南': ['昆明','曲靖','玉溪','保山','昭通','丽江','普洱','临沧','楚雄','红河','文山','西双版纳','大理','德宏','怒江','迪庆'],
+  '西藏': ['拉萨','日喀则','昌都','林芝','山南','那曲','阿里'],
+  '陕西': ['西安','铜川','宝鸡','咸阳','渭南','延安','汉中','榆林','安康','商洛'],
+  '甘肃': ['兰州','嘉峪关','金昌','白银','天水','武威','张掖','平凉','酒泉','庆阳','定西','陇南','临夏','甘南'],
+  '青海': ['西宁','海东','海北','黄南','海南','果洛','玉树','海西'],
+  '宁夏': ['银川','石嘴山','吴忠','固原','中卫'],
+  '新疆': ['乌鲁木齐','克拉玛依','吐鲁番','哈密','昌吉','博尔塔拉','巴音郭楞','阿克苏','克孜勒苏','喀什','和田','伊犁','塔城','阿勒泰','石河子'],
+  '中国香港': ['香港'],
+  '中国澳门': ['澳门'],
+  '中国台湾': ['台北','新北','桃园','台中','台南','高雄','基隆','新竹','嘉义']
+};
+
+function beautyFindProvinceByCity(city) {
+    if (!city) return '';
+    const c = city.replace(/[\s\(\)（）]/g, '');
+    for (const p in BEAUTY_PROVINCE_CITIES) {
+        const list = BEAUTY_PROVINCE_CITIES[p];
+        for (let i = 0; i < list.length; i++) {
+            if (list[i].replace(/[\s\(\)（）]/g, '') === c) return p;
+        }
+    }
+    const aliasMap = { '香港': '中国香港', '澳门': '中国澳门', '台北': '中国台湾', '新北': '中国台湾', '桃园': '中国台湾', '台中': '中国台湾', '台南': '中国台湾', '高雄': '中国台湾', '基隆': '中国台湾', '新竹': '中国台湾', '嘉义': '中国台湾' };
+    if (aliasMap[c]) return aliasMap[c];
+    return '';
+}
+
+function beautyNormalizeLocation() {
+    if (!state.settings) state.settings = {};
+    if (!state.settings.weatherMode) {
+        state.settings.weatherMode = (state.settings.city || '').trim() ? 'city' : 'gps';
+    }
+    if (!state.settings.province && state.settings.weatherMode === 'city' && state.settings.city) {
+        const p = beautyFindProvinceByCity(state.settings.city);
+        if (p) state.settings.province = p;
+    }
+}
+
+function beautyProvinceOptionsHTML(selectedProvince) {
+    let html = '<option value="">选择省份</option>';
+    for (const p in BEAUTY_PROVINCE_CITIES) {
+        html += `<option value="${escapeHtml(p)}" ${p === selectedProvince ? 'selected' : ''}>${escapeHtml(p)}</option>`;
+    }
+    html += `<option value="__other__" ${selectedProvince === '__other__' ? 'selected' : ''}>其他</option>`;
+    return html;
+}
+
+function beautyCityOptionsHTML(province, selectedCity) {
+    if (!province || province === '__other__') return '<option value="">选择城市</option><option value="__other__" ' + (selectedCity === '__other__' ? 'selected' : '') + '>其他城市</option>';
+    const list = BEAUTY_PROVINCE_CITIES[province] || [];
+    let html = '<option value="">选择城市</option>';
+    for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        html += `<option value="${escapeHtml(c)}" ${c === selectedCity ? 'selected' : ''}>${escapeHtml(c)}</option>`;
+    }
+    html += `<option value="__other__" ${selectedCity === '__other__' ? 'selected' : ''}>其他城市</option>`;
+    return html;
+}
+
+function getGPSCoords() {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) { resolve(getCityFallback()); return; }
+        navigator.geolocation.getCurrentPosition(
+            p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+            () => resolve(getCityFallback()),
+            { timeout: 10000, enableHighAccuracy: true }
+        );
+    });
+}
+
+async function reverseGeocodeCity(lat, lon) {
+    try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=zh-CN`;
+        const res = await fetch(url, { headers: { 'Accept-Language': 'zh-CN' } });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const addr = data.address || {};
+        let name = addr.city || addr.town || addr.village || addr.county || addr.state || data.display_name || null;
+        if (name && name.length > 12) name = name.slice(0, 12);
+        return name;
+    } catch (e) { return null; }
+}
+
+// ---------- 省市区三级联动 ----------
+// pcas.json 结构：{ "四川省": { "成都市": { "锦江区": [...街道], ... }, ... }, ... }
+let BEAUTY_PCAS = null;
+async function ensurePcas() {
+    if (BEAUTY_PCAS) return BEAUTY_PCAS;
+    try {
+        const res = await fetch('https://unpkg.com/china-division/dist/pcas.json');
+        if (!res.ok) throw new Error('区县数据接口不可用');
+        const data = await res.json();
+        if (!data || typeof data !== 'object') throw new Error('区县数据格式异常');
+        BEAUTY_PCAS = data;
+    } catch (e) { BEAUTY_PCAS = null; }
+    return BEAUTY_PCAS;
+}
+
+function beautyCleanName(s) {
+    return (s || '').replace(/省|市|壮族自治区|回族自治区|维吾尔自治区|自治区|特别行政区|地区|自治州|盟|林区/g, '');
+}
+
+function findPcasProvince(provinceKey) {
+    if (!BEAUTY_PCAS || !provinceKey) return null;
+    const k = beautyCleanName(provinceKey);
+    const key = Object.keys(BEAUTY_PCAS).find(p => beautyCleanName(p) === k);
+    return key ? BEAUTY_PCAS[key] : null;
+}
+
+function findPcasCity(provNode, cityKey) {
+    if (!provNode || !cityKey) return null;
+    const keys = Object.keys(provNode);
+    const k = beautyCleanName(cityKey);
+    const key = keys.find(c => beautyCleanName(c) === k);
+    return key ? provNode[key] : (keys.length ? provNode[keys[0]] : null);
+}
+
+function getCityAreaNames(provinceKey, cityKey) {
+    const cityNode = findPcasCity(findPcasProvince(provinceKey), cityKey);
+    return cityNode ? Object.keys(cityNode) : [];
+}
+
+// 省份变化：只更新 DOM（城市列表重置、区县清空禁用），不落库；点「保存」才生效
+function beautyOnProvinceChange() {
+    const psel = document.getElementById('beautyProvinceSelect');
+    const csel = document.getElementById('beautyCitySelect');
+    const dsel = document.getElementById('beautyDistrictSelect');
+    const input = document.getElementById('beautyCityInput');
+    const confirm = document.querySelector('[data-action="beauty-city-confirm"]');
+    if (!psel || !csel || !dsel) return;
+    const pv = psel.value;
+    if (pv === '__other__') {
+        csel.style.display = 'none';
+        dsel.style.display = 'none';
+        if (input) { input.style.display = 'inline-block'; input.value = ''; input.focus(); }
+        if (confirm) confirm.style.display = 'inline-block';
+        return;
+    }
+    csel.style.display = 'inline-block';
+    dsel.style.display = 'inline-block';
+    if (input) { input.style.display = 'none'; input.value = ''; }
+    if (confirm) confirm.style.display = 'none';
+    csel.innerHTML = pv ? beautyCityOptionsHTML(pv, '') : '<option value="">请先选择省份</option>';
+    csel.disabled = !pv;
+    dsel.innerHTML = '<option value="">请先选择城市</option>';
+    dsel.disabled = true;
+}
+
+// 城市变化：异步加载并填充区县列表（pcas.json 懒加载，失败降级为不可选）
+async function beautyOnCityChange() {
+    const psel = document.getElementById('beautyProvinceSelect');
+    const csel = document.getElementById('beautyCitySelect');
+    const dsel = document.getElementById('beautyDistrictSelect');
+    if (!psel || !csel || !dsel) return;
+    const pv = psel.value, cv = csel.value;
+    dsel.disabled = !cv;
+    if (!cv) { dsel.innerHTML = '<option value="">请先选择城市</option>'; return; }
+    dsel.innerHTML = '<option value="">区县加载中...</option>';
+    await ensurePcas();
+    // 用户在加载期间可能已切走
+    if (psel.value !== pv || csel.value !== cv) return;
+    const areas = getCityAreaNames(pv, cv);
+    let html = '<option value="">（可选）区/县</option>';
+    for (let i = 0; i < areas.length; i++) {
+        const a = typeof areas[i] === 'string' ? areas[i] : (areas[i] && areas[i].name) || '';
+        if (a) html += `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`;
+    }
+    if (!areas.length) html = '<option value="">（该市暂无区县数据，可不选）</option>';
+    dsel.innerHTML = html;
+    dsel.disabled = false;
+}
+
+// 初始渲染后填充区县下拉（保留已保存的区县选中态）
+async function beautyFillDistrictOptions() {
+    const psel = document.getElementById('beautyProvinceSelect');
+    const csel = document.getElementById('beautyCitySelect');
+    const dsel = document.getElementById('beautyDistrictSelect');
+    if (!psel || !csel || !dsel) return;
+    const pv = psel.value, cv = csel.value;
+    const selected = state.settings.district || '';
+    if (!pv || !cv || pv === '__other__' || cv === '__other__') { dsel.disabled = true; return; }
+    dsel.innerHTML = '<option value="">区县加载中...</option>';
+    await ensurePcas();
+    if (!BEAUTY_PCAS) { dsel.innerHTML = '<option value="">（区县数据不可用，可不选）</option>'; dsel.disabled = false; return; }
+    const areas = getCityAreaNames(pv, cv);
+    let html = '<option value="">（可选）区/县</option>';
+    for (let i = 0; i < areas.length; i++) {
+        const a = typeof areas[i] === 'string' ? areas[i] : (areas[i] && areas[i].name) || '';
+        if (a) html += `<option value="${escapeHtml(a)}" ${a === selected ? 'selected' : ''}>${escapeHtml(a)}</option>`;
+    }
+    if (!areas.length) html = `<option value="">（该市暂无区县数据，可不选）</option>`;
+    dsel.innerHTML = html;
+    dsel.disabled = false;
+}
+
+// 带（可选）区县精度的坐标解析：优先按区县名 + 省/市过滤地理编码，失败回退到市级
+async function geocodeAdmin(district, province, city) {
+    try {
+        const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(district)}&count=10&language=zh&format=json`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const data = await res.json();
+        const results = data.results || [];
+        if (!results.length) return null;
+        const pClean = beautyCleanName(province);
+        const cClean = beautyCleanName(city);
+        let hit = results.find(r => r.admin1 && pClean && r.admin1.includes(pClean) && (!cClean || (r.admin2 && r.admin2.includes(cClean))));
+        if (!hit) hit = results.find(r => r.admin1 && pClean && r.admin1.includes(pClean));
+        if (!hit) hit = results[0];
+        return { lat: hit.latitude, lon: hit.longitude };
+    } catch (e) { return null; }
+}
+
+async function getLocationCoords(province, city, district) {
+    const d = (district || '').trim();
+    if (d) {
+        const c = await geocodeAdmin(d, province, city);
+        if (c) return c;
+    }
+    const ct = (city || '').trim();
+    if (ct) {
+        const c = await getCityCoordinates(ct);
+        if (c) return c;
+    }
+    return null;
+}
 
 function loadBeautyData() {
     const tab = validSubTab('beauty', [
@@ -8704,11 +9207,11 @@ function loadBeautyData() {
 // ---------- Tab 1: 今日宜美 ----------
 function renderBeautyToday() {
     const cache = state.data.apiCache ? state.data.apiCache['beautyWeather'] : null;
-    const noCity = !state.settings.city || !state.settings.city.trim();
+    const noLocation = state.settings.weatherMode !== 'gps' && !(state.settings.city || '').trim();
     if (!cache) {
         return `
             <div class="card-header"><div class="card-title">🌤️ 看天穿衣 / 护肤</div></div>
-            <div class="empty-state"><span class="emoji">🌤️</span>${noCity ? '正在获取天气（未设置城市，将使用默认城市）...' : '正在定位并获取天气...'}</div>
+            <div class="empty-state"><span class="emoji">🌤️</span>${noLocation ? '正在获取天气（未设置城市，将使用定位或默认城市）...' : '正在定位并获取天气...'}</div>
         `;
     }
     if (cache.error) {
@@ -8716,22 +9219,43 @@ function renderBeautyToday() {
             <div class="card-header"><div class="card-title">🌤️ 看天穿衣 / 护肤</div></div>
             <div class="empty-state" style="align-items:flex-start;text-align:left">
                 <div style="margin-bottom:10px"><span class="emoji">🌧️</span>${escapeHtml(cache.error)}</div>
-                ${noCity ? `
+                ${noLocation ? `
                     <div style="font-size:13px;color:var(--text-secondary);background:var(--primary-light);padding:10px 12px;border-radius:10px;margin-bottom:10px;line-height:1.5">
-                        💡 看天穿衣需要先设置城市，否则拿不到准确的天气与穿搭建议。去设置里填写你的城市即可。
+                        💡 看天穿衣需要先选择城市或点击「📍 定位」，否则拿不到准确的天气与穿搭建议。
                     </div>
-                    <button class="btn btn-primary btn-sm" data-action="open-settings">去设置填写城市</button>
+                    <button class="btn btn-primary btn-sm" data-action="beauty-city-locate">📍 使用当前位置</button>
                     <button class="btn btn-secondary btn-sm" data-action="beauty-weather-refresh" style="margin-top:8px">重试（用默认城市）</button>
                 ` : `
-                    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">若持续失败，可到设置更换城市后重试。</div>
+                    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">若持续失败，可切换城市或点击定位后重试。</div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap">
-                        <button class="btn btn-primary btn-sm" data-action="open-settings">更改城市</button>
+                        <button class="btn btn-primary btn-sm" data-action="beauty-city-locate">📍 定位</button>
                         <button class="btn btn-secondary btn-sm" data-action="beauty-weather-refresh">重试</button>
                     </div>
                 `}
             </div>
         `;
     }
+    beautyNormalizeLocation();
+    const mode = state.settings.weatherMode || 'gps';
+    const savedDistrict = mode === 'city' ? (state.settings.district || '') : '';
+    let province = mode === 'city' ? (state.settings.province || '') : '';
+    let city = mode === 'city' ? (state.settings.city || '') : '';
+    let cityInput = '';
+    let cityInputMode = false;
+    if (mode === 'city' && province) {
+        const list = BEAUTY_PROVINCE_CITIES[province] || [];
+        if (city && !list.includes(city)) {
+            cityInput = city; city = '__other__'; cityInputMode = true;
+        }
+    } else if (mode === 'city' && city && !province) {
+        province = '__other__'; cityInput = city; city = '__other__'; cityInputMode = true;
+    }
+    const pvSel = province && province !== '__other__' ? province : '';
+    const cvSel = city && city !== '__other__' ? city : '';
+    const isCustom = province === '__other__' || city === '__other__';
+    const displayCity = mode === 'gps'
+        ? (state.settings.gpsCityName || '📍 当前位置')
+        : (isCustom ? (cityInput || '自定义城市') : (cvSel + (savedDistrict ? ' · ' + savedDistrict : '') || '请选择城市'));
     const w = cache.data || {};
     const current = w.current || {};
     const daily = w.daily || {};
@@ -8741,19 +9265,34 @@ function renderBeautyToday() {
     const code = current.weather_code;
     const wind = current.wind_speed_10m;
     const precip = current.precipitation;
-    const city = state.settings.city || '当前位置';
     const guide = buildBeautyOutfitGuide(temp, uv, humidity, code, wind, precip);
     const weatherIcon = weatherCodeToIcon(code);
+    const selStyle = 'padding:5px 8px;font-size:12px;border-radius:8px;background:var(--card-bg);border:1px solid var(--border-color)';
     return `
-        <div class="card-header">
-            <div class="card-title">🌤️ 看天穿衣 / 护肤</div>
-            <button class="btn btn-secondary" data-action="beauty-weather-refresh" style="font-size:12px">刷新</button>
+        <div class="card-header" style="align-items:flex-start;gap:8px">
+            <div class="card-title" style="flex:1">🌤️ 看天穿衣 / 护肤</div>
+            <div class="beauty-city-bar" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0;justify-content:flex-end">
+                <select id="beautyProvinceSelect" class="input" data-action="beauty-province-change" style="min-width:70px;width:auto;${selStyle}">
+                    ${beautyProvinceOptionsHTML(province)}
+                </select>
+                <select id="beautyCitySelect" class="input" data-action="beauty-city-change" style="min-width:80px;width:auto;${selStyle}" ${pvSel ? '' : 'disabled'}>
+                    ${pvSel ? beautyCityOptionsHTML(pvSel, cvSel) : (isCustom ? '<option value="__other__" selected>其他城市</option>' : '<option value="">请先选择省份</option>')}
+                </select>
+                <select id="beautyDistrictSelect" class="input" style="min-width:90px;width:auto;${selStyle}" ${(!pvSel || !cvSel) ? 'disabled' : ''}>
+                    ${(!pvSel || !cvSel) ? '<option value="">请先选择城市</option>' : `<option value="">（可选）区/县</option>${savedDistrict ? `<option value="${escapeHtml(savedDistrict)}" selected>${escapeHtml(savedDistrict)}</option>` : ''}`}
+                </select>
+                <input type="text" id="beautyCityInput" class="input" placeholder="输入城市名" value="${escapeHtml(cityInput)}" style="display:${isCustom ? 'inline-block' : 'none'};width:80px;${selStyle}">
+                <button class="btn btn-secondary" data-action="beauty-city-confirm" style="font-size:12px;padding:5px 10px;white-space:nowrap;display:${isCustom ? 'inline-block' : 'none'}">确定</button>
+                <button class="btn btn-secondary" data-action="beauty-city-locate" title="使用当前位置" style="font-size:12px;padding:5px 10px;white-space:nowrap">📍 定位</button>
+                <button class="btn btn-primary" data-action="beauty-city-save" title="保存所选省市区并刷新天气" style="font-size:12px;padding:5px 10px;white-space:nowrap">💾 保存</button>
+                <button class="btn btn-secondary" data-action="beauty-weather-refresh" style="font-size:12px;padding:5px 10px;white-space:nowrap">刷新</button>
+            </div>
         </div>
         <div class="beauty-weather-card">
             <div class="beauty-weather-main">
                 <div class="beauty-weather-icon">${weatherIcon}</div>
                 <div class="beauty-weather-info">
-                    <div class="beauty-weather-city">${escapeHtml(city)}</div>
+                    <div class="beauty-weather-city">${escapeHtml(displayCity)}</div>
                     <div class="beauty-weather-temp">${temp != null ? temp + '°C' : '--'}</div>
                     <div class="beauty-weather-meta">
                         <span>UV ${uv != null ? uv : '--'}</span>
@@ -8953,15 +9492,18 @@ function weatherCodeToIcon(code) {
 async function loadBeautyWeather() {
     const wrap = document.getElementById('beautyTodayWrap');
     if (!wrap) return;
+    beautyNormalizeLocation();
     const cacheKey = 'beautyWeather';
     const cached = state.data.apiCache ? state.data.apiCache[cacheKey] : null;
     if (cached && cached.ts && (Date.now() - cached.ts < 30 * 60 * 1000)) {
         wrap.innerHTML = renderBeautyToday();
+        beautyFillDistrictOptions();
         return;
     }
     if (!state.data.apiCache) state.data.apiCache = {};
     state.data.apiCache[cacheKey] = { data: null, error: null, ts: Date.now() };
     wrap.innerHTML = renderBeautyToday();
+    beautyFillDistrictOptions();
     try {
         const pos = await getBeautyPosition();
         const url = `${API.weather}/forecast?latitude=${pos.lat}&longitude=${pos.lon}&current=temperature_2m,relative_humidity_2m,weather_code,uv_index,wind_speed_10m,precipitation&daily=uv_index_max&timezone=auto`;
@@ -8969,33 +9511,49 @@ async function loadBeautyWeather() {
         if (!res.ok) throw new Error('天气接口暂时不可用');
         const data = await res.json();
         state.data.apiCache[cacheKey] = { data, error: null, ts: Date.now() };
+        if (state.settings.weatherMode === 'gps') {
+            const rev = await reverseGeocodeCity(pos.lat, pos.lon);
+            state.settings.gpsCityName = rev || '📍 当前位置';
+        }
         saveState();
+        if (typeof queueSync === 'function') queueSync();
     } catch (e) {
         state.data.apiCache[cacheKey] = { data: null, error: e.message || '获取天气失败', ts: Date.now() };
     }
     const wrap2 = document.getElementById('beautyTodayWrap');
-    if (wrap2) wrap2.innerHTML = renderBeautyToday();
+    if (wrap2) { wrap2.innerHTML = renderBeautyToday(); beautyFillDistrictOptions(); }
 }
 
 function getBeautyPosition() {
-    return new Promise((resolve) => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
-                () => resolve(getCityFallback()),
-                { timeout: 8000 }
-            );
-        } else {
-            resolve(getCityFallback());
+    return new Promise(async (resolve) => {
+        if (state.settings.weatherMode === 'gps') {
+            const pos = await getGPSCoords(); resolve(pos); return;
         }
+        const coords = await getLocationCoords(state.settings.province, state.settings.city, state.settings.district);
+        if (coords) { resolve(coords); return; }
+        const pos = await getGPSCoords(); resolve(pos);
     });
 }
 
+async function getCityCoordinates(city) {
+    const cityMap = { '成都': { lat: 30.66, lon: 104.06 }, '北京': { lat: 39.90, lon: 116.41 }, '上海': { lat: 31.23, lon: 121.47 }, '广州': { lat: 23.13, lon: 113.26 }, '深圳': { lat: 22.54, lon: 114.06 }, '杭州': { lat: 30.27, lon: 120.15 }, '南京': { lat: 32.06, lon: 118.78 }, '武汉': { lat: 30.59, lon: 114.31 }, '西安': { lat: 34.27, lon: 108.95 }, '重庆': { lat: 29.56, lon: 106.55 }, '苏州': { lat: 31.30, lon: 120.58 }, '天津': { lat: 39.13, lon: 117.20 }, '长沙': { lat: 28.23, lon: 112.98 }, '青岛': { lat: 36.07, lon: 120.38 }, '厦门': { lat: 24.48, lon: 118.09 }, '昆明': { lat: 25.04, lon: 102.71 }, '哈尔滨': { lat: 45.80, lon: 126.54 }, '沈阳': { lat: 41.81, lon: 123.43 }, '大连': { lat: 38.91, lon: 121.61 }, '郑州': { lat: 34.75, lon: 113.63 }, '济南': { lat: 36.65, lon: 117.12 }, '合肥': { lat: 31.82, lon: 117.23 }, '福州': { lat: 26.08, lon: 119.30 }, '南昌': { lat: 28.68, lon: 115.89 }, '贵阳': { lat: 26.65, lon: 106.63 }, '南宁': { lat: 22.82, lon: 108.32 }, '兰州': { lat: 36.06, lon: 103.83 }, '银川': { lat: 38.49, lon: 106.23 }, '西宁': { lat: 36.62, lon: 101.78 }, '乌鲁木齐': { lat: 43.83, lon: 87.62 }, '拉萨': { lat: 29.65, lon: 91.10 }, '呼和浩特': { lat: 40.84, lon: 111.75 }, '石家庄': { lat: 38.04, lon: 114.51 }, '太原': { lat: 37.87, lon: 112.55 }, '长春': { lat: 43.82, lon: 125.32 }, '海口': { lat: 20.02, lon: 110.35 }, '宁波': { lat: 29.87, lon: 121.55 }, '无锡': { lat: 31.49, lon: 120.31 }, '常州': { lat: 31.78, lon: 119.95 }, '温州': { lat: 28.00, lon: 120.70 }, '泉州': { lat: 24.91, lon: 118.68 }, '佛山': { lat: 23.02, lon: 113.12 }, '东莞': { lat: 22.94, lon: 113.74 }, '烟台': { lat: 37.46, lon: 121.45 }, '唐山': { lat: 39.63, lon: 118.18 }, '徐州': { lat: 34.26, lon: 117.18 }, '南通': { lat: 31.98, lon: 120.89 }, '潍坊': { lat: 36.71, lon: 119.16 }, '淄博': { lat: 36.81, lon: 118.05 }, '绍兴': { lat: 30.08, lon: 120.58 }, '嘉兴': { lat: 30.75, lon: 120.75 }, '台州': { lat: 28.66, lon: 121.42 }, '金华': { lat: 29.08, lon: 119.65 }, '惠州': { lat: 23.11, lon: 114.42 }, '中山': { lat: 22.52, lon: 113.39 }, '珠海': { lat: 22.27, lon: 113.57 }, '汕头': { lat: 23.35, lon: 116.68 }, '湛江': { lat: 21.27, lon: 110.36 }, '三亚': { lat: 18.25, lon: 109.51 }, '柳州': { lat: 24.33, lon: 109.42 }, '桂林': { lat: 25.28, lon: 110.28 }, '台北（中国台湾）': { lat: 25.03, lon: 121.56 }, '香港': { lat: 22.32, lon: 114.17 }, '中国澳门': { lat: 22.19, lon: 113.55 } };
+    const cleanCity = city.replace(/[\s\(\)（）]/g, '');
+    if (cityMap[cleanCity]) return cityMap[cleanCity];
+    try {
+        const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('地理编码接口不可用');
+        const data = await res.json();
+        if (!data.results || !data.results.length) throw new Error('未找到该城市');
+        const r = data.results[0];
+        return { lat: r.latitude, lon: r.longitude };
+    } catch (e) {
+        return null;
+    }
+}
+
 function getCityFallback() {
-    // 成都作为默认兜底，也可通过设置城市做简单映射
-    const cityMap = { '成都': { lat: 30.66, lon: 104.06 }, '北京': { lat: 39.90, lon: 116.41 }, '上海': { lat: 31.23, lon: 121.47 }, '广州': { lat: 23.13, lon: 113.26 }, '深圳': { lat: 22.54, lon: 114.06 } };
-    const c = (state.settings.city || '成都').trim();
-    return cityMap[c] || { lat: 30.66, lon: 104.06 };
+    return { lat: 30.66, lon: 104.06 };
 }
 
 // ---------- Tab 2: 流行风向 ----------
@@ -10207,7 +10765,35 @@ function wishCard(w, available) {
 }
 
 // ==================== 事件绑定 ====================
+function pushYjxsToIframe() {
+    const iframe = document.querySelector('.yjxs-host iframe');
+    if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({ type: 'yjxs-sync-in', payload: state.data.yjxs || {} }, '*');
+    }
+}
+
+// 悦己享瘦 iframe 是独立文档，切主题时需单独推送夜间模式状态
+function pushThemeToYjxs() {
+    const iframe = document.querySelector('.yjxs-host iframe');
+    if (iframe && iframe.contentWindow) {
+        const theme = (state.data.settings && state.data.settings.theme) || 'light';
+        iframe.contentWindow.postMessage({ type: 'yjxs-theme', theme: theme }, '*');
+    }
+}
+
 function initEvents() {
+    // 悦己享瘦 iframe 通过 postMessage 与父页面同步数据
+    window.addEventListener('message', e => {
+        if (!e.data) return;
+        if (e.data.type === 'yjxs-data') {
+            state.data.yjxs = e.data.payload || {};
+            saveState();
+        } else if (e.data.type === 'yjxs-ready') {
+            pushYjxsToIframe();
+            pushThemeToYjxs();
+        }
+    });
+
     // 绑定到 document，使侧边栏导航（#sidebarNav，位于 #content 之外）也能触发
     document.addEventListener('click', async e => {
         // 点击「新增打卡项」板块下拉之外时，收起菜单（仅 DOM 操作，不触发整页重渲染）
@@ -10271,6 +10857,64 @@ function initEvents() {
         // 变美情报局
         if (action === 'beauty-weather-refresh') {
             delete state.data.apiCache['beautyWeather'];
+            loadBeautyWeather();
+            return;
+        }
+        if (action === 'beauty-city-save') {
+            const psel = document.getElementById('beautyProvinceSelect');
+            const csel = document.getElementById('beautyCitySelect');
+            const dsel = document.getElementById('beautyDistrictSelect');
+            const input = document.getElementById('beautyCityInput');
+            const pv = psel ? psel.value : '';
+            const cv = csel ? csel.value : '';
+            const dv = dsel ? dsel.value : '';
+            const inputVal = input ? (input.value || '').trim() : '';
+            let finalProvince = '', finalCity = '', finalDistrict = '';
+            if (pv === '__other__' || cv === '__other__' || (!pv && inputVal)) {
+                if (!inputVal) { toast('请在输入框里填写城市名再保存'); return; }
+                finalCity = inputVal;
+                finalProvince = beautyFindProvinceByCity(inputVal);
+            } else {
+                if (!pv) { toast('请先选择省份'); return; }
+                if (!cv) { toast('请先选择城市'); return; }
+                finalProvince = pv; finalCity = cv;
+                if (dv) finalDistrict = dv;
+            }
+            state.settings.weatherMode = 'city';
+            state.settings.province = finalProvince;
+            state.settings.city = finalCity;
+            state.settings.district = finalDistrict;
+            delete state.data.apiCache['beautyWeather'];
+            saveState();
+            if (typeof queueSync === 'function') queueSync();
+            toast('已保存 ' + finalCity + (finalDistrict ? ' · ' + finalDistrict : '') + '，正在更新天气...');
+            loadBeautyWeather();
+            return;
+        }
+        if (action === 'beauty-city-confirm') {
+            const input = document.getElementById('beautyCityInput');
+            const val = (input ? input.value : '').trim();
+            if (val) {
+                state.settings.weatherMode = 'city';
+                state.settings.city = val;
+                const p = beautyFindProvinceByCity(val);
+                if (p) state.settings.province = p;
+                delete state.data.apiCache['beautyWeather'];
+                saveState();
+                if (typeof queueSync === 'function') queueSync();
+                loadBeautyWeather();
+            } else {
+                toast('请输入城市名');
+            }
+            return;
+        }
+        if (action === 'beauty-city-locate') {
+            state.settings.weatherMode = 'gps';
+            state.settings.gpsCityName = '📍 正在定位...';
+            delete state.data.apiCache['beautyWeather'];
+            saveState();
+            if (typeof queueSync === 'function') queueSync();
+            toast('正在获取当前位置天气...');
             loadBeautyWeather();
             return;
         }
@@ -10548,6 +11192,11 @@ function initEvents() {
             d.setDate(d.getDate() + delta);
             state._scheduleDate = dateStr(d);
             render();
+            return;
+        }
+
+        if (action === 'checkin-month') {
+            shiftCheckinMonth(parseInt(el.dataset.delta) || 0);
             return;
         }
 
@@ -10979,6 +11628,7 @@ function initEvents() {
             const icon = el.querySelector('.eng-expand-icon');
             if (detail) detail.classList.toggle('eng-open');
             if (icon) icon.classList.toggle('eng-open');
+            el.classList.toggle('eng-open');
             return;
         }
         if (action === 'eng-clear-history') {
@@ -11309,6 +11959,16 @@ function initEvents() {
             return;
         }
 
+        if (action === 'clear-points-rank') {
+            uiConfirm('确定要「积分/段位全部清零」吗？\n这会永久删除：所有积分流水、段位、赛季记录、成就、称号、星能、连胜、补打卡记录，并把已兑换心愿恢复为未兑换。\n本地和云端（如已配置）都会同步清零，无法撤销。', { isDanger: true }).then(ok => {
+                if (ok) {
+                    clearAllPointsAndRankData();
+                    toast('积分/段位已彻底清零，页面已刷新');
+                }
+            });
+            return;
+        }
+
         if (action === 'unfreeze-achievements') {
             unfreezeAchievements();
             return;
@@ -11377,6 +12037,12 @@ function initEvents() {
         if (e.target.id === 'scheduleDate') {
             state._scheduleDate = e.target.value;
             render();
+        }
+        if (e.target.id === 'beautyProvinceSelect') {
+            beautyOnProvinceChange();
+        }
+        if (e.target.id === 'beautyCitySelect') {
+            beautyOnCityChange();
         }
     });
 
@@ -11490,12 +12156,14 @@ function resetPointsToTarget(targetPoints) {
     const pts = state.data.points;
     const targetStars = Math.floor(targetPoints / 100);
 
-    // 1. 重置积分流水：只有一条校准记录，确保 earned 与目标积分完全一致
-    pts.history = [];
-    if (targetPoints > 0) {
+    // 1. 重置积分流水：保留真实 base 打卡记录（打卡状态不能丢），
+    //    把历史 base 积分归零，删除旧的 calibration/adjustment/bonus/streak/makeup 等流水，
+    //    再用一条 adjustment 把 earned 补齐到目标值。
+    pts.history = (pts.history || []).filter(h => h.type === 'base').map(h => ({ ...h, points: 0 }));
+    if (targetPoints !== 0) {
         pts.history.push({
             id: uuid(),
-            type: 'base',
+            type: 'adjustment',
             points: targetPoints,
             date: today(),
             reason: '设置页积分校准',
@@ -11519,6 +12187,7 @@ function resetPointsToTarget(targetPoints) {
     // 3. 重置段位
     g.rankStars = targetStars;
     g.accountedEarnedStars = targetStars;
+    g._lastSyncEarned = targetPoints;   // 同步基线也重置，校准后不再追补历史
     g._pointsCalibrated = APP_BUILD;
 
     // 4. 重置赛季记录
@@ -11551,6 +12220,60 @@ function resetPointsToTarget(targetPoints) {
     refreshPointsCalibrationUI();
 }
 
+// 「积分/段位全部清零」：彻底删除所有积分、段位、赛季、成就相关数据并从零开始。
+// 同时设置校准标记，确保云端同步时不会把旧污染数据再合并回来。
+function clearAllPointsAndRankData() {
+    const g = state.data.game;
+    const pts = state.data.points;
+
+    // 1. 真正的从零开始：删除全部积分流水（含 base 打卡完成记录），
+    //    这样被污染的 4w 分 phantom 记录彻底清除；真实跨设备打卡由同步逻辑保留。
+    pts.history = [];
+    pts.earned = 0;
+    pts.used = 0;
+    state.data.makeupLog = {};
+
+    // 2. 已兑换心愿恢复为未兑换（否则 used 分会一直存在）
+    (state.data.wishes || []).forEach(w => {
+        if (w.exchanged) {
+            w.exchanged = false;
+            w.exchangedAt = null;
+        }
+    });
+
+    // 3. 段位/赛季/成就/星能/连胜全部归零
+    g.rankStars = 0;
+    g.accountedEarnedStars = 0;
+    g._lastSyncEarned = 0;
+    g.courage = 0;
+    g.courageStars = 0;
+    g.bonusStars = 0;
+    g.winStars = 0;
+    g.winAwarded = [];
+    if (typeof g.winStreak === 'number') g.winStreak = 0;
+    g.achievements = {};
+    g.titles = [];
+    g._achievementsFrozen = true;
+    g.allFourDates = [];
+    g.allFourCourageDates = [];
+    g.firstCheckInTime = {};
+    g.seasonHistory = [];
+    const cur = getCurrentSeason();
+    g.season = { id: cur.id, name: cur.name, year: cur.year, key: cur.key, startStars: 0, peakStars: 0, peakKey: null };
+
+    // 4. 设置清零/校准标记：用当前最新 build，保证冲突解决时本地清零状态优先于云端旧数据
+    g._pointsCalibrated = APP_BUILD;
+    g._pointsClearedAt = now();
+
+    // 5. 重新核算并立即保存（会触发云端同步，上传清零后的状态覆盖云端）
+    recalcPoints();
+    recalcCourage();
+    saveState();
+    closeSettings();
+    render();
+    refreshPointsCalibrationUI();
+}
+
 function unfreezeAchievements() {
     const g = state.data.game;
     if (g._achievementsFrozen) {
@@ -11570,7 +12293,18 @@ async function saveSettings() {
         state.data.modulesUpdatedAt = now();
     }
     state.settings.name = document.getElementById('settingName').value.trim();
+    const prevCity = state.settings.city || '';
     state.settings.city = document.getElementById('settingCity').value.trim();
+    if (state.settings.city) {
+        if (state.settings.city !== prevCity) state.settings.district = '';
+        const p = beautyFindProvinceByCity(state.settings.city);
+        if (p) state.settings.province = p;
+        state.settings.weatherMode = 'city';
+    } else {
+        state.settings.weatherMode = 'gps';
+        state.settings.province = '';
+        state.settings.district = '';
+    }
     state.settings.exchangeRule = document.getElementById('settingExchangeRule').value.trim();
     state.settings.supabaseUrl = normalizeSupabaseUrl(document.getElementById('settingSupabaseUrl').value.trim());
     state.settings.supabaseKey = document.getElementById('settingSupabaseKey').value.trim();
@@ -11657,6 +12391,7 @@ function applyTheme() {
     document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
     const btn = document.getElementById('themeBtn');
     if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+    try { if (typeof pushThemeToYjxs === 'function') pushThemeToYjxs(); } catch (err) { /* ignore */ }
 }
 
 function toggleTheme() {
@@ -11667,6 +12402,472 @@ function toggleTheme() {
     saveState();
     toast(state.data.settings.theme === 'dark' ? '已切换到夜间模式 🌙' : '已切换到日间模式 ☀️');
 }
+
+// ==================== 英语打卡（三级目录 + 艾宾浩斯复习曲线） ====================
+// 数据结构（state.data.engcheck，随云端同步，跨设备一致）：
+//   books:   一级目录（书）      [{id, name, order, createdAt}]
+//   lessons: 二级目录（课）      [{id, bookId, name, order, createdAt}]
+//   tasks:   三级任务记录        key = `${lessonId}|${taskId}`
+//             value = { startedAt: epochMs, reviews: [epochMs,...] }
+//             reviews 长度 = 已完成的复习节点数（0~8）
+// 艾宾浩斯 8 复习节点（首次打卡后起算）：
+//   5分钟 → 30分钟 → 12小时 → 1天 → 2天 → 4天 → 7天 → 15天
+//   全部完成即「已掌握」。
+
+const EC_TASK_GROUPS = [
+    { id: 'input', name: '输入板块', icon: '📥', sub: '听 · 读' },
+    { id: 'output', name: '输出板块', icon: '📤', sub: '说 · 写' }
+];
+
+const EC_TASKS = [
+    { id: 'listen-broad', group: 'input', icon: '🎧', name: '泛听', desc: '听音 Familiar —— 不停顿，抓大意' },
+    { id: 'listen-close', group: 'input', icon: '🎯', name: '精听', desc: '听音 Detail —— 逐句听写，弄懂每句话' },
+    { id: 'read-aloud', group: 'input', icon: '📖', name: '跟读', desc: '听读 Repeat —— 模仿语音语调大声跟读' },
+    { id: 'speak-trans', group: 'output', icon: '🗣️', name: '说译', desc: '说 Output —— 看图说英文 / 看中文说英文' },
+    { id: 'write-drill', group: 'output', icon: '✍️', name: '练题', desc: '写 Output —— 课后习题 / 考试卷子 / 小作文' }
+];
+
+// 艾宾浩斯复习节点（单位：分钟）：5分钟、30分钟、12小时、1天、2天、4天、7天、15天
+const EC_NODES_MIN = [5, 30, 720, 1440, 2880, 5760, 10080, 21600];
+const EC_NODE_LABELS = ['5分钟', '30分钟', '12小时', '1天', '2天', '4天', '7天', '15天'];
+
+function ecData() {
+    if (!state.data.engcheck || typeof state.data.engcheck !== 'object') state.data.engcheck = { books: [], lessons: [], tasks: {} };
+    if (!Array.isArray(state.data.engcheck.books)) state.data.engcheck.books = [];
+    if (!Array.isArray(state.data.engcheck.lessons)) state.data.engcheck.lessons = [];
+    if (!state.data.engcheck.tasks || typeof state.data.engcheck.tasks !== 'object') state.data.engcheck.tasks = {};
+    return state.data.engcheck;
+}
+
+function ecBookById(id) { return ecData().books.find(b => b.id === id) || null; }
+function ecLessonById(id) { return ecData().lessons.find(l => l.id === id) || null; }
+function ecLessonsOf(bookId) {
+    return ecData().lessons.filter(l => l.bookId === bookId).sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+function ecTaskKey(lessonId, taskId) { return lessonId + '|' + taskId; }
+function ecGetTask(lessonId, taskId) { return ecData().tasks[ecTaskKey(lessonId, taskId)] || null; }
+
+// ---------- 艾宾浩斯调度逻辑（纯函数，可单测） ----------
+function ecStatus(rec) {
+    if (!rec || !rec.startedAt) return 'new';
+    if ((rec.reviews || []).length >= EC_NODES_MIN.length) return 'mastered';
+    return 'doing';
+}
+function ecDueAt(rec) {
+    if (!rec || !rec.startedAt) return null;
+    const n = (rec.reviews || []).length;
+    if (n >= EC_NODES_MIN.length) return null;
+    return rec.startedAt + EC_NODES_MIN[n] * 60000;
+}
+function ecIsDue(rec, ts) {
+    const due = ecDueAt(rec);
+    return !!due && (ts || Date.now()) >= due;
+}
+function ecFmtDT(ts) {
+    const d = new Date(ts);
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function ecRelText(ts) {
+    const diff = ts - Date.now();
+    const abs = Math.abs(diff);
+    let s;
+    if (abs < 60000) s = '1分钟';
+    else if (abs < 3600000) s = Math.floor(abs / 60000) + '分钟';
+    else if (abs < 86400000) s = Math.floor(abs / 3600000) + '小时';
+    else s = Math.floor(abs / 86400000) + '天';
+    return diff < 0 ? ('已逾期' + s) : (s + '后');
+}
+function ecDots(rec) {
+    const done = rec ? (rec.reviews || []).length : 0;
+    let html = '<span class="ec-dots">';
+    for (let i = 0; i < EC_NODES_MIN.length; i++) {
+        html += `<span class="ec-dot${i < done ? ' on' : ''}"></span>`;
+    }
+    return html + `</span><span class="ec-dots-num">${done}/8</span>`;
+}
+function ecStatusBadge(rec) {
+    const st = ecStatus(rec);
+    if (st === 'new') return '<span class="ec-badge ec-badge-new">未开始</span>';
+    if (st === 'mastered') return '<span class="ec-badge ec-badge-ok">已掌握 ✅</span>';
+    if (ecIsDue(rec)) {
+        const due = ecDueAt(rec);
+        const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+        if (due < dayStart.getTime()) return '<span class="ec-badge ec-badge-late">待复习 · 逾期</span>';
+        return '<span class="ec-badge ec-badge-due">待复习</span>';
+    }
+    return '<span class="ec-badge ec-badge-doing">学习中</span>';
+}
+
+// ---------- 统计 ----------
+function ecBookStats(bookId) {
+    const d = ecData();
+    const lessons = ecLessonsOf(bookId);
+    let total = lessons.length * EC_TASKS.length, started = 0, mastered = 0;
+    lessons.forEach(l => EC_TASKS.forEach(t => {
+        const rec = d.tasks[ecTaskKey(l.id, t.id)];
+        if (rec && rec.startedAt) {
+            started++;
+            if ((rec.reviews || []).length >= EC_NODES_MIN.length) mastered++;
+        }
+    }));
+    return { lessons: lessons.length, total, started, mastered };
+}
+function ecGlobalStats() {
+    const d = ecData();
+    let due = 0, overdue = 0, todayDone = 0, mastered = 0;
+    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+    const dayStartMs = dayStart.getTime();
+    Object.keys(d.tasks).forEach(k => {
+        const rec = d.tasks[k];
+        if (!rec || !rec.startedAt) return;
+        const n = (rec.reviews || []).length;
+        (rec.reviews || []).forEach(t => { if (t >= dayStartMs) todayDone++; });
+        if (n >= EC_NODES_MIN.length) { mastered++; return; }
+        const dueAt = ecDueAt(rec);
+        if (dueAt && Date.now() >= dueAt) { due++; if (dueAt < dayStartMs) overdue++; }
+    });
+    return { due, overdue, todayDone, mastered };
+}
+function ecDueTasks() {
+    const d = ecData();
+    const list = [];
+    d.books.forEach(b => ecLessonsOf(b.id).forEach(l => {
+        EC_TASKS.forEach(t => {
+            const rec = d.tasks[ecTaskKey(l.id, t.id)];
+            if (!rec || !rec.startedAt) return;
+            if ((rec.reviews || []).length >= EC_NODES_MIN.length) return;
+            const dueAt = ecDueAt(rec);
+            if (dueAt && Date.now() >= dueAt) list.push({ book: b, lesson: l, task: t, rec, dueAt });
+        });
+    }));
+    list.sort((a, b) => a.dueAt - b.dueAt);
+    return list;
+}
+
+// ---------- 操作 ----------
+function ecNextOrder(arr) {
+    return arr.reduce((m, x) => Math.max(m, x.order || 0), 0) + 1;
+}
+async function ecAddBook() {
+    const input = document.getElementById('ecBookNameInput');
+    const name = (input && input.value ? input.value : '').trim();
+    if (!name) { toast('请输入书本名称'); return; }
+    const d = ecData();
+    if (d.books.some(b => b.name === name)) { toast('这本书已在书单里'); return; }
+    d.books.push({ id: uuid(), name, order: ecNextOrder(d.books), createdAt: now() });
+    saveState(); queueSync(); render();
+    toast('📚 已添加《' + name + '》，去添加课程吧');
+}
+async function ecRenameBook(id) {
+    const book = ecBookById(id);
+    if (!book) return;
+    const name = await uiPrompt('重命名书单', book.name, { title: '✏️ 重命名' });
+    if (name == null) return;
+    const v = String(name).trim();
+    if (!v) { toast('名称不能为空'); return; }
+    book.name = v;
+    saveState(); queueSync(); render();
+    toast('已重命名');
+}
+async function ecDeleteBook(id) {
+    const book = ecBookById(id);
+    if (!book) return;
+    const cnt = ecLessonsOf(id).length;
+    const ok = await uiConfirm(`将删除《${book.name}》及其 ${cnt} 节课程的全部打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
+    if (!ok) return;
+    const d = ecData();
+    const lessonIds = d.lessons.filter(l => l.bookId === id).map(l => l.id);
+    d.lessons = d.lessons.filter(l => l.bookId !== id);
+    Object.keys(d.tasks).forEach(k => { if (lessonIds.some(lid => k.startsWith(lid + '|'))) delete d.tasks[k]; });
+    d.books = d.books.filter(b => b.id !== id);
+    if (state._ecBookId === id) state._ecBookId = null;
+    saveState(); queueSync(); render();
+    toast('🗑️ 已删除《' + book.name + '》');
+}
+async function ecAddLesson() {
+    const bookId = state._ecBookId;
+    const input = document.getElementById('ecLessonNameInput');
+    const name = (input && input.value ? input.value : '').trim();
+    if (!bookId) return;
+    if (!name) { toast('请输入课程名称，如 Lesson 1'); return; }
+    const d = ecData();
+    if (d.lessons.some(l => l.bookId === bookId && l.name === name)) { toast('该课程已存在'); return; }
+    d.lessons.push({ id: uuid(), bookId, name, order: ecNextOrder(d.lessons), createdAt: now() });
+    saveState(); queueSync(); render();
+    toast('✅ 已添加「' + name + '」');
+}
+async function ecBatchLessons() {
+    const bookId = state._ecBookId;
+    if (!bookId) return;
+    const prefix = (document.getElementById('ecBatchPrefix') || {}).value || '';
+    const from = parseInt((document.getElementById('ecBatchFrom') || {}).value, 10);
+    const to = parseInt((document.getElementById('ecBatchTo') || {}).value, 10);
+    if (isNaN(from) || isNaN(to)) { toast('请输入起始和结束编号'); return; }
+    if (from < 1 || to < from) { toast('编号范围不正确（起始至少为 1，结束不小于起始）'); return; }
+    if (to - from + 1 > 500) { toast('一次最多生成 500 节，请分批'); return; }
+    const d = ecData();
+    const existNames = new Set(d.lessons.filter(l => l.bookId === bookId).map(l => l.name));
+    let added = 0;
+    for (let i = from; i <= to; i++) {
+        const name = (prefix.trim() ? prefix.trim() + ' ' : '') + i;
+        if (existNames.has(name)) continue;
+        d.lessons.push({ id: uuid(), bookId, name, order: ecNextOrder(d.lessons), createdAt: now() });
+        existNames.add(name);
+        added++;
+    }
+    saveState(); queueSync(); render();
+    toast(added ? `✅ 已批量生成 ${added} 节课程` : '这些课程都已存在，没有新增');
+}
+async function ecRenameLesson(id) {
+    const lesson = ecLessonById(id);
+    if (!lesson) return;
+    const name = await uiPrompt('重命名课程', lesson.name, { title: '✏️ 重命名课程' });
+    if (name == null) return;
+    const v = String(name).trim();
+    if (!v) { toast('名称不能为空'); return; }
+    lesson.name = v;
+    saveState(); queueSync(); render();
+    toast('已重命名');
+}
+async function ecDeleteLesson(id) {
+    const lesson = ecLessonById(id);
+    if (!lesson) return;
+    const ok = await uiConfirm(`将删除「${lesson.name}」及其全部打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
+    if (!ok) return;
+    const d = ecData();
+    d.lessons = d.lessons.filter(l => l.id !== id);
+    Object.keys(d.tasks).forEach(k => { if (k.startsWith(id + '|')) delete d.tasks[k]; });
+    if (state._ecLessonId === id) state._ecLessonId = null;
+    saveState(); queueSync(); render();
+    toast('🗑️ 已删除「' + lesson.name + '」');
+}
+function ecDoCheckIn(lessonId, taskId) {
+    const key = ecTaskKey(lessonId, taskId);
+    const tasks = ecData().tasks;
+    const rec = tasks[key];
+    const ts = Date.now();
+    const taskDef = EC_TASKS.find(t => t.id === taskId);
+    if (!rec || !rec.startedAt) {
+        tasks[key] = { startedAt: ts, reviews: [] };
+        saveState(); queueSync(); render();
+        toast('🎯 「' + (taskDef ? taskDef.name : '') + '」已打卡！' + EC_NODE_LABELS[0] + '后提醒第一次复习');
+        return;
+    }
+    if ((rec.reviews || []).length >= EC_NODES_MIN.length) { toast('该任务已全部掌握 ✅'); return; }
+    const due = ecDueAt(rec);
+    if (due && ts < due) { toast('还没到复习时间，' + ecRelText(due) + '后再来'); return; }
+    rec.reviews.push(ts);
+    saveState(); queueSync(); render();
+    const done = rec.reviews.length;
+    if (done >= EC_NODES_MIN.length) toast('🏆 8 次复习全部完成，该任务已掌握！');
+    else toast('⏰ 复习完成 ' + done + '/8，下次复习：' + EC_NODE_LABELS[done] + '后');
+}
+
+// ---------- 渲染 ----------
+function renderEngCheckPage(tab) {
+    if (tab === 'ec-review') return ecRenderReview();
+    return ecRenderDrill();
+}
+
+function ecCurveCard() {
+    const nodes = EC_NODE_LABELS.map((n, i) => `<span class="ec-node${i === 0 ? ' first' : ''}">${n}</span>`).join('<span class="ec-arrow">→</span>');
+    return `
+    <div class="card ec-curve-card">
+        <div class="card-header"><div class="card-title">📈 艾宾浩斯复习曲线</div></div>
+        <div class="ec-curve">${nodes}</div>
+        <div class="ec-curve-tip">每项任务首次打卡后，按上面 8 个节点提醒复习；8 次复习全部完成，该任务即标记为「已掌握」。</div>
+    </div>`;
+}
+
+function ecRenderBooks() {
+    const d = ecData();
+    const books = [...d.books].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const list = books.map(b => {
+        const st = ecBookStats(b.id);
+        const pct = st.total ? Math.round(st.mastered / st.total * 100) : 0;
+        return `
+        <div class="card ec-book-card">
+            <div class="ec-book-main" data-action="ec-open-book" data-id="${b.id}">
+                <div class="ec-book-icon">📚</div>
+                <div class="ec-book-info">
+                    <div class="ec-book-name">${escapeHtml(b.name)}</div>
+                    <div class="ec-book-meta">${st.lessons} 节课 · 已掌握 ${st.mastered}/${st.total} 项</div>
+                    <div class="ec-bar"><div class="ec-bar-fill" style="width:${pct}%"></div></div>
+                </div>
+                <div class="ec-book-go">›</div>
+            </div>
+            <div class="ec-book-actions">
+                <button class="btn btn-sm btn-secondary" data-action="ec-rename-book" data-id="${b.id}">✏️ 重命名</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-delete-book" data-id="${b.id}">🗑️ 删除</button>
+            </div>
+        </div>`;
+    }).join('');
+    return `
+    <div class="card">
+        <div class="card-header"><div class="card-title">📚 我的书单（一级目录）</div></div>
+        <div class="ec-add-row">
+            <input type="text" class="input" id="ecBookNameInput" placeholder="书本名称，如：新概念英语一" maxlength="30">
+            <button class="btn btn-primary" data-action="ec-add-book">添加</button>
+        </div>
+        <div class="ec-hint">先建一本书，再在书里添加课程（二级目录），每节课按听/读/说/写打卡（三级目录）。</div>
+    </div>
+    ${books.length ? list : `<div class="card ec-empty"><div class="ec-empty-icon">📚</div><div>还没有书单</div><div class="ec-hint">在上方输入书名，添加第一本书吧</div></div>`}
+    ${ecCurveCard()}`;
+}
+
+function ecRenderLessons() {
+    const book = ecBookById(state._ecBookId);
+    if (!book) { state._ecBookId = null; return ecRenderBooks(); }
+    const lessons = ecLessonsOf(book.id);
+    const list = lessons.map(l => {
+        let mastered = 0;
+        EC_TASKS.forEach(t => {
+            const rec = ecGetTask(l.id, t.id);
+            if (rec && (rec.reviews || []).length >= EC_NODES_MIN.length) mastered++;
+        });
+        return `
+        <div class="card ec-lesson-card">
+            <div class="ec-lesson-main" data-action="ec-open-lesson" data-id="${l.id}">
+                <div class="ec-lesson-name">${escapeHtml(l.name)}</div>
+                <div class="ec-lesson-meta">已掌握 ${mastered}/${EC_TASKS.length} 项</div>
+                <div class="ec-book-go">›</div>
+            </div>
+            <div class="ec-lesson-actions">
+                <button class="btn btn-sm btn-secondary" data-action="ec-rename-lesson" data-id="${l.id}">✏️</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-delete-lesson" data-id="${l.id}">🗑️</button>
+            </div>
+        </div>`;
+    }).join('');
+    return `
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">📖 ${escapeHtml(book.name)}</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-back-books">‹ 返回书单</button>
+        </div>
+        <div class="ec-add-row">
+            <input type="text" class="input" id="ecLessonNameInput" placeholder="添加课程，如 Lesson 1" maxlength="40">
+            <button class="btn btn-primary" data-action="ec-add-lesson">添加</button>
+        </div>
+        <div class="ec-batch">
+            <div class="ec-batch-title">⚡ 批量生成（如新概念英语一 144 课）</div>
+            <div class="ec-add-row">
+                <input type="text" class="input" id="ecBatchPrefix" placeholder="前缀，如 Lesson" maxlength="20" style="flex:1.2;min-width:0">
+                <input type="number" class="input" id="ecBatchFrom" placeholder="起始" min="1" style="flex:0.8;min-width:64px">
+                <input type="number" class="input" id="ecBatchTo" placeholder="结束" min="1" style="flex:0.8;min-width:64px">
+                <button class="btn btn-secondary" data-action="ec-batch-lessons">生成</button>
+            </div>
+            <div class="ec-hint">例：前缀 Lesson + 1 ~ 144 → 生成 Lesson 1 到 Lesson 144；前缀留空则只生成数字。</div>
+        </div>
+    </div>
+    ${lessons.length ? list : `<div class="card ec-empty"><div class="ec-empty-icon">📖</div><div>还没有课程</div><div class="ec-hint">用上方表单添加，或批量生成整本书的课程</div></div>`}`;
+}
+
+function ecTaskRow(lessonId, taskDef) {
+    const rec = ecGetTask(lessonId, taskDef.id);
+    const st = ecStatus(rec);
+    const due = ecDueAt(rec);
+    let btn;
+    if (st === 'new') btn = `<button class="btn btn-sm btn-primary" data-action="ec-checkin" data-lesson="${lessonId}" data-task="${taskDef.id}">🎯 开始打卡</button>`;
+    else if (st === 'mastered') btn = `<button class="btn btn-sm btn-secondary" disabled>✅ 已掌握</button>`;
+    else if (ecIsDue(rec)) btn = `<button class="btn btn-sm btn-primary" data-action="ec-checkin" data-lesson="${lessonId}" data-task="${taskDef.id}">⏰ 完成复习</button>`;
+    else btn = `<button class="btn btn-sm btn-secondary" disabled>下次 ${ecRelText(due)}</button>`;
+    const nextLine = st === 'mastered'
+        ? `<span class="ec-task-next ec-ok">8 次复习全部完成 🎉</span>`
+        : (st === 'new' ? `<span class="ec-task-next">打卡后按曲线提醒复习</span>` : `<span class="ec-task-next">下次复习：${ecFmtDT(due)}（${ecRelText(due)}）</span>`);
+    return `
+    <div class="ec-task">
+        <div class="ec-task-head">
+            <span class="ec-task-icon">${taskDef.icon}</span>
+            <span class="ec-task-name">${taskDef.name}</span>
+            ${ecStatusBadge(rec)}
+        </div>
+        <div class="ec-task-desc">${taskDef.desc}</div>
+        <div class="ec-task-progress">${ecDots(rec)}${nextLine}</div>
+        <div class="ec-task-btn">${btn}</div>
+    </div>`;
+}
+
+function ecRenderLesson() {
+    const lesson = ecLessonById(state._ecLessonId);
+    if (!lesson) { state._ecLessonId = null; return ecRenderLessons(); }
+    const book = ecBookById(lesson.bookId);
+    const groups = EC_TASK_GROUPS.map(g => {
+        const rows = EC_TASKS.filter(t => t.group === g.id).map(t => ecTaskRow(lesson.id, t)).join('');
+        return `
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">${g.icon} ${g.name} · ${g.sub}</div>
+            </div>
+            ${rows}
+        </div>`;
+    }).join('');
+    return `
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">${escapeHtml(book ? book.name : '')} › ${escapeHtml(lesson.name)}</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-back-lessons">‹ 返回课程</button>
+        </div>
+        <div class="ec-hint">三级目录：每节课按「听 / 读 / 说 / 写」四项打卡，系统按艾宾浩斯曲线自动安排 8 次复习。</div>
+    </div>
+    ${groups}`;
+}
+
+function ecRenderReview() {
+    const stats = ecGlobalStats();
+    const dueList = ecDueTasks();
+    const rows = dueList.map(it => `
+        <div class="ec-due-row${it.dueAt < new Date().setHours(0, 0, 0, 0) ? ' late' : ''}">
+            <div class="ec-due-info">
+                <div class="ec-due-title">${it.task.icon} ${it.task.name}<span class="ec-due-path">${escapeHtml(it.book.name)} › ${escapeHtml(it.lesson.name)}</span></div>
+                <div class="ec-due-meta">${ecDots(it.rec)}应复习：${ecFmtDT(it.dueAt)}（${ecRelText(it.dueAt)}）</div>
+            </div>
+            <button class="btn btn-sm btn-primary" data-action="ec-checkin" data-lesson="${it.lesson.id}" data-task="${it.task.id}">复习</button>
+        </div>`).join('');
+    return `
+    <div class="card">
+        <div class="card-header"><div class="card-title">⏰ 复习中心</div></div>
+        <div class="ec-stats">
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">待复习</div></div>
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-late">${stats.overdue}</div><div class="ec-stat-label">已逾期</div></div>
+            <div class="ec-stat"><div class="ec-stat-num">${stats.todayDone}</div><div class="ec-stat-label">今日完成</div></div>
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.mastered}</div><div class="ec-stat-label">已掌握</div></div>
+        </div>
+    </div>
+    ${ecCurveCard()}
+    <div class="card">
+        <div class="card-header"><div class="card-title">📋 待复习清单</div><span style="font-size:12px;color:var(--text-secondary)">按应复习时间排序</span></div>
+        ${dueList.length ? rows : `<div class="ec-empty"><div class="ec-empty-icon">🎉</div><div>当前没有待复习的任务</div><div class="ec-hint">去「书单课目」给新课打卡，这里会按曲线提醒</div></div>`}
+    </div>`;
+}
+
+// 书单/课程/任务 三级视图分发（书单 Tab 内下钻）
+function ecRenderDrill() {
+    if (state._ecLessonId && ecLessonById(state._ecLessonId)) return ecRenderLesson();
+    if (state._ecBookId && ecBookById(state._ecBookId)) return ecRenderLessons();
+    return ecRenderBooks();
+}
+
+// ---------- 事件委托 ----------
+document.addEventListener('click', async e => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+    if (!action || action.indexOf('ec-') !== 0) return;
+
+    if (action === 'ec-add-book') { ecAddBook(); return; }
+    if (action === 'ec-rename-book') { ecRenameBook(el.dataset.id); return; }
+    if (action === 'ec-delete-book') { ecDeleteBook(el.dataset.id); return; }
+    if (action === 'ec-open-book') { state._ecBookId = el.dataset.id; state._ecLessonId = null; render(); return; }
+    if (action === 'ec-back-books') { state._ecBookId = null; render(); return; }
+    if (action === 'ec-add-lesson') { ecAddLesson(); return; }
+    if (action === 'ec-batch-lessons') { ecBatchLessons(); return; }
+    if (action === 'ec-rename-lesson') { ecRenameLesson(el.dataset.id); return; }
+    if (action === 'ec-delete-lesson') { ecDeleteLesson(el.dataset.id); return; }
+    if (action === 'ec-open-lesson') { state._ecLessonId = el.dataset.id; render(); return; }
+    if (action === 'ec-back-lessons') { state._ecLessonId = null; render(); return; }
+    if (action === 'ec-checkin') { ecDoCheckIn(el.dataset.lesson, el.dataset.task); return; }
+});
 
 function init() {
     loadState();
