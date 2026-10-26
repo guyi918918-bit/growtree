@@ -4603,6 +4603,10 @@ select.input {
 [data-theme="dark"] .ec-quiz-bank-tag { background: rgba(74,144,217,0.25); color: #8ec3f0; }
 .ec-quiz-bank-meta { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
 .ec-quiz-bank-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+/* 刷题卡片内的编辑态操作组（收起在 ✏️ 开关下） */
+.ec-quiz-bank .ec-row-actions { display: flex; gap: 6px; padding: 10px 0 0; flex-wrap: wrap; border-top: 1px dashed var(--border); margin-top: 10px; }
+.ec-quiz-bank .ec-row-actions .btn { flex: 0 0 auto; }
+.ec-quiz-bank-head .ec-edit-btn { flex-shrink: 0; margin-left: 2px; }
 /* 题目行（题目管理/错题/收藏/统计） */
 .ec-quiz-qrow { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .ec-quiz-qrow:last-child { border-bottom: none; }

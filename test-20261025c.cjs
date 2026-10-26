@@ -1111,6 +1111,75 @@ function makeZip(files) {
         ok('合并函数在 engcheck 合并中被调用', /merged\.quiz = ecQuizMerge\(win\.quiz, lose\.quiz\)/.test(APP));
     }
 
+    // ===== S. v20261026d：删除墓碑（合并不复活）+ 导入名称归一化 + 单课时导入 =====
+    {
+        const EC15 = makeEC();
+        const d = EC15.ecQuizData();
+        const bankId = d.banks[0].id;
+        const lessonId = d.banks[0].lessons[0].id;
+        const qid = d.banks[0].lessons[0].questions[0] && d.banks[0].lessons[0].questions[0].id;
+        const baseQuiz = JSON.parse(JSON.stringify(d));
+        const mkLose = () => JSON.parse(JSON.stringify(baseQuiz));
+        // 场景1：本地删了某课时（写墓碑），云端仍保留 → 合并后该课时不复活
+        const win1 = JSON.parse(JSON.stringify(baseQuiz));
+        win1.tomb = { banks: {}, lessons: {}, questions: {} };
+        if (lessonId) win1.tomb.lessons[lessonId] = Date.now();
+        const m1 = EC15.ecQuizMerge(win1, mkLose());
+        const mb1 = m1.banks.find(b => b.id === bankId);
+        ok('墓碑：删除的课时跨设备合并不复活', mb1 && (!lessonId || !mb1.lessons.some(l => l.id === lessonId)));
+        ok('墓碑：tomb 字段在合并结果中保留', m1.tomb && (!lessonId || m1.tomb.lessons[lessonId] > 0));
+        // 场景2：本地删了整本习题集
+        const win2 = JSON.parse(JSON.stringify(baseQuiz));
+        win2.tomb = { banks: {}, lessons: {}, questions: {} };
+        win2.tomb.banks[bankId] = Date.now();
+        const m2 = EC15.ecQuizMerge(win2, mkLose());
+        ok('墓碑：删除的习题集合并不复活', !m2.banks.some(b => b.id === bankId));
+        // 场景3：本地删了单题（防「题目多的那边为准」把删掉的题拉回）
+        if (qid) {
+            const win3 = JSON.parse(JSON.stringify(baseQuiz));
+            win3.tomb = { banks: {}, lessons: {}, questions: {} };
+            win3.tomb.questions[lessonId + '|' + qid] = Date.now();
+            const m3 = EC15.ecQuizMerge(win3, mkLose());
+            const mb3 = m3.banks.find(b => b.id === bankId) && m3.banks.find(b => b.id === bankId).lessons.find(l => l.id === lessonId);
+            ok('墓碑：删除的单题合并不复活', mb3 && !mb3.questions.some(q => q.id === qid));
+        }
+        // 场景4：双向合并仍尊重任一侧的删除
+        const win4 = JSON.parse(JSON.stringify(baseQuiz));
+        win4.tomb = { banks: {}, lessons: lessonId ? { [lessonId]: 1 } : {}, questions: {} };
+        const m4 = EC15.ecQuizMerge(win4, mkLose());
+        ok('墓碑：双向合并仍尊重任一侧的删除', !m4.banks.find(b => b.id === bankId).lessons.some(l => l.id === lessonId));
+    }
+    {
+        const EC16 = makeEC();
+        const rows = [
+            ['习题集名称', '课时名称', '题号', '题目类型', '题干', '选项内容', '参考答案', '解析内容'],
+            ['八年级', 'Unit 1', '1', '单选题', 'He is ___.', 'tall||short', 'A', ''],
+            ['八年级', 'unit 1 ', '2', '单选题', 'She is ___.', 'big||small', 'B', '']
+        ];
+        const res = EC16.ecQuizImportRows(rows);
+        ok('导入：课时名大小写/空格不同仍解析为 2 题', res.items.length === 2);
+        const out = EC16.ecQuizApplyImport(res.items, 'append');
+        const bk = EC16.ecQuizData().banks.find(b => b.name === '八年级');
+        ok('导入：课时名归一化视为同一课时（不分裂丢题）', bk && bk.lessons.length === 1 && bk.lessons[0].questions.length === 2);
+    }
+    {
+        const EC17 = makeEC();
+        const d = EC17.ecQuizData();
+        const bk = { id: 'bT', name: '测试集', tag: '', source: '', createdAt: '', lessons: [] };
+        d.banks.push(bk);
+        const les = { id: 'lT', name: '目标课时', sort: 0, createdAt: '', questions: [] };
+        bk.lessons.push(les);
+        const rows = [
+            ['习题集名称', '课时名称', '题号', '题目类型', '题干', '选项内容', '参考答案', '解析内容'],
+            ['别的集', '别的课时', '1', '单选题', 'x is ___.', 'a||b', 'A', ''],
+            ['别的集', '别的课时', '2', '单选题', 'y is ___.', 'c||d', 'C', '']
+        ];
+        const res = EC17.ecQuizImportRows(rows);
+        const out = EC17.ecQuizApplyImport(res.items, 'append', '', 'lT'); // 锁定到 lT
+        ok('单课时导入：忽略文件书名/课时名，全部进锁定课时', out.lastLessonId === 'lT' && les.questions.length === 2);
+        ok('单课时导入：不新建别的习题集/课时', EC17.ecQuizData().banks.filter(b => b.name === '别的集').length === 0 && bk.lessons.length === 1);
+    }
+
     // ===== R. 清零不清题库（墓碑分界线只清 tasks/fsrs） =====
     {
         const EC13 = makeEC();
