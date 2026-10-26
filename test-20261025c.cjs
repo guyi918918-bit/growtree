@@ -119,8 +119,8 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizBankById, ecQuizQById, ecQuizBankProgress, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAfterAnswer, ecRenderQuizPage, ecQuizHomeHTML, ecQuizPlayHTML, ecQuizBanksHTML, ecQuizManageHTML, ecQuizListHTML, ecQuizStatsHTML, ecQuizStart, ecQuizPick, ecQuizSubmit, ecQuizSelf, ecQuizNext, ecQuizExit, ecQuizToggleFav, ecQuizSetMastered, ecQuizUnfav, ecQuizUseBank, ecQuizDelBank, ecQuizDelQuestion, ecQuizExport, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
-    const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, addEventListener: () => {} };
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
+    const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, getElementsByName: (name) => { const k = '__byname_' + name; if (!elCache[k]) elCache[k] = []; return elCache[k]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
             if (opts && opts.input) return inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (opts.defaultValue != null ? String(opts.defaultValue) : true);
@@ -133,6 +133,7 @@ function makeEC(overrides) {
         { getItem: () => null, setItem: () => {} });
     inst._inputs = inputs;
     inst._el = (id) => docMock.getElementById(id);
+    inst._elCache = elCache;
     inst._setConfirm = (v) => { confirmAnswer = v; };
     return inst;
 }
@@ -731,14 +732,16 @@ function crc32(buf) {
     }
     return (crc ^ 0xFFFFFFFF) >>> 0;
 }
-// 手工构造 ZIP（支持 store / deflate-raw 两种方法，用于测试 ecUnzipEntries）
+// 手工构造 ZIP（files['__store__'] === true 时用 store 模式，用于测试 ecUnzipEntries）
 function makeZip(files) {
     const locals = [], centrals = [];
     let offset = 0;
+    const store = files['__store__'] === true;
     Object.keys(files).forEach(name => {
+        if (name === '__store__') return;
         const nameBuf = Buffer.from(name, 'utf8');
         const content = Buffer.from(files[name], 'utf8');
-        const deflated = files['__deflate__'] !== false;
+        const deflated = !store;
         const data = deflated ? zlib.deflateRawSync(content) : content;
         const method = deflated ? 8 : 0;
         const crc = crc32(content);
@@ -764,235 +767,386 @@ function makeZip(files) {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 }
 {
-    // A. 内置题库（原创示例，覆盖新概念 1-4）
+    // ===== A. 内置题库 v2：4 册 × 4 课时两级目录 =====
     const EC = makeEC();
-    ok('内置 4 册题库', EC.EC_QUIZ_BUILTIN.length === 4);
-    const totalQ = EC.EC_QUIZ_BUILTIN.reduce((n, b) => n + b.questions.length, 0);
+    ok('内置 4 册习题集', EC.EC_QUIZ_BUILTIN.length === 4);
+    ok('每册分 4 个课时', EC.ecQuizBuiltinFresh().every(b => b.lessons.length === 4 && b.lessons.every(l => l.questions.length > 0)));
+    const totalQ = EC.ecQuizBuiltinFresh().reduce((n, b) => n + b.lessons.reduce((m, l) => m + l.questions.length, 0), 0);
     ok('内置题库共 80 题', totalQ === 80);
     ok('内置题库覆盖新概念一到四', EC.EC_QUIZ_BUILTIN.every(b => /第[一二三四]册/.test(b.name)));
     const d = EC.ecQuizData();
-    ok('首次进入自动初始化内置题库', d.banks.length === 4 && d.settings.bankId);
+    ok('首次进入自动初始化并选中课时', d.banks.length === 4 && d.settings.bankId && d.settings.lessonId);
+    ok('选中课时属于选中习题集', (() => { const b = d.banks.find(x => x.id === d.settings.bankId); return !!b && b.lessons.some(l => l.id === d.settings.lessonId); })());
     const types = new Set();
     EC.EC_QUIZ_BUILTIN.forEach(b => b.questions.forEach(q => types.add(q.type)));
-    ok('内置题库含四种题型', types.has('single') && types.has('multi') && types.has('judge') && types.has('essay'));
-    ok('内置题目结构完整（题干/答案/选项）', EC.EC_QUIZ_BUILTIN.every(b => b.questions.every(q => q.stem && (q.type === 'essay' ? q.answer : (q.type === 'multi' ? Array.isArray(q.answer) && q.answer.length : typeof q.answer === 'number')))));
+    ok('内置题库四种题型', types.has('single') && types.has('multi') && types.has('judge') && types.has('essay'));
+    ok('内置题目结构完整（题干/答案/选项）', EC.ecQuizBuiltinFresh().every(b => b.lessons.every(l => l.questions.every(q => q.stem && (q.type === 'essay' ? q.answer : (q.type === 'multi' ? Array.isArray(q.answer) && q.answer.length : typeof q.answer === 'number'))))));
 
-    // B. 判分逻辑
-    ok('单选判分：选中正确项为 true', EC.ecQuizJudge({ type: 'single', answer: 1 }, 1) === true);
-    ok('单选判分：选错为 false', EC.ecQuizJudge({ type: 'single', answer: 1 }, 0) === false);
-    ok('多选判分：完全匹配为 true', EC.ecQuizJudge({ type: 'multi', answer: [0, 2] }, [2, 0]) === true);
-    ok('多选判分：漏选为 false', EC.ecQuizJudge({ type: 'multi', answer: [0, 2] }, [0]) === false);
-    ok('判断判分：对=0', EC.ecQuizJudge({ type: 'judge', answer: 0 }, 0) === true);
-    ok('主观题返回 null（交由自评）', EC.ecQuizJudge({ type: 'essay', answer: 'x' }, null) === null);
-
-    // C. 规范化（题型识别 + 各种答案写法）
-    ok('题型识别：单选', EC.ecQuizNormType('单选题') === 'single' && EC.ecQuizNormType('single') === 'single');
-    ok('题型识别：多选/判断/主观', EC.ecQuizNormType('多选') === 'multi' && EC.ecQuizNormType('判断') === 'judge' && EC.ecQuizNormType('简答') === 'essay');
-    const nq1 = EC.ecQuizNormQuestion({ stem: 'Tom ___ a student.', options: ['is', 'are', 'am'], answer: 'A', analysis: '' });
-    ok('答案 A → 索引 0', nq1 && nq1.type === 'single' && nq1.answer === 0);
-    const nq2 = EC.ecQuizNormQuestion({ stem: '哪些是可数名词？', options: ['apple', 'bread', 'book'], answer: 'AC' });
-    ok('答案 AC → 多选 [0,2]', nq2 && nq2.type === 'multi' && nq2.answer.join(',') === '0,2');
-    const nq3 = EC.ecQuizNormQuestion({ stem: 'He don\'t like coffee.', answer: '错' });
-    ok('答案「错」→ 判断题（自动补对/错选项）', nq3 && nq3.type === 'judge' && nq3.options.length === 2 && nq3.answer === 1);
-    const nq4 = EC.ecQuizNormQuestion({ stem: '用 be going to 造句', options: [], answer: '' });
-    ok('无选项无答案 → 主观题', nq4 && nq4.type === 'essay');
-    ok('无题干被丢弃', EC.ecQuizNormQuestion({ stem: '  ', options: ['a', 'b'], answer: 'A' }) === null);
-    ok('选项不足被丢弃', EC.ecQuizNormQuestion({ stem: 'x', options: ['a'], answer: 'A' }) === null);
-
-    // D. 行解析：表格行（Tab 分隔，含/不含题型列）
-    const tqs1 = EC.ecQuizLinesToQuestions(['题型\t题干\t选项A\t选项B\t选项C\t选项D\t答案\t解析', '单选题\tTom ___ a student.\tis\tare\tam\t\tA\t主三单', '多选题\t哪些可数\tapple\tbread\tbook\t\tAC\tbread 不可数']);
-    ok('表格行解析出 2 题', tqs1.length === 2);
-    ok('表格行：题型列生效', tqs1[0] && tqs1[0].type === 'single' && tqs1[0].answer === 0);
-    ok('表格行：多选答案解析', tqs1[1] && tqs1[1].type === 'multi' && tqs1[1].answer.join(',') === '0,2');
-    ok('表格行：解析保留', tqs1[0] && tqs1[0].analysis === '主三单');
-    const tqs2 = EC.ecQuizLinesToQuestions(['题干\t选项A\t选项B\t答案\t解析', '地球___太阳转。\taround\tround\tA\t固定搭配']);
-    ok('无题型列表格行：自动识别单选', tqs2.length === 1 && tqs2[0].type === 'single');
-    // E. 行解析：文本排版（1. 题干 / A. 选项 / 答案：X / 解析：…）
-    const tqs3 = EC.ecQuizLinesToQuestions([
-        '1. My sister ____ a nurse.',
-        'A. be  B. is  C. are  D. am',
-        '答案：B',
-        '解析：三单用 is。',
-        '2. There ____ some milk.',
-        'A. is  B. are',
-        '答案：A'
-    ]);
-    ok('文本排版解析出 2 题', tqs3.length === 2);
-    ok('文本排版：题干/选项/答案/解析齐全', tqs3[0].stem.includes('nurse') && tqs3[0].options.length === 4 && tqs3[0].answer === 1 && tqs3[0].analysis.includes('三单'));
-    ok('文本排版：第二题无解析', tqs3[1] && tqs3[1].analysis === '');
-    // F. 续行拼接
-    const tqs4 = EC.ecQuizLinesToQuestions(['1. 这是题干第一行', '续的第二行', 'A. 选项一', 'B. 选项二', '答案：A']);
-    ok('题干续行自动拼接', tqs4.length === 1 && tqs4[0].stem.includes('续的第二行'));
-
-    // F2. v20261026b：题型多样化识别
-    ok('全角转半角：字母/数字/冒号', EC.ecFullToHalf('ＡＢ：１') === 'AB:1');
-    ok('题型别名：单选族', ['单选', '单项选择', '单项选择题', '单选题', '四选一', 'A型题', 'single', 'Single', 'radio'].every(t => EC.ecQuizNormType(t) === 'single'));
-    ok('题型别名：多选族', ['多选', '多项选择', '多项选择题', '多选题', '不定项选择', '不定项', 'X型题', 'multi', 'Multiple'].every(t => EC.ecQuizNormType(t) === 'multi'));
-    ok('题型别名：判断族', ['判断', '判断题', '判断是非', '是非题', '对错题', '辨析题', 'T-F', 'truefalse', 'judge'].every(t => EC.ecQuizNormType(t) === 'judge'));
-    ok('题型别名：主观族', ['简答', '简答题', '问答', '问答题', '论述', '论述题', '名词解释', '填空', '填空题', '翻译', '作文', '案例分析', 'essay', 'qa'].every(t => EC.ecQuizNormType(t) === 'essay'));
-    ok('题型干扰清理：「（2分）」', EC.ecQuizNormType('单选（2分）') === 'single');
-    ok('题型干扰清理：「1、」序号', EC.ecQuizNormType('1、单选题') === 'single');
-    ok('题型干扰清理：「题型：」前缀', EC.ecQuizNormType('题型：多选') === 'multi');
-    ok('题型干扰清理：全角括号+空格', EC.ecQuizNormType('【判断题】（2分）') === 'judge');
-    ok('非题型返回空', EC.ecQuizNormType('题干一') === '' && EC.ecQuizNormType('') === '' && EC.ecQuizNormType('其他') === '');
-    // 题干内嵌标记
-    const tk1 = EC.ecQuizTypeFromStem('（单选）Tom ___ a student.');
-    ok('题干标记：（单选）识别并剥离', tk1.type === 'single' && tk1.stem === 'Tom ___ a student.');
+    // ===== B. 题型识别（六题型 + 别名 + 干扰清理 + 题干标记） =====
+    ok('单选别名', ['单选', '单项选择', '单项选择题', '单选题', '四选一', 'A型题', 'single', 'Single', 'radio'].every(t => EC.ecQuizNormType(t) === 'single'));
+    ok('多选别名', ['多选', '多项选择', '多选题', '不定项', '不定项选择', 'X型题', 'multi'].every(t => EC.ecQuizNormType(t) === 'multi'));
+    ok('判断别名', ['判断', '判断题', '是非题', '对错题', '辨析题', 'T-F', 'truefalse'].every(t => EC.ecQuizNormType(t) === 'judge'));
+    ok('填空题归 fill', ['填空', '填空题', 'fill'].every(t => EC.ecQuizNormType(t) === 'fill'));
+    ok('阅读理解归 reading', ['阅读', '阅读理解', 'reading'].every(t => EC.ecQuizNormType(t) === 'reading'));
+    ok('主观族归 essay', ['简答', '问答', '论述', '名词解释', '翻译', '作文', 'essay'].every(t => EC.ecQuizNormType(t) === 'essay'));
+    ok('干扰清理：（2分）/序号/题型前缀', EC.ecQuizNormType('单选（2分）') === 'single' && EC.ecQuizNormType('1、单选题') === 'single' && EC.ecQuizNormType('题型：多选') === 'multi');
+    ok('【判断题】括号内是题型则保留内容', EC.ecQuizNormType('【判断题】') === 'judge');
+    ok('「四选一」不被序号规则误吃首字', EC.ecQuizNormType('四选一') === 'single');
     const tk2 = EC.ecQuizTypeFromStem('【多选题】下列哪些正确？');
-    ok('题干标记：【多选题】识别并剥离', tk2.type === 'multi' && tk2.stem === '下列哪些正确？');
-    const tk3 = EC.ecQuizTypeFromStem('(判断)He is a boy.');
-    ok('题干标记：半角括号+判断', tk3.type === 'judge' && tk3.stem === 'He is a boy.');
-    ok('无标记题干原样返回', EC.ecQuizTypeFromStem('普通题干').type === '' && EC.ecQuizTypeFromStem('普通题干').stem === '普通题干');
-    const nq5 = EC.ecQuizNormQuestion({ stem: '（判断题）He don\'t like coffee.', options: [], answer: 'T' });
-    ok('题干标记+答案 T → 判断题', nq5 && nq5.type === 'judge' && nq5.answer === 0 && nq5.stem === 'He don\'t like coffee.');
-    ok('判断题新答案：√/是/Y/正确 → 0', ['√', '是', 'Y', '正确', 'true'].every(a => { const q = EC.ecQuizNormQuestion({ stem: 'x', options: [], answer: a }); return q && q.type === 'judge' && q.answer === 0; }));
-    ok('判断题新答案：×/否/N/错误 → 1', ['×', '否', 'N', '错误', 'false'].every(a => { const q = EC.ecQuizNormQuestion({ stem: 'x', options: [], answer: a }); return q && q.type === 'judge' && q.answer === 1; }));
-    ok('全角答案 Ａ → 索引 0', (EC.ecQuizNormQuestion({ stem: 'x', options: ['a', 'b'], answer: 'Ａ' }) || {}).answer === 0);
-    // 行解析新变体
-    const tqs5 = EC.ecQuizLinesToQuestions([
-        '1. My sister ____ a nurse.',
-        'A. be  B. is  C. are  D. am',
-        '【答案】B',
-        '答案解析：三单用 is。'
-    ]);
-    ok('行解析：【答案】+答案解析', tqs5.length === 1 && tqs5[0].answer === 1 && tqs5[0].analysis.includes('三单'));
-    const tqs6 = EC.ecQuizLinesToQuestions([
-        '（单选题）Tom ___ a student.',
-        'A. is  B. are',
-        '正确答案：A'
-    ]);
-    ok('行解析：题干内嵌（单选题）标记', tqs6.length === 1 && tqs6[0].type === 'single' && tqs6[0].stem === 'Tom ___ a student.' && tqs6[0].answer === 0);
-    const tqs7 = EC.ecQuizLinesToQuestions([
-        '题型：判断题',
-        'He has gone to Beijing.',
-        '答案：×'
-    ]);
-    ok('行解析：题型行变体 + × 答案', tqs7.length === 1 && tqs7[0].type === 'judge' && tqs7[0].answer === 1);
-    const tqs8 = EC.ecQuizLinesToQuestions(['１．全角题号题干', 'Ａ. 甲  Ｂ. 乙', '答案：Ａ']);
-    ok('行解析：全角题号/选项/答案', tqs8.length === 1 && tqs8[0].options.length === 2 && tqs8[0].answer === 0);
-    const tqs9 = EC.ecQuizLinesToQuestions(['题型\t题干\t选项A\t选项B\t答案\t解析', '单选（2分）\tTom ___ a student.\tis\tare\tA\t主三单', '判断题\tHe has gone.\t\t\t对\t现在完成时']);
-    ok('表格行：题型列带干扰（2分）+ 判断答案「对」', tqs9.length === 2 && tqs9[0].type === 'single' && tqs9[1].type === 'judge' && tqs9[1].answer === 0);
-    // 中文逗号正文不应被误判为表格行（回归全角转换引入的风险）
-    const tqs10 = EC.ecQuizLinesToQuestions(['1. 下列说法正确的是：', '苹果，香蕉，梨子都是水果。', 'A. 对  B. 错', '答案：A']);
-    ok('中文逗号续行不被误判为表格', tqs10.length === 1 && tqs10[0].options.length === 2 && tqs10[0].answer === 0);
+    ok('题干内嵌【多选题】标记识别并剥离', tk2.type === 'multi' && tk2.stem === '下列哪些正确？');
+    const tk3 = EC.ecQuizTypeFromStem('（单选）Tom ___ ready.');
+    ok('题干内嵌（单选）标记识别', tk3.type === 'single' && tk3.stem.indexOf('Tom') === 0);
 
-    // G. ZIP 解包（store + deflate-raw）
-    (async () => {
-        const EC2 = makeEC();
-        const zStore = await EC2.ecUnzipEntries(makeZip({ 'a.txt': 'hello store' }, { __deflate__: false }));
-        ok('ZIP store 模式解包', zStore['a.txt'] === 'hello store');
-        const zDeflate = await EC2.ecUnzipEntries(makeZip({ 'b.txt': 'hello deflate 解压测试' }));
-        ok('ZIP deflate-raw 模式解包', zDeflate['b.txt'] === 'hello deflate 解压测试');
-        // H. xlsx 解析（共享字符串 + 工作表）
-        const xlsx = makeZip({
-            'xl/sharedStrings.xml': '<?xml version="1.0"?><sst><si><t>单选题</t></si><si><t>题干一</t></si><si><t>选项A</t></si><si><t>选项B</t></si><si><t>A</t></si><si><t>解析一</t></si></sst>',
-            'xl/worksheets/sheet1.xml': '<?xml version="1.0"?><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c><c r="D1" t="s"><v>3</v></c><c r="E1" t="s"><v>4</v></c><c r="F1" t="s"><v>5</v></c></row></sheetData>'
-        });
-        const xqs = await EC2.ecQuizParseXLSX(xlsx);
-        ok('xlsx 解析出 1 题（共享字符串）', xqs.length === 1 && xqs[0].stem === '题干一' && xqs[0].type === 'single' && xqs[0].answer === 0);
-        // I. docx 解析（段落 + 表格 tab 分隔）
-        const docx = makeZip({
-            'word/document.xml': '<w:document><w:body><w:p><w:r><w:t>1. 题干一</w:t></w:r></w:p><w:p><w:r><w:t>A. 甲</w:t></w:r><w:t xml:space="preserve"> </w:t><w:r><w:t>B. 乙</w:t></w:r></w:p><w:p><w:r><w:t>答案：A</w:t></w:r></w:p></w:body></w:document>'
-        });
-        const dqs = await EC2.ecQuizParseDOCX(docx);
-        ok('docx 解析出 1 题', dqs.length === 1 && dqs[0].stem.includes('题干一') && dqs[0].answer === 0);
-        ok('docx 表格单元格转 Tab', EC2.ecDocxLines('<w:p><w:r><w:t>x</w:t></w:r></w:tc><w:r><w:t>y</w:t></w:r></w:p>').join('|').includes('x\ty'));
+    // ===== C. 规范化：六题型答案结构 =====
+    const fq = EC.ecQuizNormQuestion({ type: '填空题', stem: 'The cat is ___ the table.', answer: 'on||under' });
+    ok('填空题多答案解析为数组', !!fq && fq.type === 'fill' && Array.isArray(fq.answer) && fq.answer.length === 2);
+    const rq = EC.ecQuizNormQuestion({ type: '阅读理解', stem: '他为什么迟到？', answer: 'Because he missed the bus.' });
+    ok('阅读理解答案为数组', !!rq && rq.type === 'reading' && Array.isArray(rq.answer) && rq.answer.length === 1);
+    const eq = EC.ecQuizNormQuestion({ type: '作文题', stem: '写一封请假邮件。', answer: '参考范文：Dear...' });
+    ok('作文题答案为文本', !!eq && eq.type === 'essay' && typeof eq.answer === 'string');
+    const jq = EC.ecQuizNormQuestion({ type: '判断题', stem: "He don't like coffee.", answer: '错误' });
+    ok('判断题答案归一为索引', !!jq && jq.type === 'judge' && jq.answer === 1);
+    const sq = EC.ecQuizNormQuestion({ type: '单选题', stem: 'Tom ___ ready.', options: ['is', 'are'], answer: 'A' });
+    ok('单选答案字母转索引', !!sq && sq.answer === 0);
+    const mq = EC.ecQuizNormQuestion({ type: '多选题', stem: '哪些可数？', options: ['apple', 'bread', 'book'], answer: 'AC' });
+    ok('多选答案字母转索引数组', !!mq && Array.isArray(mq.answer) && mq.answer.join(',') === '0,2');
+    const auto = EC.ecQuizNormQuestion({ stem: 'I am ___ student.', options: ['a', 'an'], answer: 'A' });
+    ok('无题型列时按答案/选项推断单选', !!auto && auto.type === 'single');
+    ok('|| 答案自动识别为填空', EC.ecQuizNormQuestion({ stem: '反义词：big', answer: 'small||little' }).type === 'fill');
+    ok('阅读/填空带选项时按单选处理', EC.ecQuizNormQuestion({ type: '填空题', stem: 'x', options: ['a', 'b'], answer: 'A' }).type === 'single');
 
-        // J. 完整作答流程（含错题收录）
+    // ===== D. 判分（六题型） =====
+    ok('单选判分', EC.ecQuizJudge({ type: 'single', answer: 1 }, 1) === true && EC.ecQuizJudge({ type: 'single', answer: 1 }, 0) === false);
+    ok('判断判分', EC.ecQuizJudge({ type: 'judge', answer: 0 }, 0) === true && EC.ecQuizJudge({ type: 'judge', answer: 0 }, 1) === false);
+    ok('多选判分（少选/多选/错选均不得分）', EC.ecQuizJudge({ type: 'multi', answer: [0, 2] }, [0, 2]) === true && EC.ecQuizJudge({ type: 'multi', answer: [0, 2] }, [0]) === false && EC.ecQuizJudge({ type: 'multi', answer: [0, 2] }, [0, 1, 2]) === false);
+    ok('填空判分（命中任一可接受答案）', EC.ecQuizJudge({ type: 'fill', answer: ['small', 'little'] }, 'Little') === true && EC.ecQuizJudge({ type: 'fill', answer: ['small'] }, 'big') === false);
+    ok('阅读判分容忍大小写与标点', EC.ecQuizJudge({ type: 'reading', answer: ['Because he missed the bus.'] }, 'because he missed the bus') === true);
+    ok('作文不自动判分', EC.ecQuizJudge({ type: 'essay', answer: '范文' }, '我的作答') === null);
+    ok('答案展示文本', EC.ecQuizAnsText({ type: 'single', options: ['is', 'are'], answer: 1 }, 0) === 'A. is' && EC.ecQuizRightText({ type: 'judge', answer: 1 }) === '错' && EC.ecQuizRightText({ type: 'fill', answer: ['a', 'b'] }) === 'a / b');
+
+    // ===== E. 行解析（文本排版 / 表格行 / 一行多选项 / 续行） =====
+    const tq = EC.ecQuizLinesToQuestions(['1. Tom ___ ready.', 'A. is  B. are  C. am', '答案：A', '解析：三单']);
+    ok('行解析：一行多选项切分', tq.length === 1 && tq[0].options.length === 3 && tq[0].answer === 0);
+    ok('行解析：答案/解析行识别', tq.length === 1 && tq[0].analysis === '三单');
+    const tq2 = EC.ecQuizLinesToQuestions(['1. 这是题干第一行', '续的第二行', 'A. 选项一', 'B. 选项二', '答案：A']);
+    ok('行解析：题干续行拼接', tq2.length === 1 && tq2[0].stem.indexOf('续的第二行') > 0);
+    const tr = EC.ecQuizTableRow(['单选题', 'Tom ___ ready.', 'is', 'are', 'A', '三单']);
+    ok('表格行解析', !!tr && tr.type === 'single' && tr.answer === 0 && tr.analysis === '三单');
+
+    // ===== F. 旧版数据迁移（v1 扁平 banks → v2 两级目录） =====
+    {
+        const EC2 = makeEC({ data: { engcheck: { quiz: {
+            _v: 1,
+            banks: [{ id: 'old1', name: '旧题库', questions: [
+                { id: 'oq1', type: 'single', stem: '题一', options: ['a', 'b'], answer: 0, analysis: '' },
+                { id: 'oq2', type: 'judge', stem: '题二', options: ['对', '错'], answer: 1, analysis: '' }
+            ] }],
+            progress: { oq1: { at: 100, correct: true } },
+            wrong: { oq2: { at: 100, count: 2, mastered: false } },
+            fav: { oq1: { at: 100 } },
+            records: [], stats: { done: 2, correct: 1, seconds: 30, days: {} },
+            settings: { bankId: 'old1', mode: 'order' }
+        } } } });
+        const d2 = EC2.ecQuizData();
+        const lid2 = d2.banks[0].lessons[0].id;
+        ok('迁移：扁平题目收进默认课时', d2.banks[0].lessons.length === 1 && d2.banks[0].lessons[0].questions.length === 2);
+        ok('迁移：progress 键重映射为「课时id|题目id」', !!d2.progress[lid2 + '|oq1'] && !d2.progress.oq1);
+        ok('迁移：错题/收藏同步重映射', !!d2.wrong[lid2 + '|oq2'] && !!d2.fav[lid2 + '|oq1']);
+        ok('迁移：版本号升级为 2', d2._v === 2);
+    }
+
+    // ===== G. 考试流程：开考 → 上下题 → 交卷（100 分制）→ 记录 → 错题 → 统计 =====
+    {
         const EC3 = makeEC();
         const d3 = EC3.ecQuizData();
-        const bank = d3.banks[0];
-        const q0 = bank.questions[0]; // 单选，answer=1
-        const wrongQ = bank.questions.find(q => q.type === 'multi'); // 找一道多选题
-        EC3.state._quizView = 'home';
-        EC3.ecQuizStart('order');
-        ok('开始刷题生成会话', !!EC3.state._quizSession && EC3.state._quizSession.qids.length === bank.questions.length);
-        ok('视图切到 play', EC3.state._quizView === 'play');
-        const html = EC3.ecQuizPlayHTML();
-        ok('答题页含题干与选项', html.includes(q0.stem) && html.includes('ec-quiz-opt') && html.includes('提交答案'));
-        EC3.ecQuizPick(q0.answer);
-        EC3.ecQuizSubmit();
-        ok('答对：判分结果 true', EC3.state._quizSession.result === true);
-        ok('答对：计入统计', d3.stats.done === 1 && d3.stats.correct === 1);
-        ok('答对：显示解析', EC3.ecQuizPlayHTML().includes('ec-quiz-analysis') && EC3.ecQuizPlayHTML().includes('回答正确'));
-        EC3.ecQuizNext();
-        ok('下一题：索引推进且重置选择', EC3.state._quizSession.idx === 1 && EC3.state._quizSession.picked === null);
-        // 故意答错一道多选 → 进错题本
-        EC3.state._quizSession.idx = bank.questions.indexOf(wrongQ);
-        EC3.state._quizSession.picked = null;
-        EC3.ecQuizPick(0);
-        EC3.ecQuizSubmit();
-        ok('多选漏判为错', EC3.state._quizSession.result === false);
-        ok('错题入本', !!d3.wrong[wrongQ.id] && d3.wrong[wrongQ.id].count === 1);
-        ok('错题页可渲染', EC3.ecQuizListHTML('wrong').includes(wrongQ.stem.slice(0, 20)) && EC3.ecQuizListHTML('wrong').includes('错 1 次'));
-        EC3.ecQuizSetMastered(wrongQ.id);
-        ok('标记掌握', d3.wrong[wrongQ.id].mastered === true);
-        // 收藏
-        EC3.ecQuizToggleFav();
-        ok('收藏当前题', !!d3.fav[EC3.state._quizSession.qids[EC3.state._quizSession.idx]]);
-        EC3.ecQuizUnfav(EC3.state._quizSession.qids[EC3.state._quizSession.idx]);
-        ok('取消收藏', !d3.fav[EC3.state._quizSession.qids[EC3.state._quizSession.idx]]);
-        // 主观题自评
-        const essayQ = bank.questions.find(q => q.type === 'essay');
-        EC3.state._quizSession.idx = bank.questions.indexOf(essayQ);
-        EC3.state._quizSession.picked = null;
-        EC3.state._quizSession.submitted = false;
-        ok('主观题显示自评按钮', EC3.ecQuizPlayHTML().includes('ec-quiz-self'));
-        EC3.ecQuizSelf('hard');
-        ok('自评没把握 → 记错题', EC3.state._quizSession.result === false && !!d3.wrong[essayQ.id]);
+        const book = d3.banks[0];
+        const lesson = book.lessons[0];
+        const qs = EC3.ecQuizLessonQuestions(lesson);
+        EC3.ecQuizStart('order', book.id, lesson.id);
+        ok('开考：按课时组卷', EC3.state._quizSession.keys.length === qs.length && EC3.state._quizView === 'play');
+        ok('答题页：计时/进度/上下题/交卷', ['ec-quiz-timer', '第 1 / ' + qs.length + ' 题', 'ec-quiz-go', 'ec-quiz-submit-exam'].every(s => EC3.ecQuizPlayHTML().includes(s)));
+        const s3 = EC3.state._quizSession;
+        s3.ans[s3.keys[0]] = qs[0].answer;
+        s3.ans[s3.keys[1]] = qs[1].answer === 0 ? 1 : 0;
+        s3.ans[s3.keys[2]] = qs[2].answer;
+        EC3.ecQuizGo(1);
+        ok('下一题切换', EC3.state._quizSession.idx === 1);
+        EC3.ecQuizGo(-1);
+        ok('上一题切换', EC3.state._quizSession.idx === 0);
+        EC3.ecQuizSubmitExam();
+        const r3 = EC3.state._quizResult;
+        ok('交卷：单题分值均分（100÷题量）', r3.each === 25 && r3.total === qs.length);
+        ok('交卷：得分 = 答对数 × 单题分值', r3.score === 50 && r3.right === 2 && r3.wrong === 2);
+        ok('交卷：未作答计入答错', r3.wrong === 2);
+        ok('交卷：生成独立刷题记录', d3.records.length === 1 && d3.records[0].score === 50 && d3.records[0].lessonId === lesson.id);
+        ok('交卷：错题入本并绑定课时', Object.keys(d3.wrong).length === 2 && Object.keys(d3.wrong).every(k => k.indexOf(lesson.id + '|') === 0));
+        ok('交卷：错题记录错误答案与次数', (() => { const k = Object.keys(d3.wrong)[0]; return d3.wrong[k].count === 1 && !!d3.wrong[k].lastAns; })());
+        ok('交卷：统计与进度更新', d3.stats.done === qs.length && d3.stats.correct === 2 && Object.keys(d3.progress).length === qs.length);
+        ok('成绩页：得分/用时/概况/逐题回顾', ['本次得分（满分100）', '用时', '答对', 'ec-quiz-review'].every(s => EC3.ecQuizResultHTML().includes(s)));
+        EC3.ecQuizStart('order', book.id, lesson.id);
+        const s4 = EC3.state._quizSession;
+        s4.keys.forEach(k => { s4.ans[k] = 0; });
+        EC3.ecQuizSubmitExam();
+        ok('重复刷题：记录独立保存不覆盖', d3.records.length === 2 && d3.records[0].at >= d3.records[1].at);
+        const wk = Object.keys(d3.wrong)[0];
+        EC3.ecQuizSetMastered(wk);
+        ok('错题手动标记掌握', d3.wrong[wk].mastered === true);
+
+        // ===== H. 错题本视图 + 重刷组卷 =====
+        const wrongHtml = EC3.ecQuizWrongHTML();
+        ok('错题本：按习题集→课时分组', wrongHtml.includes(book.name) && wrongHtml.includes(lesson.name) && wrongHtml.includes('重刷本科错题'));
+        ok('错题本：展示错误答案/正确答案/解析', wrongHtml.includes('你的答案') && wrongHtml.includes('正确答案'));
+        const waiting0 = Object.keys(d3.wrong).filter(k => !d3.wrong[k].mastered).length;
+        EC3.state._quizWrongBook = '';
+        EC3.ecQuizPractice('wrong', '', '');
+        ok('错题重刷：只组待攻克错题', EC3.state._quizSession.keys.length === waiting0 && EC3.state._quizSession.mode === 'wrong');
         EC3.ecQuizExit();
-        ok('退出回首页', EC3.state._quizView === 'home' && !EC3.state._quizSession);
 
-        // K. 各视图渲染冒烟
-        ok('刷题首页渲染', EC3.ecQuizHomeHTML().includes('ec-quiz-stat') && EC3.ecQuizHomeHTML().includes('顺序刷题'));
-        ok('题库管理渲染', EC3.ecQuizBanksHTML().includes('全部题库') && EC3.ecQuizBanksHTML().includes('导入题库'));
-        ok('题目管理渲染', EC3.ecQuizManageHTML(bank.id).includes(bank.name));
-        ok('统计页渲染', EC3.ecQuizStatsHTML().includes('题型掌握情况'));
-        ok('收藏页渲染', typeof EC3.ecQuizListHTML('fav') === 'string');
-        ok('tab 分发含刷题', /if \(tab === 'ec-quiz'\) return ecRenderQuizPage\(\);/.test(APP));
-        ok('tab 配置含刷题入口', /\{ id: 'ec-quiz', name: '刷题', icon: '📝' \}/.test(APP));
+        // ===== I. 收藏 + 笔记 + 单独组卷 =====
+        const favKey = lesson.id + '|' + qs[0].id;
+        EC3.ecQuizToggleFavKey(favKey);
+        ok('收藏题目（带笔记字段）', !!d3.fav[favKey] && d3.fav[favKey].note === '');
+        EC3._inputs['uiModalInput'] = '注意三单变化';
+        EC3.ecQuizFavNote(favKey);
+        setTimeout(() => {
+            ok('收藏笔记可编辑保存', d3.fav[favKey].note === '注意三单变化');
+            ok('收藏页：笔记展示 + 单独组卷入口', EC3.ecQuizFavHTML().includes('注意三单变化') && EC3.ecQuizFavHTML().includes('单独组卷刷题'));
+            EC3.ecQuizPractice('fav', book.id, lesson.id);
+            ok('收藏单独组卷', EC3.state._quizSession.keys.length === 1 && EC3.state._quizSession.mode === 'fav');
+            EC3.ecQuizExit();
+            EC3.ecQuizUnfav(favKey);
+            ok('取消收藏', !d3.fav[favKey]);
+        }, 20);
 
-        // L. 跨设备合并（banks 并集 + progress 合并）
-        const EC4 = makeEC();
-        const win = { banks: [{ id: 'b1', name: '甲库', questions: [] }], progress: { q1: { at: 1, correct: true } }, wrong: {}, fav: {}, stats: { done: 5, correct: 5, seconds: 0, days: {} }, settings: { bankId: 'b1', mode: 'order' } };
-        const lose = { banks: [{ id: 'b2', name: '乙库', questions: [] }], progress: { q2: { at: 2, correct: false } }, wrong: { q2: { at: 2, count: 1, mastered: false } }, fav: { q3: { at: 3 } }, stats: { done: 3, correct: 2, seconds: 0, days: {} }, settings: { bankId: 'b2', mode: 'order' } };
-        const m = EC4.ecQuizMerge(win, lose);
-        ok('合并：两端题库并集', m.banks.length === 2 && m.banks.some(b => b.id === 'b1') && m.banks.some(b => b.id === 'b2'));
-        ok('合并：两端作答记录并集', !!m.progress.q1 && !!m.progress.q2);
-        ok('合并：错题/收藏并集', !!m.wrong.q2 && !!m.fav.q3);
-        ok('合并：统计取较新端', m.stats.done === 5);
-        ok('合并函数在 engcheck 合并中被调用', /merged\.quiz = ecQuizMerge\(win\.quiz, lose\.quiz\)/.test(APP));
+        // ===== J. 记录看板 + 统计 =====
+        ok('刷题记录：轮数/最高分/历次', ['刷题轮数', '最高分', '历次记录'].every(s => EC3.ecQuizRecordsHTML().includes(s)));
+        ok('统计页：题型掌握 + 最近学习', EC3.ecQuizStatsHTML().includes('题型掌握情况') && EC3.ecQuizStatsHTML().includes('最近学习'));
 
-        // M. 清零不清题库（墓碑分界线只清 tasks/fsrs）
+        // ===== K. 作文题：不计分 + 成绩页自评 =====
+        const essayLesson = book.lessons.find(l => l.questions.some(q => q.type === 'essay'));
+        EC3.ecQuizStart('order', book.id, essayLesson.id);
+        const s5 = EC3.state._quizSession;
+        while (EC3.ecQuizFindQ(s5.keys[s5.idx]).q.type !== 'essay') EC3.ecQuizGo(1);
+        ok('作文题渲染文本域', EC3.ecQuizPlayHTML().includes('ec-quiz-essay'));
+        EC3.ecQuizInput('My own composition.');
+        ok('作文输入写入会话', s5.ans[s5.keys[s5.idx]] === 'My own composition.');
+        EC3.ecQuizSubmitExam();
+        const r5 = EC3.state._quizResult;
+        ok('作文不计入总分与题量', r5.essayN === 2 && r5.total === r5.keys.length - 2);
+        const eKey = r5.keys.find(k => EC3.ecQuizFindQ(k).q.type === 'essay');
+        EC3.ecQuizSelf(eKey, 'hard');
+        ok('作文自评没把握 → 入错题本', !!d3.wrong[eKey] && d3.wrong[eKey].count >= 1);
+        EC3.ecQuizSelf(eKey, 'good');
+        ok('作文自评已掌握 → 标记订正（不删除）', d3.wrong[eKey].correctedAt > 0);
+    }
+
+    // ===== L. 导入：标准 8 列模板（创建书/课 + 追加 + 覆盖 + 错误清单） =====
+    {
         const EC5 = makeEC();
-        const d5 = EC5.ecQuizData();
-        d5.banks[0].questions.forEach(q => { d5.progress[q.id] = { at: Date.now(), correct: true }; });
-        const bankCount = d5.banks.length;
-        const progCount = Object.keys(d5.progress).length;
-        d5.clearedAt = Date.now(); d5.fsrsClearedAt = Date.now();
-        const mergedEc = EC5.ecMergeEngcheck(
-            { books: [], lessons: [], tasks: {}, fsrs: {}, score: 0, clearedAt: Date.now(), quiz: { banks: [], progress: {}, wrong: {}, fav: {}, stats: { done: 0 }, settings: {} } },
-            { books: [], lessons: [], tasks: {}, fsrs: {}, score: 0, quiz: d5 },
+        const csv = [
+            '习题集名称,课时名称,题号,题目类型,题干,选项内容,参考答案,解析内容',
+            '七年级上册,Unit 1,1,单选题,Tom ___ ready.,is||are,A,三单',
+            '七年级上册,Unit 1,2,多选题,哪些是可数名词？,apple||bread||book,AC,bread 不可数',
+            '七年级上册,Unit 1,3,判断题,He don\'t like coffee.,,错误,don\'t 用法错',
+            '七年级上册,Unit 1,4,填空题,反义词：big,,small||little,',
+            '七年级上册,Unit 1,5,阅读理解,他为什么迟到？,,Because he missed the bus.,',
+            '七年级上册,Unit 1,6,作文题,写一封请假邮件。,参考范文：Dear...,参考范文：Dear...,'
+        ].join('\n');
+        const rows = csv.split('\n').map(l => EC5.ecSplitCSVLine(l));
+        const map = EC5.ecQuizDetectHeader(rows[0]);
+        ok('表头按列名映射（列序随意）', !!map && map.iBook === 0 && map.iLesson === 1 && map.iStem === 4 && map.iAns === 6 && map.iType === 3);
+        const res = EC5.ecQuizImportRows(rows);
+        ok('模板导入解析 6 题', res.items.length === 6 && res.errors.length === 0);
+        ok('模板导入六题型齐全', ['single', 'multi', 'judge', 'fill', 'reading', 'essay'].every(t => res.items.some(it => it.q.type === t)));
+        ok('模板导入携带书/课/题号', res.items[0].book === '七年级上册' && res.items[0].lesson === 'Unit 1' && res.items[0].qNo === 1);
+        const out = EC5.ecQuizApplyImport(res.items, 'append');
+        ok('应用导入：自动创建习题集与课时', out.added === 6 && out.books.length === 1 && out.lessons.length === 1);
+        const bk5 = EC5.ecQuizData().banks.find(b => b.name === '七年级上册');
+        ok('导入归入正确课时', bk5.lessons[0].name === 'Unit 1' && bk5.lessons[0].questions.length === 6);
+        const out2 = EC5.ecQuizApplyImport(res.items, 'append');
+        ok('同名课时追加', EC5.ecQuizData().banks.find(b => b.name === '七年级上册').lessons[0].questions.length === 12);
+        const out3 = EC5.ecQuizApplyImport(res.items, 'overwrite');
+        ok('覆盖导入：清空原题', out3.added === 6 && EC5.ecQuizData().banks.find(b => b.name === '七年级上册').lessons[0].questions.length === 6);
+        // 错误清单：缺题干的行报错
+        const badRows = [
+            ['习题集名称', '课时名称', '题号', '题目类型', '题干', '选项内容', '参考答案', '解析内容'],
+            ['七年级上册', 'Unit 2', '1', '单选题', '', 'a||b', 'A', '']
+        ];
+        const resBad = EC5.ecQuizImportRows(badRows);
+        ok('导入错误清单：失败行号 + 原因', resBad.items.length === 0 && resBad.errors.length === 1 && resBad.errors[0].row === 2 && /题干/.test(resBad.errors[0].reason));
+    }
+
+    // ===== M. 导入端到端（mock File：CSV / TXT 旧格式回退） =====
+    (async () => {
+        const EC6 = makeEC();
+        const csv = [
+            '习题集名称,课时名称,题号,题目类型,题干,选项内容,参考答案,解析内容',
+            '八年级下册,Lesson 2,1,单选题,She ___ to school every day.,go||goes||going||went,B,三单',
+            '八年级下册,Lesson 2,2,填空题,反义词：expensive,,cheap||inexpensive,cheap,'
+        ].join('\n');
+        EC6._el('ecQuizFile').files = [{ name: 'bank.csv', text: async () => csv }];
+        await EC6.ecQuizImportOpen('');
+        let bk6 = EC6.ecQuizData().banks.find(b => b.name === '八年级下册');
+        ok('CSV 端到端：创建习题集/课时', !!bk6 && bk6.lessons[0].questions.length === 2);
+        ok('CSV 端到端：题型与答案', bk6.lessons[0].questions[0].type === 'single' && bk6.lessons[0].questions[0].answer === 1 && bk6.lessons[0].questions[1].type === 'fill');
+        EC6._el('ecQuizFile').files = [{ name: 'bank.csv', text: async () => csv }];
+        await EC6.ecQuizImportOpen('');
+        ok('CSV 再次导入默认追加', EC6.ecQuizData().banks.find(b => b.name === '八年级下册').lessons[0].questions.length === 4);
+        EC6._elCache['__byname_ecQuizStrategy'] = [{ value: 'overwrite', checked: true }];
+        EC6._el('ecQuizFile').files = [{ name: 'bank.csv', text: async () => csv }];
+        await EC6.ecQuizImportOpen('');
+        ok('CSV 覆盖导入', EC6.ecQuizData().banks.find(b => b.name === '八年级下册').lessons[0].questions.length === 2);
+        // 旧格式 TXT：无表头 → 行解析 → 归入当前习题集当前课时
+        const EC7 = makeEC();
+        const d7 = EC7.ecQuizData();
+        const before = d7.banks.reduce((n, b) => n + b.lessons.reduce((m, l) => m + l.questions.length, 0), 0);
+        EC7._el('ecQuizFile').files = [{ name: 'legacy.txt', text: async () => '1. Tom ___ ready.\nA. is  B. are\n答案：A\n解析：三单' }];
+        await EC7.ecQuizImportOpen('');
+        const after = EC7.ecQuizData().banks.reduce((n, b) => n + b.lessons.reduce((m, l) => m + l.questions.length, 0), 0);
+        ok('旧格式回退：导入当前课时', after === before + 1);
+        ok('旧格式回退：行解析正确', (() => {
+            const dq = EC7.ecQuizData();
+            const l = dq.banks[0].lessons.find(x => x.id === dq.settings.lessonId);
+            return l.questions[l.questions.length - 1].type === 'single';
+        })());
+    })();
+
+    // ===== N. xlsx / docx 解析（手工构造 ZIP） =====
+    function xlsxFixture(rows) {
+        const strs = [];
+        const idx = (s) => { const i = strs.indexOf(s); if (i >= 0) return i; strs.push(s); return strs.length - 1; };
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const sheetRows = rows.map((cells, r) => '<row r="' + (r + 1) + '">' + cells.map((c, ci) => '<c r="' + String.fromCharCode(65 + ci) + (r + 1) + '" t="s"><v>' + idx(c) + '</v></c>').join('') + '</row>').join('');
+        const shared = '<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="' + strs.length + '" uniqueCount="' + strs.length + '">' + strs.map(s => '<si><t>' + esc(s) + '</t></si>').join('') + '</sst>';
+        const sheet = '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + sheetRows + '</sheetData></worksheet>';
+        return makeZip({ 'xl/sharedStrings.xml': shared, 'xl/worksheets/sheet1.xml': sheet });
+    }
+    {
+        const EC8 = makeEC();
+        const buf = xlsxFixture([
+            ['习题集名称', '课时名称', '题号', '题目类型', '题干', '选项内容', '参考答案', '解析内容'],
+            ['八年级下册', 'Lesson 2', '1', '单选题', 'She ___ to school every day.', 'go||goes||going||went', 'B', '三单'],
+            ['八年级下册', 'Lesson 2', '2', '填空题', '反义词：expensive', '', 'cheap||inexpensive', 'cheap']
+        ]);
+        EC8._el('ecQuizFile').files = [{ name: 't.xlsx', arrayBuffer: async () => buf }];
+        EC8.ecQuizImportOpen('').then(() => {
+            const bk8 = EC8.ecQuizData().banks.find(b => b.name === '八年级下册');
+            ok('xlsx 端到端：解析习题集与课时', !!bk8 && bk8.lessons[0].questions.length === 2);
+            ok('xlsx 端到端：题型/答案/选项', bk8.lessons[0].questions[0].type === 'single' && bk8.lessons[0].questions[0].answer === 1 && bk8.lessons[0].questions[0].options.length === 4 && bk8.lessons[0].questions[1].type === 'fill');
+            // 旧版入口兼容
+            const qs8 = EC8.ecQuizParseXLSX ? null : null;
+            EC8.ecQuizXLSXRows(buf).then(rws => {
+                ok('ecQuizXLSXRows 返回原始行', rws.length === 3 && rws[1][0] === '八年级下册');
+            });
+        });
+        // docx 文本排版
+        const docxXml = '<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>1. Look! The children ___ football.</w:t></w:r></w:p><w:p><w:r><w:t>A. play  B. are playing  C. played</w:t></w:r></w:p><w:p><w:r><w:t>答案：B</w:t></w:r></w:p></w:body></w:document>';
+        const EC8b = makeEC();
+        EC8b._el('ecQuizFile').files = [{ name: 't.docx', arrayBuffer: async () => makeZip({ 'word/document.xml': docxXml }) }];
+        EC8b.ecQuizImportOpen('').then(() => {
+            const total = EC8b.ecQuizData().banks.reduce((n, b) => n + b.lessons.reduce((m, l) => m + l.questions.length, 0), 0);
+            ok('docx 端到端：行解析导入当前课时', total === 81);
+        });
+        // ZIP 解包器：store + deflate-raw 双模式
+        const EC8c = makeEC();
+        EC8c.ecUnzipEntries(makeZip({ 'a.txt': 'hello 世界', 'b.txt': 'x'.repeat(600) })).then(z => {
+            ok('ZIP 解包（deflate-raw）', z['a.txt'] === 'hello 世界' && z['b.txt'].length === 600);
+        });
+        EC8c.ecUnzipEntries(makeZip({ '__store__': true, 'c.txt': 'store mode' })).then(z => {
+            ok('ZIP 解包（store）', z['c.txt'] === 'store mode');
+        });
+    }
+
+    // ===== O. 习题集/课时管理（增删改） =====
+    (async () => {
+        const EC10 = makeEC();
+        EC10._inputs['uiModalInput'] = '我的练习册';
+        await EC10.ecQuizNewBook();
+        ok('新建习题集', EC10.ecQuizData().banks.some(b => b.name === '我的练习册'));
+        const bk10 = EC10.ecQuizData().banks.find(b => b.name === '我的练习册');
+        EC10._inputs['uiModalInput'] = 'Lesson 1';
+        await EC10.ecQuizNewLesson(bk10.id);
+        ok('新建课时', EC10.ecQuizData().banks.find(b => b.name === '我的练习册').lessons.some(l => l.name === 'Lesson 1'));
+        const lid = EC10.ecQuizData().banks.find(b => b.name === '我的练习册').lessons[0].id;
+        EC10._inputs['uiModalInput'] = 'Lesson 1 改名';
+        await EC10.ecQuizRenLesson(lid);
+        ok('重命名课时', EC10.ecQuizData().banks.find(b => b.name === '我的练习册').lessons[0].name === 'Lesson 1 改名');
+        EC10.ecQuizDelLesson(lid);
+        ok('删除课时', !EC10.ecQuizData().banks.find(b => b.name === '我的练习册').lessons.some(l => l.id === lid));
+        EC10.ecQuizDelBook(bk10.id);
+        ok('删除习题集', !EC10.ecQuizData().banks.some(b => b.name === '我的练习册'));
+        // 删除习题集同步清理记录
+        const d10 = EC10.ecQuizData();
+        const bkA = d10.banks[0];
+        EC10.ecQuizStart('order', bkA.id, bkA.lessons[0].id);
+        EC10.state._quizSession.keys.forEach(k => { EC10.state._quizSession.ans[k] = 0; });
+        EC10.ecQuizSubmitExam();
+        const recBefore = EC10.ecQuizData().records.length;
+        EC10.ecQuizDelBook(bkA.id);
+        ok('删除习题集：刷题记录同步清理', EC10.ecQuizData().records.length === recBefore - 1 && !EC10.ecQuizData().banks.some(b => b.id === bkA.id));
+    })();
+
+    // ===== P. 导出标准模板 CSV =====
+    {
+        const EC11 = makeEC();
+        const d11 = EC11.ecQuizData();
+        const csv = EC11.ecQuizExportCSV(d11.banks[0].lessons[0].id);
+        ok('导出：标准 8 列表头', csv.indexOf('习题集名称,课时名称,题号,题目类型,题干,选项内容,参考答案,解析内容') >= 0);
+        ok('导出：选项用 || 连接', csv.indexOf('||') > 0);
+        ok('导出：含书/课名与题号', csv.indexOf(d11.banks[0].name) > 0 && csv.indexOf(d11.banks[0].lessons[0].name) > 0);
+    }
+
+    // ===== Q. 跨设备合并 v2（课时并集 + 记录去重封顶） =====
+    {
+        const EC12 = makeEC();
+        const win = { _v: 2, banks: [{ id: 'b1', name: '甲', lessons: [{ id: 'l1', name: 'L1', questions: [{ id: 'q1' }] }] }], progress: { 'l1|q1': { at: 1, correct: true } }, wrong: {}, fav: {}, records: [{ id: 'r1', at: 5, score: 90, lessonId: 'l1' }], stats: { done: 5, correct: 5, seconds: 0, days: {} }, settings: { bankId: 'b1', lessonId: 'l1' } };
+        const lose = { banks: [{ id: 'b1', name: '甲', lessons: [{ id: 'l2', name: 'L2', questions: [] }] }, { id: 'b2', name: '乙', lessons: [] }], progress: { 'l2|q9': { at: 2, correct: false } }, wrong: { 'l1|q2': { at: 2, count: 1, mastered: false } }, fav: { 'l2|q3': { at: 3, note: 'x' } }, records: [{ id: 'r2', at: 6, score: 80, lessonId: 'l2' }, { id: 'r1', at: 5, score: 90, lessonId: 'l1' }], stats: { done: 3, correct: 2, seconds: 0, days: {} }, settings: { bankId: 'b2', lessonId: 'l2' } };
+        const m = EC12.ecQuizMerge(win, lose);
+        ok('合并：两端习题集并集', m.banks.length === 2);
+        ok('合并：同一习题集下课时并集', m.banks.find(b => b.id === 'b1').lessons.length === 2);
+        ok('合并：作答/错题/收藏并集', !!m.progress['l1|q1'] && !!m.progress['l2|q9'] && !!m.wrong['l1|q2'] && !!m.fav['l2|q3']);
+        ok('合并：刷题记录去重且按时间倒序', m.records.length === 2 && m.records[0].id === 'r2');
+        ok('合并：统计取较新端', m.stats.done === 5);
+        ok('合并：版本号 v2', m._v === 2);
+        ok('合并函数在 engcheck 合并中被调用', /merged\.quiz = ecQuizMerge\(win\.quiz, lose\.quiz\)/.test(APP));
+    }
+
+    // ===== R. 清零不清题库（墓碑分界线只清 tasks/fsrs） =====
+    {
+        const EC13 = makeEC();
+        const d13 = EC13.ecQuizData();
+        d13.banks[0].lessons.forEach(l => l.questions.forEach(q => { d13.progress[l.id + '|' + q.id] = { at: Date.now(), correct: true }; }));
+        const bankCount = d13.banks.length;
+        const progCount = Object.keys(d13.progress).length;
+        d13.clearedAt = Date.now(); d13.fsrsClearedAt = Date.now();
+        const mergedEc = EC13.ecMergeEngcheck(
+            { books: [], lessons: [], tasks: {}, fsrs: {}, score: 0, clearedAt: Date.now(), quiz: { banks: [], progress: {}, wrong: {}, fav: {}, records: [], stats: { done: 0 }, settings: {} } },
+            { books: [], lessons: [], tasks: {}, fsrs: {}, score: 0, quiz: d13 },
             '2026-10-26T06:00:00.000Z', '2026-10-26T05:00:00.000Z'
         );
-        ok('清零后 quiz 题库不丢', mergedEc.quiz && mergedEc.quiz.banks.length === bankCount);
+        ok('清零后 quiz 习题集不丢', mergedEc.quiz && mergedEc.quiz.banks.length === bankCount);
         ok('清零后 quiz 作答记录不丢', mergedEc.quiz && Object.keys(mergedEc.quiz.progress).length === progCount);
+    }
 
-        // N. 导入流程端到端（mock File → CSV → 写入新题库）
-        const EC6 = makeEC();
-        const csvText = '题型,题干,选项A,选项B,答案,解析\n单选题,Tom ___ ready.,is,are,A,三单\n判断题,He don\'t like coffee.,,,错,don\'t 用法错';
-        EC6._el('ecQuizFile').files = [{ name: 'mybank.csv', text: async () => csvText }];
-        EC6._inputs['uiModalInput'] = '我的导入题库';
-        EC6.ecQuizImportOpen('');
-        setTimeout(() => {
-            const d6 = EC6.ecQuizData();
-            const imported = d6.banks.find(b => b.name === '我的导入题库');
-            ok('CSV 导入生成新题库', !!imported);
-            ok('CSV 导入解析 2 题', imported && imported.questions.length === 2);
-            ok('CSV 导入题型正确', imported && imported.questions[0].type === 'single' && imported.questions[1].type === 'judge');
-            ok('导入后设为当前题库', d6.settings.bankId === imported.id);
-        }, 30);
-    })();
+    // ===== S. 各视图渲染冒烟 + tab 分发 =====
+    {
+        const EC14 = makeEC();
+        ok('刷题首页渲染', EC14.ecQuizHomeHTML().includes('ec-quiz-stat') && EC14.ecQuizHomeHTML().includes('顺序刷题'));
+        ok('题库大全渲染', EC14.ecQuizBanksHTML().includes('全部习题集') && EC14.ecQuizBanksHTML().includes('导入题库'));
+        const d14 = EC14.ecQuizData();
+        ok('课时列表渲染', EC14.ecQuizLessonsHTML(d14.banks[0].id).includes(d14.banks[0].lessons[0].name));
+        ok('课时管理渲染', EC14.ecQuizManageHTML(d14.banks[0].lessons[0].id).includes('客观题'));
+        ok('错题本渲染', typeof EC14.ecQuizWrongHTML() === 'string');
+        ok('收藏页渲染', typeof EC14.ecQuizFavHTML() === 'string');
+        ok('记录页渲染', typeof EC14.ecQuizRecordsHTML() === 'string');
+        ok('统计页渲染', EC14.ecQuizStatsHTML().includes('题型掌握情况'));
+        ok('视图路由分发齐全', ['play', 'result', 'banks', 'lessons', 'wrong', 'fav', 'records', 'manage', 'stats'].every(v => APP.includes("view === '" + v + "'")));
+        ok('tab 分发含刷题', /if \(tab === 'ec-quiz'\) return ecRenderQuizPage\(\);/.test(APP));
+        ok('tab 配置含刷题入口', /\{ id: 'ec-quiz', name: '刷题', icon: '📝' \}/.test(APP));
+        ok('导入说明含标准模板 8 列', /习题集名称/.test(APP) && /课时名称/.test(APP) && /选项内容/.test(APP));
+        ok('input 事件接入填空/作文捕获', APP.includes("el.dataset.action !== 'ec-quiz-input'"));
+        ok('records 上限常量存在', /EC_QUIZ_RECORDS_CAP = 300/.test(APP));
+    }
 }
 
 // 等待异步断言后汇总

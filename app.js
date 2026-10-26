@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261026b';
+const APP_BUILD = '20261026c';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -10326,8 +10326,49 @@ const EC_QUIZ_BUILTIN = [
     }
 ];
 // 内置题库只初始化一次（之后用户可导入/删除，以本地快照为准）
+// v2 两级目录：每册按语法点分 4 个课时；分组表驱动，未列入的题目归「综合练习」
+const EC_QUIZ_BUILTIN_GROUPS = {
+    'builtin-nce1': [
+        ['l1', 'be 动词 · there be', ['n1q1', 'n1q2', 'n1q13', 'n1q14']],
+        ['l2', '现在时 · 进行时 · 三单', ['n1q3', 'n1q4', 'n1q16', 'n1q20']],
+        ['l3', '介词 · 所有格 · 比较级', ['n1q7', 'n1q8', 'n1q9', 'n1q12']],
+        ['l4', '情态 · 疑问词 · 综合', ['n1q5', 'n1q6', 'n1q10', 'n1q11', 'n1q15', 'n1q17', 'n1q18', 'n1q19']]
+    ],
+    'builtin-nce2': [
+        ['l1', '过去完成时 · 被动语态', ['n2q1', 'n2q2', 'n2q3', 'n2q16']],
+        ['l2', '定语从句 · 间接引语', ['n2q4', 'n2q5', 'n2q11', 'n2q20']],
+        ['l3', '条件句 · used to · have sth done', ['n2q6', 'n2q7', 'n2q8', 'n2q9']],
+        ['l4', '动名词 · 比较级 · 情态 · 综合', ['n2q10', 'n2q12', 'n2q13', 'n2q14', 'n2q15', 'n2q17', 'n2q18', 'n2q19']]
+    ],
+    'builtin-nce3': [
+        ['l1', '倒装句', ['n3q1', 'n3q7', 'n3q10', 'n3q19']],
+        ['l2', '强调句 · 虚拟语气', ['n3q2', 'n3q3', 'n3q8', 'n3q13']],
+        ['l3', '独立主格 · as 让步', ['n3q5', 'n3q14', 'n3q16', 'n3q17', 'n3q18']],
+        ['l4', '定语从句 · 综合', ['n3q4', 'n3q6', 'n3q9', 'n3q11', 'n3q12', 'n3q15', 'n3q20']]
+    ],
+    'builtin-nce4': [
+        ['l1', '虚拟语气', ['n4q1', 'n4q2', 'n4q5', 'n4q9']],
+        ['l2', '倒装 · 强调', ['n4q3', 'n4q10', 'n4q14', 'n4q19']],
+        ['l3', '非限制性定语从句', ['n4q4', 'n4q6', 'n4q15', 'n4q18', 'n4q20']],
+        ['l4', '名词性从句 · 综合', ['n4q7', 'n4q8', 'n4q11', 'n4q12', 'n4q13', 'n4q16', 'n4q17']]
+    ]
+};
 function ecQuizBuiltinFresh() {
-    return EC_QUIZ_BUILTIN.map(b => ({ id: b.id, name: b.name, tag: b.tag, source: '内置', createdAt: '', questions: b.questions.map(q => Object.assign({}, q)) }));
+    return EC_QUIZ_BUILTIN.map(b => {
+        const groups = EC_QUIZ_BUILTIN_GROUPS[b.id] || [];
+        const used = {};
+        const lessons = groups.map((g, gi) => ({
+            id: b.id + '-' + g[0], name: g[1], sort: gi, createdAt: '',
+            questions: g[2].map(qid => {
+                used[qid] = 1;
+                const q = b.questions.find(x => x.id === qid);
+                return q ? Object.assign({}, q) : null;
+            }).filter(Boolean)
+        }));
+        const rest = b.questions.filter(q => !used[q.id]).map(q => Object.assign({}, q));
+        if (rest.length) lessons.push({ id: b.id + '-lx', name: '综合练习', sort: 99, createdAt: '', questions: rest });
+        return { id: b.id, name: b.name, tag: b.tag, source: '内置', createdAt: '', lessons };
+    });
 }
 
 // 默认任务模板（新建书时克隆进去；每本书之后可自由增删改）
@@ -11090,47 +11131,129 @@ async function ecClearRecords() {
     ecAfterAction('🧹 学习记录已清零，书单目录保留');
 }
 
-// ==================== 刷题题库（导入 Excel/Word/PDF/CSV + 作答 + 错题收藏） ====================
-// 数据结构（state.data.engcheck.quiz，随 engcheck 云同步）：
-//   banks: [{ id, name, tag, source, createdAt, questions: [q] }]
-//     q = { id, type: 'single'|'multi'|'judge'|'essay', stem, options: [], answer, analysis }
-//         single/judge: answer = 正确项索引；multi: answer = 索引数组；essay: answer = 参考要点文本
-//   progress: { [qid]: { at, correct } }   correct = true/false/null（主观题未判）
-//   wrong:    { [qid]: { at, count, mastered } }  错题本（count 累计错误次数）
-//   fav:      { [qid]: { at } }  收藏
+// ==================== 刷题题库（习题集→课时 两级目录 + 100分制考试 + 错题/收藏/笔记） ====================
+// 数据结构（state.data.engcheck.quiz，随 engcheck 云同步；_v=2 起为两级目录）：
+//   banks:   一级目录·习题集  [{ id, name, tag, source, createdAt, lessons: [lesson] }]
+//   lesson:  二级目录·课时    { id, name, sort, createdAt, questions: [q] }
+//   q:       { id, qNo, type, stem, options: [], answer, analysis }
+//             type: single 单选(answer=正确项索引) / multi 多选(answer=索引数组)
+//                   judge 判断(answer 0=对 1=错) / fill 填空(answer=可接受答案数组)
+//                   reading 阅读理解(answer=可接受答案数组) / essay 作文(answer=范文/评分要点)
+//   progress: { [`课时id|题目id`]: { at, correct } }
+//   wrong:    { [key]: { at, count, mastered, correctedAt, lastAns } }  错题本，绑定课时
+//   fav:      { [key]: { at, note } }  收藏 + 自主笔记
+//   records:  [{ id, bankId, lessonId, mode, score, seconds, right, wrong, total, at }]
+//             每轮刷题一条，最新在前，上限 300（防止同步 payload 无限膨胀）
 //   stats:    { done, correct, seconds, days: { 'YYYY-MM-DD': { done, correct, seconds } } }
-//   settings: { bankId, mode: 'order' }
-const EC_QUIZ_TYPE_NAMES = { single: '单选题', multi: '多选题', judge: '判断题', essay: '主观题' };
+//   settings: { bankId, lessonId }
+// 计分规则：无论课时题量多少，试卷满分固定 100 分；单题分值 = 100 ÷ 本课时客观题总数
+//   （作文不计入分母、不自动判分）；得分四舍五入保留 1 位小数；计时从进入刷题页到提交。
+const EC_QUIZ_TYPE_NAMES = { single: '单选题', multi: '多选题', judge: '判断题', fill: '填空题', reading: '阅读理解', essay: '作文题' };
+const EC_QUIZ_OBJECTIVE = ['single', 'multi', 'judge', 'fill', 'reading']; // 参与自动判分与计分
+const EC_QUIZ_RECORDS_CAP = 300;
 
 function ecQuizData() {
     const d = ecData();
     if (!d.quiz || typeof d.quiz !== 'object') {
-        d.quiz = { banks: ecQuizBuiltinFresh(), progress: {}, wrong: {}, fav: {}, stats: { done: 0, correct: 0, seconds: 0, days: {} }, settings: { bankId: '', mode: 'order' } };
+        d.quiz = { banks: ecQuizBuiltinFresh(), progress: {}, wrong: {}, fav: {}, records: [], stats: { done: 0, correct: 0, seconds: 0, days: {} }, settings: { bankId: '', lessonId: '' }, _v: 2 };
     }
     const q = d.quiz;
-    if (!Array.isArray(q.banks)) q.banks = ecQuizBuiltinFresh();
-    if (!q.progress) q.progress = {};
-    if (!q.wrong) q.wrong = {};
-    if (!q.fav) q.fav = {};
-    if (!q.stats) q.stats = { done: 0, correct: 0, seconds: 0, days: {} };
-    if (!q.settings) q.settings = { bankId: '', mode: 'order' };
+    ecQuizMigrate(q);
+    if (!Array.isArray(q.banks) || !q.banks.length) q.banks = ecQuizBuiltinFresh();
     if (!q.settings.bankId || !q.banks.some(b => b.id === q.settings.bankId)) {
         q.settings.bankId = q.banks.length ? q.banks[0].id : '';
     }
+    const bk = q.banks.find(b => b.id === q.settings.bankId) || null;
+    if (!q.settings.lessonId || !bk || !bk.lessons.some(l => l.id === q.settings.lessonId)) {
+        q.settings.lessonId = bk && bk.lessons.length ? bk.lessons[0].id : '';
+    }
     return q;
 }
-function ecQuizBankById(id) { const q = ecQuizData(); return q.banks.find(b => b.id === id) || null; }
-function ecQuizQById(qid) {
+// 旧版（v1：banks 直接挂 questions，progress/wrong/fav 以题目 id 为键）→ v2 两级目录迁移
+function ecQuizMigrate(q) {
+    if (!q || q._v >= 2) return;
+    const oldP = q.progress || {}, oldW = q.wrong || {}, oldF = q.fav || {};
+    q.progress = {}; q.wrong = {}; q.fav = {};
+    (q.banks || []).forEach(b => {
+        if (!Array.isArray(b.lessons)) {
+            const qs = Array.isArray(b.questions) ? b.questions.slice() : [];
+            b.lessons = [{
+                id: 'L' + (b.id || Math.random().toString(36).slice(2, 9)),
+                name: (b.name || '习题集') + ' · 全部题目', sort: 0, createdAt: b.createdAt || '',
+                questions: qs
+            }];
+            delete b.questions;
+        }
+        b.lessons.forEach(l => {
+            if (!Array.isArray(l.questions)) l.questions = [];
+            l.questions.forEach((x, i) => {
+                if (x.qNo == null) x.qNo = i + 1;
+                const key = l.id + '|' + x.id;
+                if (oldP[x.id]) q.progress[key] = oldP[x.id];
+                if (oldW[x.id]) q.wrong[key] = oldW[x.id];
+                if (oldF[x.id]) q.fav[key] = oldF[x.id];
+            });
+            l.questions.sort((a, b2) => (a.qNo || 0) - (b2.qNo || 0));
+        });
+        b.lessons.sort((a, b2) => (a.sort || 0) - (b2.sort || 0));
+    });
+    if (!Array.isArray(q.records)) q.records = [];
+    if (!q.settings) q.settings = { bankId: '', lessonId: '' };
+    q._v = 2;
+}
+function ecQuizBookById(id) { const q = ecQuizData(); return q.banks.find(b => b.id === id) || null; }
+function ecQuizLessonById(lid) {
     const q = ecQuizData();
-    for (const b of q.banks) { const f = b.questions.find(x => x.id === qid); if (f) return { q: f, bank: b }; }
+    for (const b of q.banks) { const l = b.lessons.find(x => x.id === lid); if (l) return { lesson: l, book: b }; }
     return null;
 }
-function ecQuizBankProgress(bank) {
+function ecQuizFindQ(key) {
+    const parts = String(key == null ? '' : key).split('|');
+    const found = ecQuizLessonById(parts[0]);
+    if (!found) return null;
+    const qid = parts.slice(1).join('|');
+    const it = found.lesson.questions.find(x => x.id === qid);
+    return it ? { q: it, lesson: found.lesson, book: found.book } : null;
+}
+function ecQuizQById(qid) {
     const q = ecQuizData();
-    const total = bank.questions.length;
-    let done = 0;
-    bank.questions.forEach(it => { if (q.progress[it.id]) done++; });
+    for (const b of q.banks) for (const l of b.lessons) {
+        const f = l.questions.find(x => x.id === qid);
+        if (f) return { q: f, lesson: l, bank: b };
+    }
+    return null;
+}
+function ecQuizBookProgress(bank) {
+    const q = ecQuizData();
+    let total = 0, done = 0;
+    (bank.lessons || []).forEach(l => l.questions.forEach(it => {
+        total++;
+        if (q.progress[l.id + '|' + it.id]) done++;
+    }));
     return { done, total, pct: total ? Math.round(done / total * 100) : 0 };
+}
+function ecQuizLessonQuestions(lesson) {
+    return (lesson.questions || []).slice().sort((a, b) => (a.qNo || 0) - (b.qNo || 0));
+}
+// 课时汇总：题量/客观题数/已做/错题/收藏/完成次数/最高分/最近得分
+function ecQuizLessonSummary(lesson) {
+    const q = ecQuizData();
+    const qs = ecQuizLessonQuestions(lesson);
+    const objN = qs.filter(x => EC_QUIZ_OBJECTIVE.indexOf(x.type) >= 0).length;
+    let done = 0, wrongN = 0, favN = 0;
+    qs.forEach(it => {
+        const key = lesson.id + '|' + it.id;
+        if (q.progress[key]) done++;
+        if (q.wrong[key] && !q.wrong[key].mastered) wrongN++;
+        if (q.fav[key]) favN++;
+    });
+    const recs = q.records.filter(r => r.lessonId === lesson.id);
+    let best = null, last = null;
+    if (recs.length) {
+        best = Math.max.apply(null, recs.map(r => r.score || 0));
+        last = recs.slice().sort((a, b) => b.at - a.at)[0].score;
+    }
+    return { total: qs.length, objN, done, wrongN, favN, plays: recs.length, best, last };
 }
 function ecQuizToday() {
     const q = ecQuizData();
@@ -11153,42 +11276,61 @@ function ecQuizStreak() {
     }
     return n;
 }
-function ecQuizJudge(q, picked) {
-    if (q.type === 'single' || q.type === 'judge') return picked === q.answer;
-    if (q.type === 'multi') {
-        const a = (q.answer || []).slice().sort((x, y) => x - y).join(',');
-        const b = (picked || []).slice().sort((x, y) => x - y).join(',');
+// 填空/阅读答案归一：全角转半角 + 小写 + 去空白 + 去中英标点（容忍同义写法与标点差异）
+function ecQuizNormText(s) {
+    return ecFullToHalf(String(s == null ? '' : s)).trim().toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/[.,;:!?'"()\[\]{}<>。，；：！？、（）「」『』]/g, '');
+}
+function ecQuizJudge(question, ans) {
+    if (question.type === 'single' || question.type === 'judge') return ans === question.answer;
+    if (question.type === 'multi') {
+        const a = (question.answer || []).slice().sort((x, y) => x - y).join(',');
+        const b = (Array.isArray(ans) ? ans : []).slice().sort((x, y) => x - y).join(',');
         return a === b;
     }
-    return null; // 主观题：调用方自评
-}
-function ecQuizAfterAnswer(qid, correct) {
-    const q = ecQuizData();
-    const nowTs = Date.now();
-    q.progress[qid] = { at: nowTs, correct: correct === null ? null : !!correct };
-    if (correct === false) {
-        const w = q.wrong[qid] || { at: nowTs, count: 0, mastered: false };
-        w.count = (w.count || 0) + 1; w.at = nowTs; w.mastered = false;
-        q.wrong[qid] = w;
-    } else if (correct === true && q.wrong[qid]) {
-        q.wrong[qid].mastered = true; q.wrong[qid].at = nowTs;
+    if (question.type === 'fill' || question.type === 'reading') {
+        const u = ecQuizNormText(ans);
+        if (!u) return false;
+        return (question.answer || []).some(a => ecQuizNormText(a) === u);
     }
-    const dk = dateStr(new Date());
-    if (!q.stats.days[dk]) q.stats.days[dk] = { done: 0, correct: 0, seconds: 0 };
-    q.stats.days[dk].done += 1;
-    q.stats.done += 1;
-    if (correct === true) { q.stats.days[dk].correct += 1; q.stats.correct += 1; }
-    ecAfterAction(correct === false ? '❌ 答错了，已收入错题本' : correct === true ? '✅ 回答正确！' : '📝 已记录自评结果');
+    return null; // 作文题：交由自评
+}
+// 用户答案的展示文本（成绩页/错题本用）
+function ecQuizAnsText(question, ans) {
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    if (ans == null || ans === '') return '（未作答）';
+    if (question.type === 'single') return letters[ans] != null ? letters[ans] + '. ' + (question.options[ans] || '') : String(ans);
+    if (question.type === 'judge') return ans === 0 ? '对' : '错';
+    if (question.type === 'multi') return (ans || []).map(i => letters[i]).join('、') || '（未作答）';
+    return String(ans);
+}
+// 标准答案的展示文本
+function ecQuizRightText(question) {
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    if (question.type === 'single') return letters[question.answer] + '. ' + (question.options[question.answer] || '');
+    if (question.type === 'judge') return question.answer === 0 ? '对' : '错';
+    if (question.type === 'multi') return (question.answer || []).map(i => letters[i]).join('、');
+    if (question.type === 'fill' || question.type === 'reading') return (question.answer || []).join(' / ');
+    return String(question.answer || '');
+}
+function ecQuizSilentSync() {
+    // 轻量同步：只打时间戳不弹 toast（收藏/掌握等频繁小操作）
+    try { ecData().updatedAt = now(); } catch (e) {}
+    queueSync();
 }
 
 // ---------- 视图路由 ----------
 function ecRenderQuizPage() {
     const view = state._quizView || 'home';
     if (view === 'play') return ecQuizPlayHTML();
+    if (view === 'result') return ecQuizResultHTML();
     if (view === 'banks') return ecQuizBanksHTML();
-    if (view === 'wrong') return ecQuizListHTML('wrong');
-    if (view === 'fav') return ecQuizListHTML('fav');
-    if (view === 'manage') return ecQuizManageHTML(state._quizManageBankId);
+    if (view === 'lessons') return ecQuizLessonsHTML(state._quizBookId);
+    if (view === 'wrong') return ecQuizWrongHTML();
+    if (view === 'fav') return ecQuizFavHTML();
+    if (view === 'records') return ecQuizRecordsHTML();
+    if (view === 'manage') return ecQuizManageHTML(state._quizManageLessonId);
     if (view === 'stats') return ecQuizStatsHTML();
     return ecQuizHomeHTML();
 }
@@ -11198,9 +11340,15 @@ function ecQuizHomeHTML() {
     const streak = ecQuizStreak();
     const wrongN = Object.keys(q.wrong).filter(k => !q.wrong[k].mastered).length;
     const favN = Object.keys(q.fav).length;
-    const bank = ecQuizBankById(q.settings.bankId);
-    const bp = bank ? ecQuizBankProgress(bank) : { done: 0, total: 0, pct: 0 };
+    const bank = ecQuizBookById(q.settings.bankId);
+    const bp = bank ? ecQuizBookProgress(bank) : { done: 0, total: 0, pct: 0 };
     const acc = t.done ? Math.round(t.correct / t.done * 100) : 0;
+    // 继续刷题：优先当前课时，其次该习题集第一个有题的课时
+    let curLesson = null;
+    if (bank) {
+        curLesson = bank.lessons.find(l => l.id === q.settings.lessonId) || bank.lessons.find(l => l.questions.length) || null;
+    }
+    const ls = curLesson ? ecQuizLessonSummary(curLesson) : null;
     return `
     <div class="card ec-quiz-stat">
         <div class="ec-quiz-stat-row">
@@ -11210,180 +11358,445 @@ function ecQuizHomeHTML() {
             <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">🔥 ${streak}</div><div class="ec-quiz-stat-label">连续天数</div></div>
         </div>
     </div>
+    ${bank && curLesson ? `
     <div class="card">
-        <div class="card-header"><div class="card-title">🎯 当前题库</div>
-            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-pick-bank">切换题库</button></div>
-        ${bank ? `
-        <div class="ec-quiz-cur" data-action="ec-quiz-view" data-v="banks">
+        <div class="card-header"><div class="card-title">🎯 继续刷题</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-bank" data-id="${bank.id}">切换习题集</button></div>
+        <div class="ec-quiz-cur" data-action="ec-quiz-bank" data-id="${bank.id}">
             <div class="ec-quiz-cur-name">${escapeHtml(bank.name)}</div>
-            <div class="ec-quiz-cur-meta">${escapeHtml(bank.tag || '')} · 共 ${bp.total} 题 · 已完成 ${bp.done}（${bp.pct}%）</div>
+            <div class="ec-quiz-cur-meta">${escapeHtml(curLesson.name)} · ${ls.total} 题${ls.objN ? `（客观题 ${ls.objN}）` : ''} · 已刷 ${ls.plays} 次${ls.best != null ? ` · 最高 ${ls.best} 分` : ''}</div>
             <div class="ec-quiz-bar"><div class="ec-quiz-bar-in" style="width:${bp.pct}%"></div></div>
-        </div>` : '<div class="ec-hint">还没有题库，去下方「题库管理」导入吧</div>'}
-        <div class="ec-quiz-actions">
-            <button class="btn btn-primary" data-action="ec-quiz-start" data-mode="order" ${bank ? '' : 'disabled'}>▶️ 顺序刷题</button>
-            <button class="btn btn-secondary" data-action="ec-quiz-start" data-mode="random" ${bank ? '' : 'disabled'}>🔀 随机刷题</button>
         </div>
-    </div>
+        <div class="ec-quiz-actions">
+            <button class="btn btn-primary" data-action="ec-quiz-start" data-mode="order" data-bank="${bank.id}" data-lesson="${curLesson.id}">▶️ 顺序刷题</button>
+            <button class="btn btn-secondary" data-action="ec-quiz-start" data-mode="random" data-bank="${bank.id}" data-lesson="${curLesson.id}">🔀 随机刷题</button>
+        </div>
+    </div>` : '<div class="card"><div class="ec-hint">还没有习题集，去下方「题库大全」导入吧</div></div>'}
     <div class="card">
         <div class="card-header"><div class="card-title">📂 刷题入口</div></div>
         <div class="ec-quiz-entries">
-            <button class="ec-quiz-entry" data-action="ec-quiz-view" data-v="wrong">❌<span>错题回顾</span><em>${wrongN} 道待攻克</em></button>
-            <button class="ec-quiz-entry" data-action="ec-quiz-view" data-v="fav">⭐<span>我的收藏</span><em>${favN} 道</em></button>
-            <button class="ec-quiz-entry" data-action="ec-quiz-view" data-v="banks">📚<span>题库管理</span><em>${q.banks.length} 个题库</em></button>
+            <button class="ec-quiz-entry" data-action="ec-quiz-view" data-v="banks">📚<span>题库大全</span><em>${q.banks.length} 本习题集</em></button>
+            <button class="ec-quiz-entry" data-action="ec-quiz-view" data-v="wrong">❌<span>错题本</span><em>${wrongN} 道待攻克</em></button>
+            <button class="ec-quiz-entry" data-action="ec-quiz-view" data-v="fav">⭐<span>收藏笔记</span><em>${favN} 道</em></button>
+            <button class="ec-quiz-entry" data-action="ec-quiz-view" data-v="records">📄<span>刷题记录</span><em>${q.records.length} 次</em></button>
             <button class="ec-quiz-entry" data-action="ec-quiz-view" data-v="stats">📊<span>学习统计</span><em>正确率 ${q.stats.done ? Math.round(q.stats.correct / q.stats.done * 100) : 0}%</em></button>
         </div>
     </div>`;
 }
-function ecQuizPlayHTML() {
-    const q = ecQuizData();
-    const s = state._quizSession;
-    if (!s || !s.qids.length) { state._quizView = 'home'; return ecQuizHomeHTML(); }
-    const item = ecQuizQById(s.qids[s.idx]);
-    if (!item) { state._quizView = 'home'; return ecQuizHomeHTML(); }
-    const question = item.q;
-    const total = s.qids.length;
-    const picked = s.picked;
-    const isMulti = question.type === 'multi';
-    const isEssay = question.type === 'essay';
-    const done = s.submitted;
-    const faved = !!q.fav[question.id];
-    let body = '';
-    if (done) {
-        const correct = s.result;
-        body += `<div class="ec-quiz-verdict ${correct === true ? 'ok' : correct === false ? 'no' : 'mid'}">${
-            correct === true ? '✅ 回答正确' : correct === false ? '❌ 回答错误' : '📝 已记录你的自评'
-        }${s.self ? (s.self === 'hard' ? '（自评：没把握，已收入错题本）' : '（自评：已掌握）') : ''}</div>`;
-        if (question.type !== 'essay') {
-            const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-            const rightAns = question.type === 'multi' ? (question.answer || []).map(i => letters[i]).join('、') : letters[question.answer];
-            if (correct !== true) body += `<div class="ec-quiz-answer">正确答案：<b>${rightAns}</b></div>`;
-        }
-        if (question.analysis) body += `<div class="ec-quiz-analysis">💡 ${escapeHtml(question.analysis)}</div>`;
-    }
-    const options = (question.options || []).map((opt, i) => {
-        const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-        let cls = '';
-        if (done) {
-            if (question.type === 'multi') {
-                if ((question.answer || []).includes(i)) cls = ' right';
-                else if ((picked || []).includes(i)) cls = ' wrong';
-            } else if (question.type !== 'essay') {
-                if (i === question.answer) cls = ' right';
-                else if (picked === i) cls = ' wrong';
-            }
-        } else if (isMulti ? (picked || []).includes(i) : picked === i) cls = ' picked';
-        return `<button class="ec-quiz-opt${cls}" data-action="ec-quiz-pick" data-i="${i}" ${done ? 'disabled' : ''}><span class="ec-quiz-opt-key">${letters[i]}</span><span class="ec-quiz-opt-text">${escapeHtml(opt)}</span></button>`;
-    }).join('');
-    return `
-    <div class="card ec-quiz-play">
-        <div class="ec-quiz-play-top">
-            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-exit">✕ 退出</button>
-            <div class="ec-quiz-play-progress">第 ${s.idx + 1} / ${total} 题</div>
-            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-fav" title="收藏本题">${faved ? '⭐' : '☆'}</button>
-        </div>
-        <div class="ec-quiz-bar"><div class="ec-quiz-bar-in" style="width:${Math.round((s.idx) / total * 100)}%"></div></div>
-        <div class="ec-quiz-tags"><span class="ec-quiz-tag">${EC_QUIZ_TYPE_NAMES[question.type] || '题目'}</span><span class="ec-quiz-tag">${escapeHtml(item.bank.name)}</span></div>
-        <div class="ec-quiz-stem">${escapeHtml(question.stem)}</div>
-        ${options}
-        ${body}
-        ${!done ? (isEssay
-            ? `<div class="ec-quiz-essay-btns">
-                 <button class="btn btn-secondary" data-action="ec-quiz-self" data-v="hard">😖 没把握</button>
-                 <button class="btn btn-primary" data-action="ec-quiz-self" data-v="good">😊 已掌握</button>
-               </div>`
-            : `<button class="btn btn-primary ec-quiz-submit" data-action="ec-quiz-submit" ${picked == null || (isMulti && !(picked || []).length) ? 'disabled' : ''}>提交答案</button>`) : ''}
-        ${done ? `<button class="btn btn-primary ec-quiz-next" data-action="ec-quiz-next">${s.idx + 1 >= total ? '🏁 查看结果' : '下一题 →'}</button>` : ''}
-    </div>`;
-}
 function ecQuizBanksHTML() {
     const q = ecQuizData();
-    const totalQ = q.banks.reduce((n, b) => n + b.questions.length, 0);
-    const avgPct = q.banks.length ? Math.round(q.banks.reduce((n, b) => n + ecQuizBankProgress(b).pct, 0) / q.banks.length) : 0;
+    let lessonN = 0, totalQ = 0, objN = 0;
+    q.banks.forEach(b => (b.lessons || []).forEach(l => { lessonN++; totalQ += l.questions.length; objN += l.questions.filter(x => EC_QUIZ_OBJECTIVE.indexOf(x.type) >= 0).length; }));
     const list = q.banks.map(b => {
-        const bp = ecQuizBankProgress(b);
+        const bp = ecQuizBookProgress(b);
+        const ln = (b.lessons || []).length;
         return `
         <div class="ec-quiz-bank">
             <div class="ec-quiz-bank-head">
                 <div class="ec-quiz-bank-name">${escapeHtml(b.name)}</div>
-                <span class="ec-quiz-bank-tag">${escapeHtml(b.tag || (b.source || ''))}</span>
+                <span class="ec-quiz-bank-tag">${escapeHtml(b.tag || b.source || '导入')}</span>
             </div>
-            <div class="ec-quiz-bank-meta">共 ${bp.total} 题 · 完成率 ${bp.pct}%（${bp.done}/${bp.total}）</div>
+            <div class="ec-quiz-bank-meta">${ln} 个课时 · 共 ${bp.total} 题 · 完成率 ${bp.pct}%（${bp.done}/${bp.total}）</div>
             <div class="ec-quiz-bar"><div class="ec-quiz-bar-in" style="width:${bp.pct}%"></div></div>
             <div class="ec-quiz-bank-btns">
-                <button class="btn btn-sm btn-secondary" data-action="ec-quiz-use" data-id="${b.id}">${q.settings.bankId === b.id ? '✓ 当前题库' : '设当前'}</button>
-                <button class="btn btn-sm btn-secondary" data-action="ec-quiz-manage" data-id="${b.id}">✏️ 题目管理</button>
-                <button class="btn btn-sm btn-secondary" data-action="ec-quiz-import" data-id="${b.id}">📥 继续导入</button>
-                <button class="btn btn-sm btn-secondary" data-action="ec-quiz-export" data-id="${b.id}">📄 导出 CSV</button>
-                <button class="btn btn-sm btn-danger" data-action="ec-quiz-del" data-id="${b.id}">🗑 删除</button>
+                <button class="btn btn-sm btn-primary" data-action="ec-quiz-bank" data-id="${b.id}">📖 查看课时</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-quiz-renbank" data-id="${b.id}">✏️ 重命名</button>
+                <button class="btn btn-sm btn-danger" data-action="ec-quiz-delbank" data-id="${b.id}">🗑 删除</button>
             </div>
         </div>`;
     }).join('');
     return `
     <div class="card ec-quiz-stat">
         <div class="ec-quiz-stat-row">
-            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${q.banks.length}</div><div class="ec-quiz-stat-label">题库数</div></div>
-            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${totalQ}</div><div class="ec-quiz-stat-label">总题数</div></div>
-            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${avgPct}%</div><div class="ec-quiz-stat-label">平均完成率</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${q.banks.length}</div><div class="ec-quiz-stat-label">习题集数</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${lessonN}</div><div class="ec-quiz-stat-label">课时总数</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${totalQ}</div><div class="ec-quiz-stat-label">题目总数</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${objN}</div><div class="ec-quiz-stat-label">客观题</div></div>
         </div>
     </div>
     <div class="card">
-        <div class="card-header"><div class="card-title">📥 导入题库</div></div>
-        <div class="ec-hint">支持 <b>xlsx / xls / csv / txt / docx / pdf</b>，全部在<b>本地解析</b>，文件内容不上传。表格列顺序：<b>题型（可省）→ 题干 → 选项A~D → 答案 → 解析（可省）</b>；答案支持 <b>A</b> 或 <b>AC</b>（多选）或 <b>对/错</b>。也支持「1. 题干 / A. 选项 / 答案：X / 解析：…」的文本排版。</div>
+        <div class="card-header"><div class="card-title">📥 导入题库</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-view" data-v="home">← 返回刷题</button></div>
+        <div class="ec-hint">支持 <b>xlsx / xls / csv / txt / docx / pdf</b>，全部在<b>本地解析</b>，文件内容不上传。<br>
+            <b>标准模板</b>（Excel 表头按名识别，列顺序随意）：习题集名称 → 课时名称 → 题号 → 题目类型 → 题干 → 选项内容（多个用 <b>||</b> 或换行隔开）→ 参考答案 → 解析。<br>
+            题型认：<b>单选题/多选题/判断题/填空题/阅读理解/作文题</b>；不写习题集/课时名的旧格式题目会导入到当前习题集的当前课时。</div>
         <div class="ec-quiz-actions">
             <button class="btn btn-primary" data-action="ec-quiz-import">➕ 选择文件导入</button>
+            <button class="btn btn-secondary" data-action="ec-quiz-newbank">📗 新建习题集</button>
         </div>
     </div>
     <div class="card">
-        <div class="card-header"><div class="card-title">📚 全部题库（${q.banks.length}）</div>
-            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-view" data-v="home">← 返回刷题</button></div>
-        ${list || '<div class="ec-hint">还没有题库</div>'}
+        <div class="card-header"><div class="card-title">📚 全部习题集（${q.banks.length}）</div></div>
+        ${list || '<div class="ec-hint">还没有习题集，点上方「导入题库」或「新建习题集」开始</div>'}
     </div>`;
 }
-function ecQuizManageHTML(bankId) {
-    const bank = ecQuizBankById(bankId);
+function ecQuizLessonsHTML(bankId) {
+    const q = ecQuizData();
+    const bank = ecQuizBookById(bankId) || ecQuizBookById(q.settings.bankId);
     if (!bank) { state._quizView = 'banks'; return ecQuizBanksHTML(); }
-    const q = ecQuizData();
-    const rows = bank.questions.slice(0, 100).map(it => {
-        const pr = q.progress[it.id];
-        const w = q.wrong[it.id];
-        return `<div class="ec-quiz-qrow">
-            <div class="ec-quiz-qrow-main">
-                <div class="ec-quiz-qrow-stem">${escapeHtml(it.stem.length > 60 ? it.stem.slice(0, 60) + '…' : it.stem)}</div>
-                <div class="ec-quiz-qrow-meta">${EC_QUIZ_TYPE_NAMES[it.type] || '题目'} · ${pr ? (pr.correct === true ? '✅ 对' : pr.correct === false ? '❌ 错' : '📝 自评') : '未做'}${w && !w.mastered ? ' · 错题本' : ''}</div>
+    state._quizBookId = bank.id;
+    const rows = bank.lessons.map(l => {
+        const s = ecQuizLessonSummary(l);
+        return `
+        <div class="ec-quiz-bank">
+            <div class="ec-quiz-bank-head">
+                <div class="ec-quiz-bank-name">${escapeHtml(l.name)}</div>
+                <span class="ec-quiz-bank-tag">${s.total} 题</span>
             </div>
-            <button class="btn btn-sm btn-danger" data-action="ec-quiz-delq" data-bank="${bank.id}" data-q="${it.id}">删除</button>
+            <div class="ec-quiz-bank-meta">客观题 ${s.objN} · 作文 ${s.total - s.objN} · 已刷 ${s.plays} 次${s.best != null ? ` · 最高 <b style="color:#34c759">${s.best}</b> 分` : ''}${s.last != null ? ` · 最近 ${s.last} 分` : ''}${s.wrongN ? ` · <b style="color:#ff3b30">错题 ${s.wrongN}</b>` : ''}${s.favN ? ` · ⭐收藏 ${s.favN}` : ''}</div>
+            <div class="ec-quiz-bank-btns">
+                <button class="btn btn-sm btn-primary" data-action="ec-quiz-start" data-mode="order" data-bank="${bank.id}" data-lesson="${l.id}" ${s.total ? '' : 'disabled'}>▶️ 刷题</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-quiz-start" data-mode="random" data-bank="${bank.id}" data-lesson="${l.id}" ${s.total ? '' : 'disabled'}>🔀 随机</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-quiz-practice" data-mode="wrong" data-bank="${bank.id}" data-lesson="${l.id}" ${s.wrongN ? '' : 'disabled'}>❌ 错题重刷 ${s.wrongN || ''}</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-quiz-practice" data-mode="fav" data-bank="${bank.id}" data-lesson="${l.id}" ${s.favN ? '' : 'disabled'}>⭐ 收藏刷题 ${s.favN || ''}</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-quiz-manage" data-lesson="${l.id}">✏️ 管理</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-quiz-renlesson" data-lesson="${l.id}">改名</button>
+                <button class="btn btn-sm btn-danger" data-action="ec-quiz-dellesson" data-lesson="${l.id}">🗑</button>
+            </div>
         </div>`;
     }).join('');
     return `
     <div class="card">
-        <div class="card-header"><div class="card-title">✏️ ${escapeHtml(bank.name)}</div>
-            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-view" data-v="banks">← 返回</button></div>
-        <div class="ec-hint">共 ${bank.questions.length} 题${bank.questions.length > 100 ? '（列表显示前 100 题）' : ''}。删除单题后不可恢复，确认无误再操作。</div>
-        ${rows || '<div class="ec-hint">题库是空的</div>'}
+        <div class="card-header"><div class="card-title">📖 ${escapeHtml(bank.name)}</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-view" data-v="banks">← 返回习题集</button></div>
+        <div class="ec-hint">选择一个课时开始刷题。<b>每课满分固定 100 分</b>（单题分值 = 100 ÷ 本科时客观题数，作文不计分）；计时从进入答题页到提交，可反复刷，每次记录独立保存。</div>
+        <div class="ec-quiz-actions">
+            <button class="btn btn-primary" data-action="ec-quiz-newlesson" data-book="${bank.id}">➕ 新建课时</button>
+            <button class="btn btn-secondary" data-action="ec-quiz-import" data-id="${bank.id}">📥 导入到本书</button>
+        </div>
+        ${rows || '<div class="ec-hint">这本习题集还没有课时，点上方「新建课时」或「导入到本书」</div>'}
     </div>`;
 }
-function ecQuizListHTML(kind) {
+function ecQuizAttr(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function ecQuizFmtSecs(sec) {
+    const m = Math.floor(Math.max(0, sec || 0) / 60), s = Math.max(0, sec || 0) % 60;
+    return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+}
+function ecQuizPlayHTML() {
     const q = ecQuizData();
-    const ids = Object.keys(kind === 'wrong' ? q.wrong : q.fav);
-    const rows = ids.map(qid => {
-        const found = ecQuizQById(qid);
+    const s = state._quizSession;
+    if (!s || !s.keys.length) { state._quizView = 'home'; return ecQuizHomeHTML(); }
+    if (s.idx >= s.keys.length) s.idx = s.keys.length - 1;
+    const key = s.keys[s.idx];
+    const found = ecQuizFindQ(key);
+    if (!found) { state._quizView = 'home'; return ecQuizHomeHTML(); }
+    const question = found.q;
+    const total = s.keys.length;
+    const ans = s.ans[key];
+    const answeredN = s.keys.filter(k => {
+        const a = s.ans[k];
+        return a != null && a !== '' && !(Array.isArray(a) && !a.length);
+    }).length;
+    const faved = !!q.fav[key];
+    const elapsed = Math.floor((Date.now() - (s.startedAt || Date.now())) / 1000);
+    const modeTag = s.mode === 'wrong' ? '❌ 错题重刷' : s.mode === 'fav' ? '⭐ 收藏刷题' : s.mode === 'random' ? '🔀 随机' : '▶️ 顺序';
+    let inputArea = '';
+    if (question.type === 'single' || question.type === 'judge') {
+        const opts = question.options && question.options.length ? question.options : (question.type === 'judge' ? ['对', '错'] : []);
+        inputArea = opts.map((opt, i) => `
+            <button class="ec-quiz-opt${ans === i ? ' picked' : ''}" data-action="ec-quiz-pick" data-i="${i}"><span class="ec-quiz-opt-key">${['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'][i]}</span><span class="ec-quiz-opt-text">${escapeHtml(opt)}</span></button>`).join('');
+    } else if (question.type === 'multi') {
+        const picked = Array.isArray(ans) ? ans : [];
+        inputArea = (question.options || []).map((opt, i) => `
+            <button class="ec-quiz-opt${picked.indexOf(i) >= 0 ? ' picked' : ''}" data-action="ec-quiz-pick" data-i="${i}"><span class="ec-quiz-opt-key">${['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'][i]}</span><span class="ec-quiz-opt-text">${escapeHtml(opt)}</span></button>`).join('')
+            + `<div class="ec-hint">多选题：选少、选多、选错都不得分，请仔细核对。</div>`;
+    } else if (question.type === 'fill' || question.type === 'reading') {
+        inputArea = `<input class="ec-quiz-input" data-action="ec-quiz-input" value="${ecQuizAttr(ans || '')}" placeholder="输入你的答案${question.type === 'fill' ? '（拼写要准确哦）' : ''}">
+            <div class="ec-hint">${question.type === 'fill' ? '填空题：命中任意一个可接受答案即算正确。' : '阅读理解：根据上文作答，命中要点即算正确。'}</div>`;
+    } else {
+        inputArea = `<textarea class="ec-quiz-essay" data-action="ec-quiz-input" rows="5" placeholder="写下你的作答……">${escapeHtml(ans || '')}</textarea>
+            <div class="ec-hint">作文题：不参与自动判分与计分，提交后可自评，也可收藏做笔记。</div>`;
+    }
+    return `
+    <div class="card ec-quiz-play">
+        <div class="ec-quiz-play-top">
+            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-exit">✕ 退出</button>
+            <div class="ec-quiz-play-progress">第 ${s.idx + 1} / ${total} 题 · 已答 ${answeredN}</div>
+            <div class="ec-quiz-timer" title="本题已用时">⏱ ${ecQuizFmtSecs(elapsed)}</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-fav" title="收藏本题">${faved ? '⭐' : '☆'}</button>
+        </div>
+        <div class="ec-quiz-bar"><div class="ec-quiz-bar-in" style="width:${Math.round(answeredN / total * 100)}%"></div></div>
+        <div class="ec-quiz-tags"><span class="ec-quiz-tag">${EC_QUIZ_TYPE_NAMES[question.type] || '题目'}</span><span class="ec-quiz-tag">${escapeHtml(found.book.name)}</span><span class="ec-quiz-tag">${escapeHtml(found.lesson.name)}</span><span class="ec-quiz-tag">${modeTag}</span></div>
+        <div class="ec-quiz-stem">${escapeHtml(question.stem)}</div>
+        ${inputArea}
+        <div class="ec-quiz-nav">
+            <button class="btn btn-secondary" data-action="ec-quiz-go" data-d="-1" ${s.idx <= 0 ? 'disabled' : ''}>← 上一题</button>
+            <button class="btn btn-secondary" data-action="ec-quiz-go" data-d="1" ${s.idx + 1 >= total ? 'disabled' : ''}>下一题 →</button>
+        </div>
+        <button class="btn btn-primary ec-quiz-submit" data-action="ec-quiz-submit-exam">📮 提交试卷${answeredN < total ? `（还有 ${total - answeredN} 题未答）` : ''}</button>
+    </div>`;
+}
+function ecQuizResultHTML() {
+    const r = state._quizResult;
+    if (!r) { state._quizView = 'home'; return ecQuizHomeHTML(); }
+    const q = ecQuizData();
+    const scoreCls = r.score >= 85 ? 'ok' : r.score >= 60 ? 'mid' : 'no';
+    const rows = r.keys.map(key => {
+        const found = ecQuizFindQ(key);
         if (!found) return '';
-        const w = q.wrong[qid];
+        const question = found.q;
+        const rv = r.review[key] || {};
+        const faved = !!q.fav[key];
+        let ansLine = '';
+        if (question.type === 'essay') {
+            ansLine = `<div class="ec-quiz-answer">你的作答：${escapeHtml(rv.ans || '（未作答）')}</div>
+                <div class="ec-quiz-answer">参考范文/评分要点：<b>${escapeHtml(ecQuizRightText(question))}</b></div>
+                ${rv.self ? `<div class="ec-quiz-verdict ${rv.self === 'good' ? 'ok' : 'no'}">${rv.self === 'good' ? '😊 自评：已掌握' : '😖 自评：没把握，已收入错题本'}</div>` : `
+                <div class="ec-quiz-essay-btns">
+                    <button class="btn btn-sm btn-secondary" data-action="ec-quiz-self" data-k="${key}" data-v="hard">😖 没把握</button>
+                    <button class="btn btn-sm btn-primary" data-action="ec-quiz-self" data-k="${key}" data-v="good">😊 已掌握</button>
+                </div>`}`;
+        } else {
+            const verdict = rv.correct === true ? '✅ 回答正确' : rv.correct === false ? '❌ 回答错误' : '⬜ 未作答';
+            ansLine = `<div class="ec-quiz-verdict ${rv.correct === true ? 'ok' : rv.correct === false ? 'no' : 'mid'}">${verdict}</div>
+                <div class="ec-quiz-answer">你的答案：<b>${escapeHtml(ecQuizAnsText(question, rv.ans))}</b></div>
+                ${rv.correct === true ? '' : `<div class="ec-quiz-answer">正确答案：<b>${escapeHtml(ecQuizRightText(question))}</b></div>`}`;
+        }
+        return `<div class="ec-quiz-review">
+            <div class="ec-quiz-review-head">
+                <span class="ec-quiz-tag">${EC_QUIZ_TYPE_NAMES[question.type] || '题目'}</span>
+                <span class="ec-quiz-review-no">第 ${rv.no || '?'} 题</span>
+                <button class="btn btn-sm btn-secondary" data-action="ec-quiz-favk" data-k="${key}" title="收藏">${faved ? '⭐' : '☆'}</button>
+            </div>
+            <div class="ec-quiz-qrow-stem">${escapeHtml(question.stem.length > 120 ? question.stem.slice(0, 120) + '…' : question.stem)}</div>
+            ${ansLine}
+            ${question.analysis ? `<div class="ec-quiz-analysis">💡 ${escapeHtml(question.analysis)}</div>` : ''}
+        </div>`;
+    }).join('');
+    return `
+    <div class="card ec-quiz-stat">
+        <div class="ec-quiz-stat-row">
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${r.score}</div><div class="ec-quiz-stat-label">本次得分（满分100）</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${ecQuizFmtSecs(r.seconds)}</div><div class="ec-quiz-stat-label">用时</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${r.right}</div><div class="ec-quiz-stat-label">答对</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${r.wrong}</div><div class="ec-quiz-stat-label">答错</div></div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">🏁 ${escapeHtml(r.lessonName || '')} · 交卷完成</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-view" data-v="home">🏠 返回刷题</button></div>
+        <div class="ec-quiz-verdict ${scoreCls}">客观题 ${r.total} 题${r.essayN ? ` · 作文 ${r.essayN} 题（不计分）` : ''} · 单题 ${r.each} 分</div>
+        ${rows || '<div class="ec-hint">没有题目</div>'}
+    </div>`;
+}
+function ecQuizManageHTML(lessonId) {
+    const q = ecQuizData();
+    const found = ecQuizLessonById(lessonId);
+    if (!found) { state._quizView = 'banks'; return ecQuizBanksHTML(); }
+    state._quizManageLessonId = lessonId;
+    const lesson = found.lesson, book = found.book;
+    const qs = ecQuizLessonQuestions(lesson);
+    const objN = qs.filter(x => EC_QUIZ_OBJECTIVE.indexOf(x.type) >= 0).length;
+    const rows = qs.map((it, i) => {
+        const key = lesson.id + '|' + it.id;
+        const pr = q.progress[key];
+        const w = q.wrong[key];
+        const fav = q.fav[key];
         return `<div class="ec-quiz-qrow">
             <div class="ec-quiz-qrow-main">
-                <div class="ec-quiz-qrow-stem">${escapeHtml(found.q.stem.length > 70 ? found.q.stem.slice(0, 70) + '…' : found.q.stem)}</div>
-                <div class="ec-quiz-qrow-meta">${escapeHtml(found.bank.name)}${kind === 'wrong' && w ? ` · 错 ${w.count} 次${w.mastered ? ' · 已掌握' : ''}` : ''}</div>
+                <div class="ec-quiz-qrow-stem">${it.qNo || (i + 1)}. ${escapeHtml(it.stem.length > 60 ? it.stem.slice(0, 60) + '…' : it.stem)}</div>
+                <div class="ec-quiz-qrow-meta">${EC_QUIZ_TYPE_NAMES[it.type] || '题目'} · ${pr ? (pr.correct === true ? '✅ 对' : pr.correct === false ? '❌ 错' : '📝 自评') : '未做'}${w && !w.mastered ? ' · 错题本' : ''}${fav ? ' · ⭐收藏' : ''}</div>
             </div>
-            ${kind === 'wrong' ? `<button class="btn btn-sm btn-secondary" data-action="ec-quiz-master" data-q="${qid}">${w && w.mastered ? '✓ 已掌握' : '标为掌握'}</button>` : ''}
-            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-unfav" data-q="${qid}">取消收藏</button>
+            <button class="btn btn-sm btn-danger" data-action="ec-quiz-delq" data-lesson="${lesson.id}" data-q="${it.id}">删除</button>
         </div>`;
     }).join('');
     return `
     <div class="card">
-        <div class="card-header"><div class="card-title">${kind === 'wrong' ? '❌ 错题回顾' : '⭐ 我的收藏'}</div>
-            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-view" data-v="home">← 返回刷题</button></div>
-        ${rows || `<div class="ec-hint">${kind === 'wrong' ? '暂无错题，继续保持！' : '还没有收藏题目，刷题时点右上角 ☆ 即可收藏'}</div>`}
+        <div class="card-header"><div class="card-title">✏️ ${escapeHtml(lesson.name)}</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-bank" data-id="${book.id}">← 返回课时列表</button></div>
+        <div class="ec-hint">所属习题集：<b>${escapeHtml(book.name)}</b> · 共 ${qs.length} 题（客观题 ${objN} 道，每题 ${objN ? (Math.round(100 / objN * 10) / 10) : 0} 分，作文不计分）。删除单题后不可恢复。</div>
+        <div class="ec-quiz-actions">
+            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-export" data-lesson="${lesson.id}">📄 导出本科 CSV</button>
+        </div>
+        ${rows || '<div class="ec-hint">这个课时还是空的，去「导入到本书」或从其他课时复制题目吧</div>'}
     </div>`;
+}
+// 错题本：按「习题集 → 课时」隔离，展示原题/本次错误答案/参考答案/解析，可重刷、可标掌握
+function ecQuizWrongHTML() {
+    const q = ecQuizData();
+    const filterBook = state._quizWrongBook || '';
+    const allKeys = Object.keys(q.wrong);
+    const waiting = allKeys.filter(k => !q.wrong[k].mastered).length;
+    const groups = [];
+    allKeys.forEach(k => {
+        const found = ecQuizFindQ(k);
+        if (!found) return;
+        if (filterBook && found.book.id !== filterBook) return;
+        let g = groups.find(x => x.book.id === found.book.id);
+        if (!g) { g = { book: found.book, lessons: [] }; groups.push(g); }
+        let l = g.lessons.find(x => x.lesson.id === found.lesson.id);
+        if (!l) { l = { lesson: found.lesson, items: [] }; g.lessons.push(l); }
+        l.items.push(k);
+    });
+    const chips = q.banks.map(b => {
+        const n = allKeys.filter(k => { const f = ecQuizFindQ(k); return f && f.book.id === b.id && !q.wrong[k].mastered; }).length;
+        if (!n && filterBook !== b.id) return '';
+        return `<button class="ec-quiz-chip${filterBook === b.id ? ' on' : ''}" data-action="ec-quiz-wrong-book" data-id="${b.id}">${escapeHtml(b.name)}（${n}）</button>`;
+    }).join('');
+    const sections = groups.map(g => `
+        <div class="ec-quiz-group">
+            <div class="ec-quiz-group-title">📗 ${escapeHtml(g.book.name)}</div>
+            ${g.lessons.map(l => {
+                const waitingN = l.items.filter(k => !q.wrong[k].mastered).length;
+                const rows = l.items.map(k => {
+                    const f = ecQuizFindQ(k);
+                    if (!f) return '';
+                    const w = q.wrong[k];
+                    return `<div class="ec-quiz-qrow">
+                        <div class="ec-quiz-qrow-main">
+                            <div class="ec-quiz-qrow-stem">${escapeHtml(f.q.stem.length > 70 ? f.q.stem.slice(0, 70) + '…' : f.q.stem)}</div>
+                            <div class="ec-quiz-qrow-meta">你的答案：<b>${escapeHtml(ecQuizAnsText(f.q, w.lastAns != null && w.lastAns !== '' ? w.lastAns : ''))}</b> · 正确答案：<b>${escapeHtml(ecQuizRightText(f.q))}</b></div>
+                            <div class="ec-quiz-qrow-meta">错 ${w.count || 1} 次${w.correctedAt ? ` · 已于 ${ecQuizFmtDate(w.correctedAt)} 订正` : ' · 待攻克'}</div>
+                            ${f.q.analysis ? `<div class="ec-quiz-analysis">💡 ${escapeHtml(f.q.analysis)}</div>` : ''}
+                        </div>
+                        <button class="btn btn-sm btn-secondary" data-action="ec-quiz-master" data-k="${k}">${w.mastered ? '✓ 已掌握' : '标为掌握'}</button>
+                    </div>`;
+                }).join('');
+                return `<div class="ec-quiz-lesson-block">
+                    <div class="ec-quiz-lesson-head">
+                        <span>📖 ${escapeHtml(l.lesson.name)} · ${l.items.length} 题</span>
+                        <button class="btn btn-sm btn-secondary" data-action="ec-quiz-practice" data-mode="wrong" data-bank="${g.book.id}" data-lesson="${l.lesson.id}" ${waitingN ? '' : 'disabled'}>❌ 重刷本科错题${waitingN ? `（${waitingN}）` : ''}</button>
+                    </div>
+                    ${rows}
+                </div>`;
+            }).join('')}
+        </div>`).join('');
+    return `
+    <div class="card ec-quiz-stat">
+        <div class="ec-quiz-stat-row">
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${allKeys.length}</div><div class="ec-quiz-stat-label">错题总数</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${waiting}</div><div class="ec-quiz-stat-label">待攻克</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${allKeys.length - waiting}</div><div class="ec-quiz-stat-label">已订正/掌握</div></div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">❌ 错题本</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-view" data-v="home">← 返回刷题</button></div>
+        <div class="ec-hint">错题按「习题集 + 课时」归属，不会跨册混淆。答对后<strong>不自动删除</strong>，只标记「已订正」，掌握后可手动「标为掌握」。</div>
+        <div class="ec-quiz-actions">
+            <button class="btn btn-primary" data-action="ec-quiz-practice" data-mode="wrong" ${waiting ? '' : 'disabled'}>❌ 重刷全部待攻克（${waiting}）</button>
+        </div>
+        ${chips ? `<div class="ec-quiz-chips"><button class="ec-quiz-chip${filterBook ? '' : ' on'}" data-action="ec-quiz-wrong-book" data-id="">全部</button>${chips}</div>` : ''}
+        ${sections || '<div class="ec-hint">暂无错题，继续保持！</div>'}
+    </div>`;
+}
+// 收藏夹：按「习题集 → 课时」隔离，支持笔记编辑与单独组卷
+function ecQuizFavHTML() {
+    const q = ecQuizData();
+    const filterBook = state._quizFavBook || '';
+    const allKeys = Object.keys(q.fav);
+    const groups = [];
+    allKeys.forEach(k => {
+        const found = ecQuizFindQ(k);
+        if (!found) return;
+        if (filterBook && found.book.id !== filterBook) return;
+        let g = groups.find(x => x.book.id === found.book.id);
+        if (!g) { g = { book: found.book, lessons: [] }; groups.push(g); }
+        let l = g.lessons.find(x => x.lesson.id === found.lesson.id);
+        if (!l) { l = { lesson: found.lesson, items: [] }; g.lessons.push(l); }
+        l.items.push(k);
+    });
+    const chips = q.banks.map(b => {
+        const n = allKeys.filter(k => { const f = ecQuizFindQ(k); return f && f.book.id === b.id; }).length;
+        if (!n && filterBook !== b.id) return '';
+        return `<button class="ec-quiz-chip${filterBook === b.id ? ' on' : ''}" data-action="ec-quiz-fav-book" data-id="${b.id}">${escapeHtml(b.name)}（${n}）</button>`;
+    }).join('');
+    const sections = groups.map(g => `
+        <div class="ec-quiz-group">
+            <div class="ec-quiz-group-title">📗 ${escapeHtml(g.book.name)}</div>
+            ${g.lessons.map(l => {
+                const rows = l.items.map(k => {
+                    const f = ecQuizFindQ(k);
+                    if (!f) return '';
+                    const fav = q.fav[k] || {};
+                    return `<div class="ec-quiz-qrow">
+                        <div class="ec-quiz-qrow-main">
+                            <div class="ec-quiz-qrow-stem">${escapeHtml(f.q.stem.length > 70 ? f.q.stem.slice(0, 70) + '…' : f.q.stem)}</div>
+                            <div class="ec-quiz-qrow-meta">${EC_QUIZ_TYPE_NAMES[f.q.type] || '题目'} · 正确答案：<b>${escapeHtml(ecQuizRightText(f.q))}</b></div>
+                            ${fav.note ? `<div class="ec-quiz-note">📒 ${escapeHtml(fav.note)}</div>` : ''}
+                        </div>
+                        <button class="btn btn-sm btn-secondary" data-action="ec-quiz-note" data-k="${k}">📝 笔记</button>
+                        <button class="btn btn-sm btn-danger" data-action="ec-quiz-unfav" data-k="${k}">取消</button>
+                    </div>`;
+                }).join('');
+                return `<div class="ec-quiz-lesson-block">
+                    <div class="ec-quiz-lesson-head">
+                        <span>📖 ${escapeHtml(l.lesson.name)} · ${l.items.length} 题</span>
+                        <button class="btn btn-sm btn-primary" data-action="ec-quiz-practice" data-mode="fav" data-bank="${g.book.id}" data-lesson="${l.lesson.id}">⭐ 单独组卷刷题</button>
+                    </div>
+                    ${rows}
+                </div>`;
+            }).join('')}
+        </div>`).join('');
+    return `
+    <div class="card">
+        <div class="card-header"><div class="card-title">⭐ 收藏笔记</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-view" data-v="home">← 返回刷题</button></div>
+        <div class="ec-hint">答对但想重点掌握的题也可以收藏。点「📝 笔记」记录生词、语法、易错点，攒成你的个人重点题库。</div>
+        ${chips ? `<div class="ec-quiz-chips"><button class="ec-quiz-chip${filterBook ? '' : ' on'}" data-action="ec-quiz-fav-book" data-id="">全部</button>${chips}</div>` : ''}
+        ${sections || '<div class="ec-hint">还没有收藏题目，刷题时点右上角 ☆ 即可收藏</div>'}
+    </div>`;
+}
+// 刷题记录：每一轮独立保存，不覆盖历史
+function ecQuizRecordsHTML() {
+    const q = ecQuizData();
+    const recs = (q.records || []).slice().sort((a, b) => (b.at || 0) - (a.at || 0));
+    const summaries = [];
+    q.banks.forEach(b => (b.lessons || []).forEach(l => {
+        const lr = recs.filter(r => r.lessonId === l.id);
+        if (!lr.length) return;
+        summaries.push({
+            book: b.name, lesson: l.name, plays: lr.length,
+            best: Math.max.apply(null, lr.map(r => r.score || 0)),
+            last: lr[0].score, seconds: lr.reduce((n, r) => n + (r.seconds || 0), 0)
+        });
+    }));
+    summaries.sort((a, b2) => b2.at - a.at || b2.plays - a.plays);
+    const sumRows = summaries.slice(0, 30).map(s => `
+        <div class="ec-quiz-qrow">
+            <div class="ec-quiz-qrow-main">
+                <div class="ec-quiz-qrow-stem">${escapeHtml(s.book)} › ${escapeHtml(s.lesson)}</div>
+                <div class="ec-quiz-qrow-meta">共刷 ${s.plays} 次 · 累计用时 ${ecQuizFmtSecs(s.seconds)} · 最近 ${s.last} 分</div>
+            </div>
+            <div class="ec-quiz-rec-score"><b>${s.best}</b><span>最高分</span></div>
+        </div>`).join('');
+    const rows = recs.slice(0, 50).map(r => {
+        const found = ecQuizLessonById(r.lessonId);
+        const bName = found ? found.book.name : '（习题集已删除）';
+        const lName = found ? found.lesson.name : '（课时已删除）';
+        const modeName = r.mode === 'wrong' ? '错题重刷' : r.mode === 'fav' ? '收藏刷题' : r.mode === 'random' ? '🔀 随机' : '▶️ 顺序';
+        return `<div class="ec-quiz-qrow">
+            <div class="ec-quiz-qrow-main">
+                <div class="ec-quiz-qrow-stem">${escapeHtml(bName)} › ${escapeHtml(lName)}</div>
+                <div class="ec-quiz-qrow-meta">${modeName} · 对 ${r.right} / 错 ${r.wrong}${r.essayN ? ` · 作文 ${r.essayN} 题不计分` : ''}</div>
+            </div>
+            <div class="ec-quiz-rec-score"><b>${r.score}</b><span>分 · ${ecQuizFmtSecs(r.seconds)}</span><em>${ecQuizFmtDate(r.at)}</em></div>
+        </div>`;
+    }).join('');
+    return `
+    <div class="card ec-quiz-stat">
+        <div class="ec-quiz-stat-row">
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${recs.length}</div><div class="ec-quiz-stat-label">刷题轮数</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${recs.length ? Math.max.apply(null, recs.map(r => r.score || 0)) : 0}</div><div class="ec-quiz-stat-label">最高分</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${ecQuizFmtSecs(recs.reduce((n, r) => n + (r.seconds || 0), 0))}</div><div class="ec-quiz-stat-label">累计用时</div></div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">🏆 课时战绩</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-quiz-view" data-v="home">← 返回刷题</button></div>
+        ${sumRows || '<div class="ec-hint">还没有刷题记录，去选择一个课时开始吧</div>'}
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">📄 历次记录（最近 50 轮）</div></div>
+        ${rows || '<div class="ec-hint">暂无记录</div>'}
+    </div>`;
+}
+function ecQuizFmtDate(ts) {
+    const d = new Date(ts || Date.now());
+    const p = (n) => (n < 10 ? '0' : '') + n;
+    return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
 }
 function ecQuizStatsHTML() {
     const q = ecQuizData();
@@ -11391,13 +11804,14 @@ function ecQuizStatsHTML() {
     const keys = Object.keys(days).sort().slice(-7);
     const acc = q.stats.done ? Math.round(q.stats.correct / q.stats.done * 100) : 0;
     const byType = {};
-    q.banks.forEach(b => b.questions.forEach(it => {
+    q.banks.forEach(b => (b.lessons || []).forEach(l => l.questions.forEach(it => {
+        const key = l.id + '|' + it.id;
         const t = EC_QUIZ_TYPE_NAMES[it.type] || '题目';
         if (!byType[t]) byType[t] = { total: 0, done: 0, correct: 0 };
         byType[t].total++;
-        const pr = q.progress[it.id];
+        const pr = q.progress[key];
         if (pr) { byType[t].done++; if (pr.correct === true) byType[t].correct++; }
-    }));
+    })));
     const typeRows = Object.keys(byType).map(t => {
         const x = byType[t];
         return `<div class="ec-quiz-qrow"><div class="ec-quiz-qrow-main"><div class="ec-quiz-qrow-stem">${t}</div><div class="ec-quiz-qrow-meta">已练 ${x.done}/${x.total} · 正确 ${x.done ? Math.round(x.correct / x.done * 100) : 0}%</div></div></div>`;
@@ -11412,206 +11826,483 @@ function ecQuizStatsHTML() {
             <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${q.stats.done}</div><div class="ec-quiz-stat-label">累计刷题</div></div>
             <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${acc}%</div><div class="ec-quiz-stat-label">总正确率</div></div>
             <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${Object.keys(q.wrong).filter(k => !q.wrong[k].mastered).length}</div><div class="ec-quiz-stat-label">待攻克错题</div></div>
+            <div class="ec-quiz-stat-item"><div class="ec-quiz-stat-num">${(q.records || []).length}</div><div class="ec-quiz-stat-label">刷题轮数</div></div>
         </div>
     </div>
     <div class="card"><div class="card-header"><div class="card-title">📐 题型掌握情况</div></div>${typeRows || '<div class="ec-hint">暂无数据</div>'}</div>
     <div class="card"><div class="card-header"><div class="card-title">📅 最近学习</div></div>${dayRows || '<div class="ec-hint">暂无数据</div>'}</div>`;
 }
 
-// ---------- 作答动作 ----------
-function ecQuizStart(mode) {
+// ---------- 作答动作（考试模式：按课时组卷 · 100 分制 · 计时 · 交卷判分） ----------
+function ecQuizStart(mode, bankId, lessonId) {
     const q = ecQuizData();
-    const bank = ecQuizBankById(q.settings.bankId);
-    if (!bank || !bank.questions.length) { toast('当前题库还没有题目'); return; }
-    let qids = bank.questions.map(x => x.id);
+    const bank = ecQuizBookById(bankId || q.settings.bankId);
+    if (!bank) { toast('还没有习题集，先去导入或新建'); return; }
+    const lesson = bank.lessons.find(l => l.id === (lessonId || q.settings.lessonId)) || bank.lessons.find(l => l.questions.length) || null;
+    if (!lesson || !lesson.questions.length) { toast('这个课时还没有题目'); return; }
+    q.settings.bankId = bank.id;
+    q.settings.lessonId = lesson.id;
+    let keys = ecQuizLessonQuestions(lesson).map(x => lesson.id + '|' + x.id);
     if (mode === 'random') {
-        for (let i = qids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [qids[i], qids[j]] = [qids[j], qids[i]]; }
+        for (let i = keys.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = keys[i]; keys[i] = keys[j]; keys[j] = t; }
     }
-    state._quizSession = { bankId: bank.id, qids, idx: 0, picked: null, submitted: false, result: null, self: null };
+    state._quizSession = { bankId: bank.id, lessonId: lesson.id, mode: mode || 'order', keys, idx: 0, ans: {}, startedAt: Date.now() };
     state._quizView = 'play';
-    ecAfterAction('📝 开始刷题：' + bank.name);
+    render();
+}
+// 错题/收藏组卷：传课时则只组本科；不传课时可跨课时（整册或全部）
+function ecQuizPractice(mode, bankId, lessonId) {
+    const q = ecQuizData();
+    const pool = mode === 'wrong'
+        ? Object.keys(q.wrong).filter(k => !q.wrong[k].mastered)
+        : Object.keys(q.fav);
+    let keys = pool;
+    if (lessonId) keys = pool.filter(k => k.indexOf(lessonId + '|') === 0);
+    else if (bankId) {
+        const bk = ecQuizBookById(bankId);
+        if (bk) keys = pool.filter(k => bk.lessons.some(l => k.indexOf(l.id + '|') === 0));
+    }
+    if (!keys.length) { toast(mode === 'wrong' ? '没有待攻克的错题' : '还没有收藏题目'); return; }
+    state._quizSession = { bankId: bankId || '', lessonId: lessonId || '', mode: mode || 'wrong', keys, idx: 0, ans: {}, startedAt: Date.now() };
+    state._quizView = 'play';
+    render();
 }
 function ecQuizPick(i) {
     const s = state._quizSession;
-    if (!s || s.submitted) return;
-    const item = ecQuizQById(s.qids[s.idx]);
-    if (!item) return;
-    if (item.q.type === 'multi') {
-        const arr = Array.isArray(s.picked) ? s.picked.slice() : [];
+    if (!s) return;
+    const key = s.keys[s.idx];
+    const found = ecQuizFindQ(key);
+    if (!found) return;
+    if (found.q.type === 'multi') {
+        const arr = Array.isArray(s.ans[key]) ? s.ans[key].slice() : [];
         const k = arr.indexOf(i);
         if (k >= 0) arr.splice(k, 1); else arr.push(i);
-        s.picked = arr;
+        s.ans[key] = arr;
     } else {
-        s.picked = i;
+        s.ans[key] = i;
     }
     render();
 }
-function ecQuizSubmit() {
-    const s = state._quizSession;
-    if (!s || s.submitted) return;
-    const item = ecQuizQById(s.qids[s.idx]);
-    if (!item) return;
-    if (s.picked == null || (item.q.type === 'multi' && !(s.picked || []).length)) { toast('请先选择答案'); return; }
-    s.submitted = true;
-    s.result = ecQuizJudge(item.q, s.picked);
-    ecQuizAfterAnswer(item.q.id, s.result);
-    render();
-}
-function ecQuizSelf(v) {
-    const s = state._quizSession;
-    if (!s || s.submitted) return;
-    const item = ecQuizQById(s.qids[s.idx]);
-    if (!item) return;
-    s.submitted = true;
-    s.self = v;
-    s.result = v === 'good' ? true : false;
-    ecQuizAfterAnswer(item.q.id, v === 'good' ? true : false);
-    render();
-}
-function ecQuizNext() {
+// 填空/作文输入（input 事件直调，不触发重渲染，避免焦点丢失）
+function ecQuizInput(v) {
     const s = state._quizSession;
     if (!s) return;
-    if (s.idx + 1 >= s.qids.length) {
-        const bank = ecQuizBankById(s.bankId);
-        const bp = bank ? ecQuizBankProgress(bank) : { done: 0, total: 0, pct: 0 };
-        toast(`🏁 本轮完成！本库进度 ${bp.done}/${bp.total}（${bp.pct}%）`);
-        state._quizSession = null;
-        state._quizView = 'home';
-    } else {
-        s.idx++; s.picked = null; s.submitted = false; s.result = null; s.self = null;
+    s.ans[s.keys[s.idx]] = v;
+}
+function ecQuizGo(d) {
+    const s = state._quizSession;
+    if (!s) return;
+    const ni = s.idx + (d || 0);
+    if (ni < 0 || ni >= s.keys.length) return;
+    s.idx = ni;
+    render();
+}
+// 交卷：自动判分（作文除外）+ 满分 100 均分制 + 计时 + 写记录 + 错题入本 + 统计
+function ecQuizSubmitExam() {
+    const s = state._quizSession;
+    if (!s || !s.keys.length) return;
+    const q = ecQuizData();
+    const first = ecQuizFindQ(s.keys[0]);
+    const bankId = s.bankId || (first ? first.book.id : '');
+    const lessonId = s.lessonId || (first ? first.lesson.id : '');
+    const lessonName = first ? first.lesson.name : '';
+    let right = 0, wrong = 0, essayN = 0, objN = 0;
+    const review = {};
+    const nowTs = Date.now();
+    const dk = dateStr(new Date());
+    if (!q.stats.days[dk]) q.stats.days[dk] = { done: 0, correct: 0, seconds: 0 };
+    s.keys.forEach((key, i) => {
+        const found = ecQuizFindQ(key);
+        if (!found) return;
+        const ans = s.ans[key];
+        const no = i + 1;
+        const pr = q.progress[key] || { at: nowTs, correct: null };
+        pr.at = nowTs;
+        if (found.q.type === 'essay') {
+            essayN++;
+            pr.correct = null;
+            review[key] = { no, ans: ans || '', self: null, correct: null };
+        } else {
+            objN++;
+            const ok = ecQuizJudge(found.q, ans) === true;
+            pr.correct = ok;
+            if (ok) right++; else wrong++;
+            review[key] = { no, ans: ans == null ? '' : ans, correct: ok };
+            const w = q.wrong[key];
+            if (ok) {
+                if (w) { w.correctedAt = nowTs; w.at = nowTs; }   // 订正正确：保留记录，仅标记
+            } else {
+                const rec = w || { at: nowTs, count: 0, mastered: false, correctedAt: 0, lastAns: '' };
+                rec.count = (rec.count || 0) + 1;
+                rec.at = nowTs;
+                rec.mastered = false;
+                rec.lastAns = ecQuizAnsText(found.q, ans);
+                q.wrong[key] = rec;
+            }
+        }
+        q.progress[key] = pr;
+        q.stats.days[dk].done += 1;
+        q.stats.done += 1;
+        if (pr.correct === true) { q.stats.days[dk].correct += 1; q.stats.correct += 1; }
+    });
+    const each = objN ? Math.round(100 / objN * 10) / 10 : 0;
+    const score = objN ? Math.round(right * each * 10) / 10 : 0;
+    const seconds = Math.max(1, Math.floor((Date.now() - s.startedAt) / 1000));
+    q.stats.days[dk].seconds += seconds;
+    q.stats.seconds += seconds;
+    q.records.unshift({ id: 'r' + nowTs.toString(36) + Math.random().toString(36).slice(2, 5), bankId, lessonId, mode: s.mode, score, seconds, right, wrong, essayN, total: objN, at: nowTs });
+    if (q.records.length > EC_QUIZ_RECORDS_CAP) q.records.length = EC_QUIZ_RECORDS_CAP;
+    state._quizResult = { bankId, lessonId, lessonName, mode: s.mode, score, seconds, right, wrong, total: objN, essayN, each, keys: s.keys.slice(), review, at: nowTs };
+    state._quizSession = null;
+    state._quizView = 'result';
+    ecAfterAction(`🏁 交卷完成：${score} 分（对 ${right} / 错 ${wrong}${essayN ? ` · 作文 ${essayN} 题不计分` : ''}）`);
+    render();
+}
+// 成绩页：作文题自评（没把握 → 入错题本；已掌握 → 标记订正）
+function ecQuizSelf(key, v) {
+    const q = ecQuizData();
+    const r = state._quizResult;
+    const good = v === 'good';
+    if (r && r.review && r.review[key]) {
+        r.review[key].self = v;
+        const found = ecQuizFindQ(key);
+        if (found) {
+            const w = q.wrong[key];
+            if (good) {
+                if (w) w.correctedAt = Date.now();
+            } else {
+                const rec = w || { at: Date.now(), count: 0, mastered: false, correctedAt: 0, lastAns: '' };
+                rec.count = (rec.count || 0) + 1;
+                rec.at = Date.now();
+                rec.mastered = false;
+                rec.lastAns = '（作文自评：没把握）';
+                q.wrong[key] = rec;
+            }
+        }
     }
+    ecQuizSilentSync();
     render();
 }
 function ecQuizExit() { state._quizSession = null; state._quizView = 'home'; render(); }
 function ecQuizToggleFav() {
     const s = state._quizSession;
     if (!s) return;
-    const qid = s.qids[s.idx];
+    ecQuizToggleFavKey(s.keys[s.idx]);
+}
+function ecQuizToggleFavKey(key) {
     const q = ecQuizData();
-    if (q.fav[qid]) { delete q.fav[qid]; toast('已取消收藏'); }
-    else { q.fav[qid] = { at: Date.now() }; toast('⭐ 已收藏'); }
-    ecAfterActionSilent();
+    if (q.fav[key]) { delete q.fav[key]; toast('已取消收藏'); }
+    else { q.fav[key] = { at: Date.now(), note: '' }; toast('⭐ 已收藏，可随时添加笔记'); }
+    ecQuizSilentSync();
     render();
 }
-function ecQuizSetMastered(qid) {
+function ecQuizSetMastered(key) {
     const q = ecQuizData();
-    const w = q.wrong[qid];
+    const w = q.wrong[key];
     if (!w) return;
     w.mastered = !w.mastered;
     toast(w.mastered ? '✓ 已标记为掌握' : '已移回待攻克');
-    ecAfterActionSilent();
+    ecQuizSilentSync();
     render();
 }
-function ecQuizUnfav(qid) {
+function ecQuizUnfav(key) {
     const q = ecQuizData();
-    delete q.fav[qid];
-    ecAfterActionSilent();
+    delete q.fav[key];
+    ecQuizSilentSync();
+    render();
+}
+async function ecQuizFavNote(key) {
+    const q = ecQuizData();
+    const cur = (q.fav[key] && q.fav[key].note) || '';
+    const v = await uiPrompt('学习笔记', cur, { title: '📝 编辑笔记', placeholder: '记录生词、语法、易错点、翻译……' });
+    if (v == null) return;
+    if (!q.fav[key]) q.fav[key] = { at: Date.now(), note: '' };
+    q.fav[key].note = String(v).trim();
+    toast('📒 笔记已保存');
+    ecQuizSilentSync();
     render();
 }
 
-// ---------- 题库管理动作 ----------
-function ecQuizUseBank(bankId) {
+// ---------- 习题集 / 课时管理 ----------
+async function ecQuizNewBook() {
+    const v = await uiPrompt('习题集名称', '', { title: '📗 新建习题集', placeholder: '如：新概念英语第一册 · 一课一练' });
+    if (v == null || !String(v).trim()) return;
     const q = ecQuizData();
-    q.settings.bankId = bankId;
-    state._quizSession = null;
-    ecAfterActionSilent();
-    state._quizView = 'home';
+    const bank = { id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: String(v).trim(), tag: '自建', source: '手动', createdAt: now(), lessons: [] };
+    q.banks.push(bank);
+    q.settings.bankId = bank.id;
+    q.settings.lessonId = '';
+    state._quizBookId = bank.id;
+    state._quizView = 'lessons';
+    ecAfterAction('📗 已创建习题集「' + bank.name + '」，继续新建课时吧');
     render();
 }
-function ecQuizDelBank(bankId) {
-    const q = ecQuizData();
-    const bank = ecQuizBankById(bankId);
+async function ecQuizRenBook(bankId) {
+    const bank = ecQuizBookById(bankId);
     if (!bank) return;
-    const cnt = bank.questions.length;
+    const v = await uiPrompt('习题集名称', bank.name, { title: '✏️ 重命名习题集' });
+    if (v == null || !String(v).trim()) return;
+    bank.name = String(v).trim();
+    ecQuizSilentSync();
+    render();
+}
+function ecQuizDelBook(bankId) {
+    const q = ecQuizData();
+    const bank = ecQuizBookById(bankId);
+    if (!bank) return;
+    let cnt = 0;
+    (bank.lessons || []).forEach(l => {
+        cnt += l.questions.length;
+        l.questions.forEach(it => { delete q.progress[l.id + '|' + it.id]; delete q.wrong[l.id + '|' + it.id]; delete q.fav[l.id + '|' + it.id]; });
+    });
     q.banks = q.banks.filter(b => b.id !== bankId);
-    bank.questions.forEach(it => { delete q.progress[it.id]; delete q.wrong[it.id]; delete q.fav[it.id]; });
-    if (q.settings.bankId === bankId) q.settings.bankId = q.banks.length ? q.banks[0].id : '';
-    ecAfterAction(`🗑 已删除题库「${bank.name}」（${cnt} 题），作答记录同步清理`);
+    q.records = (q.records || []).filter(r => r.bankId !== bankId);
+    if (q.settings.bankId === bankId) {
+        q.settings.bankId = q.banks.length ? q.banks[0].id : '';
+        const nb = ecQuizBookById(q.settings.bankId);
+        q.settings.lessonId = nb && nb.lessons.length ? nb.lessons[0].id : '';
+    }
+    ecAfterAction(`🗑 已删除习题集「${bank.name}」（${cnt} 题），错题/收藏/记录同步清理`);
     state._quizView = 'banks';
     render();
 }
-function ecQuizDelQuestion(bankId, qid) {
-    const bank = ecQuizBankById(bankId);
-    if (!bank) return;
-    bank.questions = bank.questions.filter(x => x.id !== qid);
+async function ecQuizNewLesson(bookId) {
     const q = ecQuizData();
-    delete q.progress[qid]; delete q.wrong[qid]; delete q.fav[qid];
-    ecAfterActionSilent();
+    const bank = ecQuizBookById(bookId) || ecQuizBookById(q.settings.bankId);
+    if (!bank) { toast('请先创建习题集'); return; }
+    const v = await uiPrompt('课时名称', '', { title: '📖 新建课时', placeholder: '如：Lesson 18 / Unit 3 词汇专项' });
+    if (v == null || !String(v).trim()) return;
+    const lesson = { id: 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: String(v).trim(), sort: bank.lessons.length, createdAt: now(), questions: [] };
+    bank.lessons.push(lesson);
+    q.settings.bankId = bank.id;
+    q.settings.lessonId = lesson.id;
+    state._quizBookId = bank.id;
+    ecAfterAction('📖 已在「' + bank.name + '」新建课时「' + lesson.name + '」');
     render();
 }
-function ecQuizExport(bankId) {
-    const bank = ecQuizBankById(bankId);
-    if (!bank) return;
+async function ecQuizRenLesson(lessonId) {
+    const found = ecQuizLessonById(lessonId);
+    if (!found) return;
+    const v = await uiPrompt('课时名称', found.lesson.name, { title: '✏️ 重命名课时' });
+    if (v == null || !String(v).trim()) return;
+    found.lesson.name = String(v).trim();
+    ecQuizSilentSync();
+    render();
+}
+function ecQuizDelLesson(lessonId) {
+    const q = ecQuizData();
+    const found = ecQuizLessonById(lessonId);
+    if (!found) return;
+    const lesson = found.lesson, book = found.book;
+    const cnt = lesson.questions.length;
+    book.lessons = book.lessons.filter(l => l.id !== lessonId);
+    lesson.questions.forEach(it => { delete q.progress[lessonId + '|' + it.id]; delete q.wrong[lessonId + '|' + it.id]; delete q.fav[lessonId + '|' + it.id]; });
+    q.records = (q.records || []).filter(r => r.lessonId !== lessonId);
+    if (q.settings.lessonId === lessonId) q.settings.lessonId = book.lessons.length ? book.lessons[0].id : '';
+    ecAfterAction(`🗑 已删除课时「${lesson.name}」（${cnt} 题），相关记录同步清理`);
+    render();
+}
+function ecQuizDelQuestion(lessonId, qid) {
+    const found = ecQuizLessonById(lessonId);
+    if (!found) return;
+    found.lesson.questions = found.lesson.questions.filter(x => x.id !== qid);
+    const q = ecQuizData();
+    delete q.progress[lessonId + '|' + qid];
+    delete q.wrong[lessonId + '|' + qid];
+    delete q.fav[lessonId + '|' + qid];
+    ecQuizSilentSync();
+    render();
+}
+// 本科导出为「标准导入模板」CSV（8 列，编辑后可原样回导）
+function ecQuizExportCSV(lessonId) {
+    const found = ecQuizLessonById(lessonId);
+    if (!found) return '';
+    const book = found.book, lesson = found.lesson;
     const esc = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
     const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-    const lines = ['题型,题干,选项A,选项B,选项C,选项D,答案,解析'];
-    bank.questions.forEach(it => {
+    const lines = ['习题集名称,课时名称,题号,题目类型,题干,选项内容,参考答案,解析内容'];
+    ecQuizLessonQuestions(lesson).forEach((it, i) => {
         const typeName = EC_QUIZ_TYPE_NAMES[it.type] || '单选题';
-        let ans = '';
-        if (it.type === 'essay') ans = it.answer;
-        else if (it.type === 'multi') ans = (it.answer || []).map(i => letters[i]).join('');
-        else if (it.type === 'judge') ans = it.answer === 0 ? '对' : '错';
-        else ans = letters[it.answer] || '';
-        const opts = (it.options || []).concat(['', '', '', '']).slice(0, 4);
-        lines.push([typeName, it.stem, opts[0], opts[1], opts[2], opts[3], ans, it.analysis || ''].map(esc).join(','));
+        let ans = '', opts = (it.options || []).join('||');
+        if (it.type === 'essay') ans = String(it.answer || '');
+        else if (it.type === 'judge') ans = it.answer === 0 ? '正确' : '错误';
+        else if (it.type === 'multi') ans = (it.answer || []).map(x => letters[x]).join('');
+        else if (it.type === 'single') ans = letters[it.answer] || '';
+        else ans = (it.answer || []).join('||');
+        lines.push([book.name, lesson.name, it.qNo || (i + 1), typeName, it.stem, opts, ans, it.analysis || ''].map(esc).join(','));
     });
-    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    return '\ufeff' + lines.join('\r\n');
+}
+function ecQuizExport(lessonId) {
+    const csv = ecQuizExportCSV(lessonId);
+    if (!csv) return;
+    const found = ecQuizLessonById(lessonId);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = (bank.name || '题库') + '.csv';
+    a.download = (found.book.name + '·' + found.lesson.name + '.csv').replace(/[\\/:*?"<>|]/g, '_');
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-    toast('📄 已导出 CSV，可用 Excel 打开');
-}
-function ecQuizSilentSync() {
-    // 轻量同步：只打时间戳不弹 toast（收藏/掌握等频繁小操作）
-    try { ecData().updatedAt = now(); } catch (e) {}
-    queueSync();
+    toast('📄 已导出标准模板 CSV，可用 Excel 打开编辑后回导');
 }
 
 // ---------- 导入：格式说明与文件选择 ----------
-async function ecQuizPickBank() {
+// ---------- 导入：标准模板（8 列）+ 追加/覆盖 + 错误清单 ----------
+// 表头列名 → 字段映射（按名识别，列顺序随意；兼容「选项A~D」分列与旧版「题型/题干/选项A…」表头）
+function ecQuizDetectHeader(row) {
+    const cells = (row || []).map(c => ecFullToHalf(String(c == null ? '' : c)).trim().toLowerCase().replace(/\s+/g, ''));
+    const find = (...names) => { for (let i = 0; i < cells.length; i++) { if (names.indexOf(cells[i]) >= 0) return i; } return -1; };
+    const map = {
+        iBook: find('习题集名称', '习题集', '练习册名称', '练习册', 'book', 'bookname'),
+        iLesson: find('课时名称', '课时', '单元名称', '单元', 'lesson', 'lessonname'),
+        iNo: find('题号', '序号', '编号', 'no', 'qno'),
+        iType: find('题目类型', '题型', '类型', 'qtype', 'type'),
+        iStem: find('题干内容', '题干', '题目内容', '题目', 'stem', 'title', 'question'),
+        iOpt: find('选项内容', '选项', 'options', 'option'),
+        iAns: find('参考答案', '标准答案', '答案', 'answer'),
+        iAna: find('解析内容', '答案解析', '解析', 'analysis'),
+        optCols: []
+    };
+    for (let i = 0; i < cells.length; i++) { if (/^(?:选项|option)[a-h1-8]$/.test(cells[i])) map.optCols.push(i); }
+    if (map.iStem < 0) return null;
+    if (map.iBook < 0 && map.iLesson < 0 && map.iType < 0 && map.iAns < 0) return null;
+    return map;
+}
+// 模板行 → 题目（选项支持「选项A~D」分列或「|| / 换行」分隔的单列）
+function ecQuizTemplateItem(cols, map) {
+    const get = (i) => (i >= 0 && i < cols.length ? ecFullToHalf(String(cols[i] == null ? '' : cols[i])).trim() : '');
+    let opts = [];
+    if (map.optCols.length) opts = map.optCols.map(i => get(i)).filter(o => o !== '');
+    else if (map.iOpt >= 0) opts = get(map.iOpt).split(/\|\||\r?\n/).map(s => s.trim()).filter(o => o !== '');
+    const nq = ecQuizNormQuestion({ type: get(map.iType), stem: get(map.iStem), options: opts, answer: get(map.iAns), analysis: get(map.iAna) });
+    if (!nq) return { error: '题目无效（题干缺失，或选项/答案不符合该题型要求）' };
+    return { item: { book: get(map.iBook), lesson: get(map.iLesson), qNo: parseInt(get(map.iNo), 10) || 0, q: nq } };
+}
+// 文件行 → 导入条目（有表头走标准模板；无表头走旧版行解析，归属当前习题集/课时）
+function ecQuizImportRows(rows) {
+    const items = [], errors = [];
+    let map = null, startIdx = 0;
+    for (let i = 0; i < Math.min((rows || []).length, 5); i++) {
+        const m = ecQuizDetectHeader(rows[i]);
+        if (m) { map = m; startIdx = i + 1; break; }
+    }
+    if (map) {
+        for (let i = startIdx; i < rows.length; i++) {
+            const row = rows[i] || [];
+            if (!row.some(c => String(c == null ? '' : c).trim() !== '')) continue;
+            const r = ecQuizTemplateItem(row, map);
+            if (r.error) errors.push({ row: i + 1, reason: r.error });
+            else items.push(r.item);
+        }
+    } else {
+        const qs = ecQuizLinesToQuestions((rows || []).map(r => (r || []).join('\t')));
+        qs.forEach(qq => items.push({ book: '', lesson: '', qNo: 0, q: qq }));
+        if (!qs.length) errors.push({ row: 0, reason: '没能识别出题目，请检查文件格式（可参考导入说明）' });
+    }
+    return { items, errors, templated: !!map };
+}
+// 解析导入目标（纯函数：不创建任何数据；book/lesson 为已存在对象或 null；ctxBookId 为「导入到本书」的指定书）
+function ecQuizImportTarget(it, ctxBookId) {
     const q = ecQuizData();
-    if (!q.banks.length) { toast('还没有题库，请先导入'); return; }
-    const v = await uiModal({
-        title: '🎯 选择当前题库',
-        html: q.banks.map(b => {
-            const bp = ecQuizBankProgress(b);
-            const cur = q.settings.bankId === b.id;
-            return `<label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer${cur ? ';background:rgba(52,199,89,0.10)' : ''}"><input type="radio" name="ecQuizBankPick" value="${b.id}" ${cur ? 'checked' : ''}> ${escapeHtml(b.name)}<span style="margin-left:auto;font-size:12px;color:var(--text-secondary)">${bp.done}/${bp.total}</span></label>`;
-        }).join(''),
-        getValue: () => {
-            const els = document.getElementsByName('ecQuizBankPick');
-            for (const el of els) { if (el.checked) return el.value; }
-            return null;
-        },
-        okText: '设为目标题库'
+    let book = it.book ? q.banks.find(b => b.name === it.book) : (ecQuizBookById(ctxBookId || q.settings.bankId) || q.banks[0] || null);
+    let lesson = null;
+    if (book && it.lesson) lesson = book.lessons.find(l => l.name === it.lesson) || null;
+    if (book && !it.lesson) lesson = book.lessons.find(l => l.id === q.settings.lessonId) || book.lessons.find(l => l.questions.length) || null;
+    return {
+        book,
+        bookName: book ? book.name : (it.book || '导入习题集'),
+        lesson,
+        lessonName: lesson ? lesson.name : (it.lesson || '导入题目')
+    };
+}
+// 应用导入：按需创建习题集/课时；strategy = 'append'（默认）或 'overwrite'（清空目标课时原题）
+function ecQuizApplyImport(items, strategy, ctxBookId) {
+    const q = ecQuizData();
+    const targetOf = (it) => ecQuizImportTarget(it, ctxBookId);
+    // 覆盖策略：先清空已存在目标课时的原题（每课时只清一次）
+    if (strategy === 'overwrite') {
+        const seen = {};
+        items.map(targetOf).forEach(p => {
+            if (!p.lesson || seen[p.lesson.id]) return;
+            seen[p.lesson.id] = 1;
+            p.lesson.questions.forEach(it2 => {
+                const k = p.lesson.id + '|' + it2.id;
+                delete q.progress[k]; delete q.wrong[k]; delete q.fav[k];
+            });
+            p.lesson.questions = [];
+        });
+    }
+    let added = 0, lastBook = null, lastLesson = null;
+    const bookNames = {}, lessonNames = {};
+    items.forEach(it => {
+        // 逐条解析目标：前面条目新建的书/课，后面同名条目会并进去
+        const p = targetOf(it);
+        let book = p.book;
+        if (!book) {
+            book = { id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: p.bookName, tag: '导入', source: '批量导入', createdAt: now(), lessons: [] };
+            q.banks.push(book);
+        }
+        let lesson = p.lesson;
+        if (!lesson) {
+            lesson = { id: 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: p.lessonName, sort: book.lessons.length, createdAt: now(), questions: [] };
+            book.lessons.push(lesson);
+        }
+        lesson.questions.push(it.q);
+        added++;
+        lastBook = book; lastLesson = lesson;
+        bookNames[book.name] = 1;
+        lessonNames[book.name + ' › ' + lesson.name] = 1;
     });
-    if (v == null || !v) return;
-    ecQuizUseBank(v);
+    if (lastBook) {
+        q.settings.bankId = lastBook.id;
+        if (lastLesson) q.settings.lessonId = lastLesson.id;
+    }
+    return { added, books: Object.keys(bookNames), lessons: Object.keys(lessonNames) };
+}
+// 文件 → 行数组（xlsx/docx/pdf 为多列行；csv 按分隔符切列；txt 保持整行走文本排版解析）
+async function ecQuizFileRows(file) {
+    const name = String(file.name || '').toLowerCase();
+    if (name.endsWith('.xls') && !name.endsWith('.xlsx')) throw new Error('旧版 .xls 格式暂不支持，请用 Excel 另存为 .xlsx 或 CSV');
+    if (name.endsWith('.pdf')) return (await ecQuizParsePDF(file)).map(l => [l]);
+    if (name.endsWith('.xlsx')) return await ecQuizXLSXRows(await file.arrayBuffer());
+    if (name.endsWith('.docx')) return (await ecQuizParseDOCX(await file.arrayBuffer())).map(l => [l]);
+    const text = await file.text();
+    return text.split(/\r?\n/).filter(l => l.trim() !== '').map(l => (name.endsWith('.csv') ? ecSplitCSVLine(l) : [l.trim()]));
+}
+// CSV 行切列（尊重引号；选项内容里的 || 不受影响）
+function ecSplitCSVLine(line) {
+    const out = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQ) {
+            if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+            else cur += ch;
+        } else if (ch === '"') inQ = true;
+        else if (ch === ',' || ch === '，' || ch === '\t') { out.push(cur.trim()); cur = ''; }
+        else cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
 }
 async function ecQuizImportOpen(bankId) {
     const v = await uiModal({
         title: '📥 导入题库',
         html: `<div class="ec-hint" style="line-height:1.8">选择题库文件，<b>本地解析、不上传</b>。<br>
-               支持：<b>xlsx / xls / csv / txt / docx / pdf</b><br><br>
-               <b>表格列顺序</b>（Excel/CSV，第一行表头会自动跳过）：<br>
-               题型（可省）→ 题干 → 选项A → 选项B → 选项C → 选项D → 答案 → 解析（可省）<br><br>
-               <b>题型写法很宽松</b>，以下都能认：<br>
-               单选 / 单项选择 / 单选题 / 四选一 / A型题 / Single → 单选题<br>
-               多选 / 多项选择 / 不定项 / X型题 / Multi → 多选题<br>
-               判断 / 判断题 / 是非题 / 对错题 / 辨析题 / T-F → 判断题<br>
-               简答 / 问答 / 论述 / 名词解释 / 填空 / 翻译 / 作文 → 主观题<br>
-               <span style="color:var(--text-secondary)">也可以不写题型列，系统会按选项和答案自动判断；题干里写「（单选）」「【多选题】」「（判断题）」标记也能识别并自动去掉。</span><br><br>
-               <b>答案写法</b>：单选 <b>A</b>；多选 <b>AC</b> 或 <b>A,C</b>；判断 <b>对/错</b>、<b>正确/错误</b>、<b>T/F</b>、<b>√/×</b>；主观题留空或写参考要点。<br><br>
-               <b>文本排版</b>（Word/PDF/TXT，按行识别）：<br>
+               支持：<b>xlsx / csv / txt / docx / pdf</b>（旧版 .xls 请先另存为 .xlsx）<br><br>
+               <b>标准模板</b>（Excel 表头按名识别，列顺序随意）：<br>
+               <b>习题集名称</b> → <b>课时名称</b> → 题号 → 题目类型 → <b>题干</b> → 选项内容（多个用 <b>||</b> 或换行隔开；也支持选项A~D 分列）→ <b>参考答案</b> → 解析<br>
+               不写习题集/课时名的题目，会导入到当前习题集的当前课时。<br><br>
+               <b>题型</b>：单选题 / 多选题 / 判断题 / 填空题 / 阅读理解 / 作文题<br>
+               <b>答案写法</b>：单选 <b>A</b>；多选 <b>AC</b> 或 <b>A,C</b>；判断 <b>正确/错误</b>（也认对错、T/F、√/×）；填空多个可接受答案用 <b>||</b> 隔开；作文填范文/评分要点。<br><br>
+               <b>文本排版</b>（Word/PDF/TXT 也会按行识别）：<br>
                1. 题干内容……<br>
                A. 选项一&nbsp;&nbsp;B. 选项二&nbsp;&nbsp;C. 选项三<br>
-               答案：A（也认「正确答案 / 参考答案 / 【答案】」）<br>
+               答案：A（也认「正确答案 / 参考答案 /【答案】」）<br>
                解析：……（也认「答案解析 / 分析」）<br><br>
-               <span style="color:var(--text-secondary)">提示：扫描版 PDF 无法提取文字，请用文字版 PDF 或 Excel/Word 导入。</span></div>
-               <input type="file" id="ecQuizFile" accept=".xlsx,.xls,.csv,.txt,.docx,.pdf" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:13px;margin-top:10px">`,
+               <span style="color:var(--text-secondary)">提示：扫描版 PDF 无法提取文字；同名课时可选「追加」或「覆盖」；导入完成后会列出失败行与原因。</span></div>
+               <input type="file" id="ecQuizFile" accept=".xlsx,.csv,.txt,.docx,.pdf" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:13px;margin-top:10px">`,
         getValue: () => {
             const el = document.getElementById('ecQuizFile');
             const f = el && el.files && el.files[0];
@@ -11621,32 +12312,54 @@ async function ecQuizImportOpen(bankId) {
         okText: '解析并导入'
     });
     if (v == null) return;
-    let questions = [];
+    let rows = [];
     try {
-        questions = await ecQuizParseFile(v);
+        rows = await ecQuizFileRows(v);
     } catch (e) {
         toast('解析失败：' + (e && e.message ? e.message : '文件格式不支持'));
         return;
     }
-    if (!questions.length) { toast('没能解析出题目，请检查文件格式（可参考导入说明）'); return; }
-    const typeCount = {};
-    questions.forEach(it => { typeCount[EC_QUIZ_TYPE_NAMES[it.type] || it.type] = (typeCount[EC_QUIZ_TYPE_NAMES[it.type] || it.type] || 0) + 1; });
-    const summary = Object.keys(typeCount).map(k => `${k} ${typeCount[k]} 题`).join(' · ');
-    const defaultName = String(v.name || '导入题库').replace(/\.[^.]+$/, '').slice(0, 30);
-    const name = await uiPrompt('题库名称', defaultName, { title: '📝 确认导入', placeholder: '给题库起个名字' });
-    if (name == null || !String(name).trim()) return;
-    const q = ecQuizData();
-    let bank = bankId ? ecQuizBankById(bankId) : null;
-    if (bank) {
-        bank.questions = bank.questions.concat(questions);
-    } else {
-        bank = { id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: String(name).trim(), tag: '导入', source: String(v.name || '').slice(0, 40), createdAt: now(), questions };
-        q.banks.push(bank);
+    if (!rows.length) { toast('文件里没有内容'); return; }
+    const res = ecQuizImportRows(rows);
+    if (!res.items.length) {
+        toast(res.errors.length ? '导入失败：' + res.errors[0].reason : '没能解析出题目，请检查文件格式（可参考导入说明）');
+        return;
     }
-    q.settings.bankId = bank.id;
+    // 目标课时已有题目时，询问追加 / 覆盖
+    const plan = res.items.map(it => ecQuizImportTarget(it, bankId || ''));
+    const dupLessons = {};
+    plan.forEach(p => { if (p.lesson && p.lesson.questions.length) dupLessons[p.lesson.id] = p.lesson.name; });
+    let strategy = 'append';
+    if (Object.keys(dupLessons).length) {
+        const names = Object.keys(dupLessons).map(k => dupLessons[k]).slice(0, 3).join('、');
+        const s = await uiModal({
+            title: '📥 导入方式',
+            html: `<div class="ec-hint" style="line-height:1.9">以下课时已有题目：<b>${escapeHtml(names)}</b>${Object.keys(dupLessons).length > 3 ? ' 等' : ''}<br><br>
+                <label style="display:block;font-weight:600;padding:8px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px"><input type="radio" name="ecQuizStrategy" value="append" checked> 追加到课时后面（保留原题）</label>
+                <label style="display:block;font-weight:600;padding:8px 10px;border:1px solid var(--border);border-radius:10px"><input type="radio" name="ecQuizStrategy" value="overwrite"> 覆盖课时原有题目（清空后导入）</label></div>`,
+            getValue: () => {
+                const els = document.getElementsByName('ecQuizStrategy');
+                for (const el of els) { if (el.checked) return el.value; }
+                return 'append';
+            },
+            okText: '开始导入'
+        });
+        if (s == null) return;
+        strategy = s || 'append';
+    }
+    const out = ecQuizApplyImport(res.items, strategy, bankId || '');
+    const typeCount = {};
+    res.items.forEach(it => { const n = EC_QUIZ_TYPE_NAMES[it.q.type] || it.q.type; typeCount[n] = (typeCount[n] || 0) + 1; });
+    const summary = Object.keys(typeCount).map(k => `${k} ${typeCount[k]}`).join(' · ');
     state._quizView = 'banks';
-    ecAfterAction(`📥 已导入「${bank.name}」${questions.length} 题（${summary}）`);
+    let msg = `📥 已导入 ${out.added} 题（${summary}）`;
+    if (res.errors.length) msg += `，${res.errors.length} 行失败`;
+    ecAfterAction(msg);
     render();
+    if (res.errors.length) {
+        const detail = res.errors.slice(0, 8).map(e => `第 ${e.row} 行：${e.reason}`).join('<br>');
+        uiModal({ title: '⚠️ 部分行导入失败', html: `<div class="ec-hint" style="line-height:1.8">${detail}${res.errors.length > 8 ? '<br>……其余省略' : ''}</div>`, okText: '知道了' });
+    }
 }
 
 // ---------- 导入解析器 ----------
@@ -11674,7 +12387,9 @@ function ecQuizNormType(t) {
     if (/^(?:单选|单项选择|单项选择题|单选题|四选一|a型题|a型|single|singlechoice|radio|choice)$/.test(S)) return 'single';
     if (/^(?:多选|多项选择|多项选择题|多选题|不定项选择|不定项|x型题|x型|multi|multiple|multiplechoice|multichoice)$/.test(S)) return 'multi';
     if (/^(?:判断|判断题|判断是非|是非题|对错题|对错|辨析题|辨析|truefalse|torf|tf|trueorfalse|judge|judgment)$/.test(S)) return 'judge';
-    if (/^(?:简答|简答题|问答|问答题|主观|主观题|论述|论述题|名词解释|填空|填空题|翻译|作文|计算|证明|案例分析|改错|essay|text|qa|shortanswer|fill|blank)$/.test(S)) return 'essay';
+    if (/^(?:阅读|阅读理解|阅读理解题|篇章阅读|完形填空|cloze|reading|comprehension)$/.test(S)) return 'reading';
+    if (/^(?:填空|填空题|fill|blank|fillintheblank)$/.test(S)) return 'fill';
+    if (/^(?:简答|简答题|问答|问答题|主观|主观题|论述|论述题|名词解释|翻译|作文|作文题|计算|证明|案例分析|改错|essay|text|qa|shortanswer)$/.test(S)) return 'essay';
     return '';
 }
 // 题干内嵌题型标记：「（单选）……」「【多选题】……」「（判断题）……」→ 取出类型并剥掉标记
@@ -11682,7 +12397,7 @@ function ecQuizNormType(t) {
 function ecQuizTypeFromStem(stem) {
     const raw = String(stem == null ? '' : stem).trim();
     const s = ecFullToHalf(raw);
-    const m = /^[（(【\[]\s*(单选|单项选择|单选题|多选|多项选择|多选题|不定项|判断|判断题|是非题|对错题|辨析|简答|简答题|问答|问答题|论述|名词解释|填空|翻译|作文|案例分析)\s*(?:题|型)?\s*[）)】\]]/.exec(s);
+    const m = /^[（(【\[]\s*(单选|单项选择|单选题|多选|多项选择|多选题|不定项|判断|判断题|是非题|对错题|辨析|阅读|阅读理解|填空|填空题|简答|简答题|问答|问答题|论述|名词解释|翻译|作文|作文题|案例分析)\s*(?:题|型)?\s*[）)】\]]/.exec(s);
     if (!m) return { type: '', stem: raw };
     return { type: ecQuizNormType(m[1]), stem: raw.slice(m[0].length).trim() };
 }
@@ -11701,17 +12416,23 @@ function ecQuizNormQuestion(raw) {
     const ansRaw = ecFullToHalf(String(raw.answer == null ? '' : raw.answer)).trim();
     if (!type) {
         if (options.length === 0 && /^(?:对|错|正确|错误|是|否|√|×|✓|✗|t|f|true|false|y|n)$/i.test(ansRaw)) type = 'judge';
+        else if (ansRaw.indexOf('||') >= 0) type = 'fill';
         else if (/^[A-Ha-h](?:[,，、\s]*[A-Ha-h])+$/.test(ansRaw)) type = 'multi';
         else if (/^[A-Ha-h]$/.test(ansRaw) && options.length >= 1) type = 'single';
         else if (options.length >= 2) type = 'single';
         else type = 'essay';
     }
+    // 填空/阅读却带了一组选项 → 按单选处理（防止模板串列）
+    if ((type === 'fill' || type === 'reading') && options.length >= 2) type = 'single';
     const opts = (type === 'judge' && options.length === 0) ? ['对', '错'] : options;
     let answer;
     if (type === 'essay') {
         answer = ansRaw;
     } else if (type === 'judge') {
         answer = /^(?:对|正确|是|√|✓|t|true|y|yes|1)$/i.test(ansRaw) ? 0 : 1;
+    } else if (type === 'fill' || type === 'reading') {
+        answer = ansRaw.split(/\|\||[;；/、]|\r?\n/).map(s => s.trim()).filter(s => s !== '');
+        if (!answer.length && ansRaw) answer = [ansRaw];
     } else {
         const letters = ansRaw.toUpperCase().match(/[A-H]/g) || [];
         if (!letters.length && /^\d{1,2}$/.test(ansRaw)) {
@@ -11868,7 +12589,7 @@ function ecXmlTexts(xml, tag) {
     while ((m = re.exec(xml))) res.push(ecXmlUnescape(m[1].replace(/<[^>]+>/g, '')));
     return res;
 }
-async function ecQuizParseXLSX(buf) {
+async function ecQuizXLSXRows(buf) {
     const z = await ecUnzipEntries(buf);
     const shared = z['xl/sharedStrings.xml'] ? ecXmlTexts(z['xl/sharedStrings.xml'], 't') : [];
     const sheetName = Object.keys(z).filter(n => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort()[0];
@@ -11895,6 +12616,11 @@ async function ecQuizParseXLSX(buf) {
         rows.push(cells);
     }
     if (!rows.length) throw new Error('xlsx 中没有数据行');
+    return rows;
+}
+// 旧版入口：xlsx → 题目数组（供测试与兼容保留）
+async function ecQuizParseXLSX(buf) {
+    const rows = await ecQuizXLSXRows(buf);
     return ecQuizLinesToQuestions(rows.map(r => r.join('\t')));
 }
 function ecDocxLines(xml) {
@@ -11949,16 +12675,49 @@ function ecQuizMerge(win, lose) {
     if (!lose) return win;
     const byId = (arr) => { const m = new Map(); (arr || []).forEach(b => { if (b && b.id != null) m.set(b.id, b); }); return m; };
     const bMap = byId(win.banks);
-    (lose.banks || []).forEach(b => { if (b && b.id != null && !bMap.has(b.id)) bMap.set(b.id, b); });
+    (lose.banks || []).forEach(b => {
+        if (!b || b.id == null) return;
+        if (bMap.has(b.id)) {
+            // 同一习题集：课时按 id 并集（题目多的那边为准，避免同课时两份题目）
+            const wb = bMap.get(b.id);
+            const lMap = byId(wb.lessons);
+            (b.lessons || []).forEach(l => {
+                if (!l || l.id == null) return;
+                if (lMap.has(l.id)) {
+                    const wl = lMap.get(l.id);
+                    if ((l.questions || []).length > (wl.questions || []).length) lMap.set(l.id, l);
+                } else {
+                    lMap.set(l.id, l);
+                }
+            });
+            wb.lessons = Array.from(lMap.values());
+        } else {
+            bMap.set(b.id, b);
+        }
+    });
     const pick = (a, b) => Object.assign({}, a || {}, b || {});
     const ws = win.stats || { done: 0 }, ls = lose.stats || { done: 0 };
+    // 刷题记录：两端合并 + 按 id 去重 + 按时间倒序 + 封顶
+    const recs = [];
+    const seenRec = {};
+    (win.records || []).concat(lose.records || []).forEach(r => {
+        if (!r) return;
+        const k = r.id || ((r.at || 0) + '|' + r.lessonId + '|' + (r.score || 0));
+        if (seenRec[k]) return;
+        seenRec[k] = 1;
+        recs.push(r);
+    });
+    recs.sort((a, b) => (b.at || 0) - (a.at || 0));
+    if (recs.length > EC_QUIZ_RECORDS_CAP) recs.length = EC_QUIZ_RECORDS_CAP;
     return {
+        _v: 2,
         banks: Array.from(bMap.values()),
         progress: pick(lose.progress, win.progress),
         wrong: pick(lose.wrong, win.wrong),
         fav: pick(lose.fav, win.fav),
+        records: recs,
         stats: (ws.done || 0) >= (ls.done || 0) ? win.stats : lose.stats,
-        settings: win.settings || lose.settings || { bankId: '', mode: 'order' }
+        settings: win.settings || lose.settings || { bankId: '', lessonId: '' }
     };
 }
 // 背诵：mode = 'learn'（旧入口，默认 Good 入库）或 1/2/3/4（四档自评；无记录时=初学入池）
@@ -12593,23 +13352,39 @@ document.addEventListener('click', async e => {
     if (action === 'ec-early-review') { state._ecEarlyId = state._ecEarlyId === el.dataset.lesson ? null : el.dataset.lesson; render(); return; }
     if (action === 'ec-toggle-add') { state._ecAddOpen = !state._ecAddOpen; render(); return; }
     // ---------- 刷题题库 ----------
-    if (action === 'ec-quiz-view') { state._quizView = el.dataset.v; state._quizSession = null; if (el.dataset.v === 'play') {} render(); return; }
-    if (action === 'ec-quiz-start') { ecQuizStart(el.dataset.mode); return; }
+    if (action === 'ec-quiz-view') { state._quizView = el.dataset.v; state._quizSession = null; render(); return; }
+    if (action === 'ec-quiz-bank') { state._quizBookId = el.dataset.id; state._quizView = 'lessons'; state._quizSession = null; render(); return; }
+    if (action === 'ec-quiz-start') { ecQuizStart(el.dataset.mode, el.dataset.bank, el.dataset.lesson); return; }
+    if (action === 'ec-quiz-practice') { ecQuizPractice(el.dataset.mode, el.dataset.bank, el.dataset.lesson); return; }
     if (action === 'ec-quiz-pick') { ecQuizPick(parseInt(el.dataset.i, 10)); return; }
-    if (action === 'ec-quiz-submit') { ecQuizSubmit(); return; }
-    if (action === 'ec-quiz-self') { ecQuizSelf(el.dataset.v); return; }
-    if (action === 'ec-quiz-next') { ecQuizNext(); return; }
+    if (action === 'ec-quiz-go') { ecQuizGo(parseInt(el.dataset.d, 10)); return; }
+    if (action === 'ec-quiz-submit-exam') { ecQuizSubmitExam(); return; }
+    if (action === 'ec-quiz-self') { ecQuizSelf(el.dataset.k, el.dataset.v); return; }
     if (action === 'ec-quiz-exit') { ecQuizExit(); return; }
     if (action === 'ec-quiz-fav') { ecQuizToggleFav(); return; }
-    if (action === 'ec-quiz-master') { ecQuizSetMastered(el.dataset.q); return; }
-    if (action === 'ec-quiz-unfav') { ecQuizUnfav(el.dataset.q); return; }
-    if (action === 'ec-quiz-use') { ecQuizUseBank(el.dataset.id); return; }
-    if (action === 'ec-quiz-del') { ecQuizDelBank(el.dataset.id); return; }
-    if (action === 'ec-quiz-delq') { ecQuizDelQuestion(el.dataset.bank, el.dataset.q); return; }
-    if (action === 'ec-quiz-export') { ecQuizExport(el.dataset.id); return; }
-    if (action === 'ec-quiz-manage') { state._quizManageBankId = el.dataset.id; state._quizView = 'manage'; render(); return; }
+    if (action === 'ec-quiz-favk') { ecQuizToggleFavKey(el.dataset.k); return; }
+    if (action === 'ec-quiz-master') { ecQuizSetMastered(el.dataset.k); return; }
+    if (action === 'ec-quiz-unfav') { ecQuizUnfav(el.dataset.k); return; }
+    if (action === 'ec-quiz-note') { ecQuizFavNote(el.dataset.k); return; }
+    if (action === 'ec-quiz-wrong-book') { state._quizWrongBook = el.dataset.id || ''; render(); return; }
+    if (action === 'ec-quiz-fav-book') { state._quizFavBook = el.dataset.id || ''; render(); return; }
+    if (action === 'ec-quiz-newbank') { ecQuizNewBook(); return; }
+    if (action === 'ec-quiz-renbank') { ecQuizRenBook(el.dataset.id); return; }
+    if (action === 'ec-quiz-delbank') { ecQuizDelBook(el.dataset.id); return; }
+    if (action === 'ec-quiz-newlesson') { ecQuizNewLesson(el.dataset.book); return; }
+    if (action === 'ec-quiz-renlesson') { ecQuizRenLesson(el.dataset.lesson); return; }
+    if (action === 'ec-quiz-dellesson') { ecQuizDelLesson(el.dataset.lesson); return; }
+    if (action === 'ec-quiz-manage') { state._quizManageLessonId = el.dataset.lesson; state._quizView = 'manage'; state._quizSession = null; render(); return; }
+    if (action === 'ec-quiz-delq') { ecQuizDelQuestion(el.dataset.lesson, el.dataset.q); return; }
+    if (action === 'ec-quiz-export') { ecQuizExport(el.dataset.lesson); return; }
     if (action === 'ec-quiz-import') { ecQuizImportOpen(el.dataset.id || ''); return; }
-    if (action === 'ec-quiz-pick-bank') { ecQuizPickBank(); return; }
+});
+
+// 填空/作文输入：直接写入会话，不触发重渲染（避免输入过程焦点丢失）
+document.addEventListener('input', e => {
+    const el = e.target;
+    if (!el || !el.dataset || el.dataset.action !== 'ec-quiz-input') return;
+    if (typeof ecQuizInput === 'function') ecQuizInput(el.value);
 });
 
 
