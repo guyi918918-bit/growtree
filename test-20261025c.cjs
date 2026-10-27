@@ -119,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizFeedbackBlock, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizCheck, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizFeedbackBlock, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizCheck, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, getElementsByName: (name) => { const k = '__byname_' + name; if (!elCache[k]) elCache[k] = []; return elCache[k]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
@@ -1393,6 +1393,44 @@ ok('分发器含 ec-batch-zh', /if \(action === 'ec-batch-zh'\)/.test(APP));
     // 全角空格 + 标点全不同
     const r5 = EC.ecBatchZhParse('L25、L26　Mrs．Smith’s　kitchen\n中文A', names2);
     ok('全角空格/全角句点也命中', (r5.map["L25、L26 Mrs. Smith's kitchen"] || '') === '中文A');
+    // v20261026i：// 分割线模式 + 课次编号兜底 + unknownTitles
+    const names3 = ['L1、L2 Excuse me!', 'L3、L4 Sorry, sir.', 'L15、L16 Your passports, please.'];
+    const sepText = [
+        'L1、L2 Excuse me!',
+        '对不起！',
+        '什么事？',
+        '这是您的手提包吗？',
+        '//',
+        'L3、L4 Sorry, sir.',
+        '请把我的大衣和伞拿给我。',
+        '//',
+        'L15, L16 Your passports, please.',   // 逗号 + 标题与课时名标点不同
+        '请出示您的护照。'
+    ].join('\n');
+    const r6 = EC.ecBatchZhParse(sepText, names3);
+    ok('// 分割线模式生效', r6.mode === 'sep');
+    ok('// 模式：单元 1 归入 L1、L2', (r6.map['L1、L2 Excuse me!'] || '').includes('手提包'));
+    ok('// 模式：单元 2 归入 L3、L4', (r6.map['L3、L4 Sorry, sir.'] || '').includes('大衣'));
+    ok('// 模式：编号兜底命中 L15、L16', (r6.map['L15、L16 Your passports, please.'] || '') === '请出示您的护照。');
+    ok('// 模式：无未匹配/无未知标题', r6.unmatched.length === 0 && r6.unknownTitles.length === 0);
+    // 未知标题清单
+    const r7 = EC.ecBatchZhParse('L1、L2 Excuse me!\n中文一\n//\nL99、L100 完全不存在的课\n中文二', names3);
+    ok('未对上标题进入 unknownTitles', r7.unknownTitles.length === 1 && r7.unknownTitles[0].includes('L99'));
+    ok('未对上单元不影响已匹配单元', (r7.map['L1、L2 Excuse me!'] || '') === '中文一');
+    ok('未匹配课时列出', r7.unmatched.length === 2);
+    // 无 // 时仍走标题行模式（兼容）
+    const r8 = EC.ecBatchZhParse('L1、L2 Excuse me!\n中文A\nL3、L4 Sorry, sir.\n中文B', names3);
+    ok('无 // 兼容标题行模式', r8.mode === 'title' && (r8.map['L1、L2 Excuse me!'] || '') === '中文A' && (r8.map['L3、L4 Sorry, sir.'] || '') === '中文B');
+    // ecZhTitleNums 编号提取
+    ok('编号提取 L1、L2 → [1,2]', JSON.stringify(EC.ecZhTitleNums('L1、L2 Excuse me!')) === '[1,2]');
+    ok('编号提取 Lesson 113 → [113]', JSON.stringify(EC.ecZhTitleNums('Lesson 113')) === '[113]');
+    // v20261026j：编号优先 + 宽容格式——文字部分完全不同也命中
+    const r9 = EC.ecBatchZhParse('L1, L2 打招呼用语\n中文甲\n//\nL03、L04 道歉\n中文乙', names3);
+    ok('编号优先：文字全不同也命中 L1、L2', (r9.map['L1、L2 Excuse me!'] || '') === '中文甲');
+    ok('前导零 L03 编号命中 L3、L4', (r9.map['L3、L4 Sorry, sir.'] || '') === '中文乙');
+    const r10 = EC.ecBatchZhParse('1、2 Excuse me!\n无前缀数字标题的中文', ['1、2 Excuse me! Is this your...?']);
+    ok('无前缀行首数字（1、2）也命中', (r10.map['1、2 Excuse me! Is this your...?'] || '') === '无前缀数字标题的中文');
+    ok('编号提取 1、2 → [1,2]', JSON.stringify(EC.ecZhTitleNums('1、2 Excuse me!')) === '[1,2]');
 }
 // 3. v20261026h：清空中文课文 + 导入预览确认
 ok('ecClearZh 函数存在', /async function ecClearZh/.test(APP));

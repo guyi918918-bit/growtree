@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261026h';
+const APP_BUILD = '20261026j';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -10974,18 +10974,39 @@ function ecEditLessonZh(id) {
         ecAfterAction(v ? '已保存中文课文，背诵板块直接看中文背英文' : '已清空中文课文');
     });
 }
-// 解析整本中文课文：以「课时名」整行作为分段起点，其下内容归入该课（不依赖空行）。
-// 匹配层层放宽，抗 TXT 的空格/标点/引号差异：
-//   ① 精确（去首尾空格） ② 归一化（小写+合并空白） ③ 去标点归一化（只剩字母/数字/汉字再比，
-//      弯引号'与直引号'、顿号、全角空格、逗号句号差异全免疫） ④ 去标点前缀匹配（标题简写/截断）
+// 提取标题中的课次编号序列（如 "L1、L2 Excuse me!" → [1,2]，"Lesson 3" → [3]，"第113课" → [113]）。
+// 有 L/Lesson/Unit/课/第 前缀编号时优先用；没有则回退行首数字连写（"1、2 Excuse me!" → [1,2]）
+function ecZhTitleNums(s) {
+    const str = String(s || '');
+    let m = str.toLowerCase().match(/(?:l|lesson|unit|课|第)\s*[0-9]{1,3}/g) || [];
+    if (!m.length) {
+        const head = str.match(/^[ \t　]*[0-9]{1,3}(?:[ \t　]*[、，,&\/\-~～至到][ \t　]*[0-9]{1,3})*/);
+        if (head) m = head[0].match(/[0-9]{1,3}/g) || [];
+    }
+    return m.map(x => parseInt(String(x).replace(/[^0-9]/g, ''), 10)).filter(n => n > 0);
+}
+// 解析整本中文课文，两种模式：
+// ① 分割线模式（推荐）：单元之间用单独一行的「//」分隔，每个单元第一行 = 课时标题，其余行 = 中文；
+// ② 标题行模式（兼容旧用法）：以「课时名」整行作为分段起点，其下内容归入该课（不依赖空行）。
+// 标题匹配层层放宽（抗 TXT 空格/标点差异）：精确 → 课次编号（优先，文字差异不影响）→ 去标点归一化 → 去标点前缀
 function ecBatchZhParse(text, lessonNames) {
     const norm = (s) => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
     const strip = (s) => norm(s).replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
     const names = (lessonNames || []);
-    const byNorm = {}, byStrip = {};
-    names.forEach(n => { byNorm[norm(n)] = n; byStrip[strip(n)] = n; });
+    const byNorm = {}, byStrip = {}, byNums = {};
+    names.forEach(n => {
+        byNorm[norm(n)] = n; byStrip[strip(n)] = n;
+        const nums = ecZhTitleNums(n);
+        if (nums.length) byNums[nums.join(',')] = n;
+    });
     const hitOf = (t) => {
         let hit = byNorm[norm(t)];
+        if (!hit) {
+            // 编号优先：标题里课次编号序列一致即直接命中（文字部分差异不影响）——
+            // "L1, L2 打招呼" ↔ 课时名 "L1、L2 Excuse me!" 也算同一课
+            const nums = ecZhTitleNums(t);
+            if (nums.length) hit = byNums[nums.join(',')];
+        }
         if (!hit) hit = byStrip[strip(t)];
         if (!hit) {
             const st = strip(t);
@@ -10998,22 +11019,44 @@ function ecBatchZhParse(text, lessonNames) {
         }
         return hit;
     };
+    const sepRe = /^\s*(?:\/\/+|／／+)\s*$/;
     const lines = String(text || '').split('\n');
-    const map = {};
-    const matched = {};
-    let cur = null, curBuf = [];
-    const flush = () => { if (cur && curBuf.length) { const c = curBuf.join('\n').trim(); if (c) map[cur] = c; } curBuf = []; };
-    for (let raw of lines) {
-        const t = raw.replace(/\r$/, '').trim();
-        if (!t) continue; // 空行忽略，不影响分段
-        const hit = hitOf(t);
-        if (hit) { flush(); cur = hit; matched[hit] = true; }
-        else if (cur) { curBuf.push(t); }
-        // 首个标题之前出现的内容：无归属，忽略
+    const useSep = lines.some(l => sepRe.test(l));
+    const map = {}, matched = {}, unknownTitles = [];
+    if (useSep) {
+        // ---- 分割线模式：// 行切单元，单元首行 = 标题 ----
+        let title = null, buf = [];
+        const flushUnit = () => {
+            if (title == null) return;
+            const content = buf.join('\n').trim();
+            const hit = hitOf(title);
+            if (hit) { if (content) map[hit] = content; matched[hit] = true; }
+            else unknownTitles.push(title);
+            title = null; buf = [];
+        };
+        for (let raw of lines) {
+            const t = raw.replace(/\r$/, '').trim();
+            if (sepRe.test(t)) { flushUnit(); continue; }
+            if (title == null) { if (t) title = t; continue; }
+            if (t) buf.push(t);
+        }
+        flushUnit();
+    } else {
+        // ---- 标题行模式：课时名整行 = 分段起点 ----
+        let cur = null, curBuf = [];
+        const flush = () => { if (cur && curBuf.length) { const c = curBuf.join('\n').trim(); if (c) map[cur] = c; } curBuf = []; };
+        for (let raw of lines) {
+            const t = raw.replace(/\r$/, '').trim();
+            if (!t) continue; // 空行忽略，不影响分段
+            const hit = hitOf(t);
+            if (hit) { flush(); cur = hit; matched[hit] = true; }
+            else if (cur) { curBuf.push(t); }
+            // 首个标题之前出现的内容：无归属，忽略
+        }
+        flush();
     }
-    flush();
     const unmatched = names.filter(n => !matched[n]);
-    return { map, unmatched };
+    return { map, unmatched, unknownTitles, mode: useSep ? 'sep' : 'title' };
 }
 // 整本批量导入中文课文（按课时名自动匹配）
 function ecBatchZhImport(bookId) {
@@ -11024,9 +11067,9 @@ function ecBatchZhImport(bookId) {
     const namesList = lessons.map(l => `<li>${escapeHtml(l.name)}</li>`).join('');
     uiModal({
         title: '📥 批量导入中文课文 · ' + book.name,
-        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">一次性粘贴整本书的中文课文：<b>每行单独写「课时名」作为分段起点</b>，下面紧跟该课中文（建议一句一行），空行多少都不影响。匹配已做<b>去标点/空格归一化</b>——引号（' '）、顿号、全角空格等差异不影响识别。点「导入」后会先显示<b>匹配预览</b>（写入哪几课、哪些没匹配上），确认后才写入。</div>
-               <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:13px">👀 本书现有课时名（粘贴标题请尽量保持一致）</summary><ul style="columns:2;font-size:12px;color:var(--text-secondary);margin:6px 0;padding-left:16px">${namesList}</ul></details>
-               <textarea id="ecBatchZhTA" rows="12" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.7" placeholder="Lesson 1&#10;对不起，这是你的手提包吗？&#10;这是一张漂亮的照片。&#10;（空行）&#10;Lesson 2&#10;……"></textarea>`,
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">一次性粘贴整本：<b>推荐用「//」作为单元分割线</b>——每个单元之间单独一行写「//」，单元<b>第一行写课时标题</b>（如 L1、L2 Excuse me!），下面紧跟该课中文，一句一行。没有「//」也能用：直接以课时名整行作为分段起点。匹配已做<b>去标点/空格归一化 + 课次编号兜底</b>（L15 ↔ L15、L16），引号、顿号、全角空格差异都不影响。点「导入」后会先显示<b>匹配预览</b>，确认后才写入。</div>
+               <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:13px">👀 本书现有课时名（对照用，标题不必完全一致）</summary><ul style="columns:2;font-size:12px;color:var(--text-secondary);margin:6px 0;padding-left:16px">${namesList}</ul></details>
+               <textarea id="ecBatchZhTA" rows="12" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.7" placeholder="L1、L2 Excuse me!&#10;对不起！&#10;什么事？&#10;这是您的手提包吗？&#10;//&#10;L3、L4 Sorry, sir.&#10;请把我的大衣和伞拿给我。&#10;这是我的牌子。&#10;//&#10;……"></textarea>`,
         getValue: () => (document.getElementById('ecBatchZhTA') || {}).value || '',
         okText: '导入'
     }).then(async t => {
@@ -11040,13 +11083,15 @@ function ecBatchZhImport(bookId) {
         const shown = names.filter(n => r.map[n] != null).slice(0, 12).join('、');
         const more = cnt > 12 ? ` 等 ${cnt} 课` : '';
         const un = r.unmatched.length ? `\n未匹配 ${r.unmatched.length} 课：${r.unmatched.slice(0, 15).join('、')}${r.unmatched.length > 15 ? ' 等' : ''}（这些课保持原样）` : '';
-        const okGo = await uiConfirm(`解析完成：将写入 ${cnt} 课（共 ${totalLines} 行中文）。已匹配：${shown}${more}。${un}\n确认导入吗？`, { title: '📥 导入预览', okText: '导入' });
+        const unk = (r.unknownTitles && r.unknownTitles.length) ? `\n⚠️ TXT 里 ${r.unknownTitles.length} 个标题没对上课时：${r.unknownTitles.slice(0, 10).join(' ｜ ')}${r.unknownTitles.length > 10 ? ' 等' : ''}（请对照上方课时名修正标题）` : '';
+        const okGo = await uiConfirm(`解析完成：将写入 ${cnt} 课（共 ${totalLines} 行中文）。已匹配：${shown}${more}。${un}${unk}\n确认导入吗？`, { title: '📥 导入预览', okText: '导入' });
         if (!okGo) return;
         const now = Date.now();
         lessons.forEach(l => { if (r.map[l.name] != null) { l.zh = r.map[l.name]; l.zhAt = now; } });
         if (state._ecZhHide) state._ecZhHide = {};
         const extra = r.unmatched.length ? `；未匹配 ${r.unmatched.length} 课：${r.unmatched.join('、')}` : '';
-        ecAfterAction(`已导入 ${cnt} 课中文课文${extra}`);
+        const extra2 = (r.unknownTitles && r.unknownTitles.length) ? `；TXT 标题未对上 ${r.unknownTitles.length} 个` : '';
+        ecAfterAction(`已导入 ${cnt} 课中文课文${extra}${extra2}`);
     });
 }
 // 清空中文课文（bookId 为空 = 全部书）；zhAt 更新保证跨设备合并时「清空」生效
