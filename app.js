@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261026d';
+const APP_BUILD = '20261026f';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -10591,7 +10591,14 @@ function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
     const mergeCatalog = (win, lose) => {
         const bMap = byId(win.books), lMap = byId(win.lessons);
         (lose.books || []).forEach(b => { if (b && b.id != null && !bMap.has(b.id)) bMap.set(b.id, b); });
-        (lose.lessons || []).forEach(l => { if (l && l.id != null && !lMap.has(l.id)) lMap.set(l.id, l); });
+        (lose.lessons || []).forEach(l => {
+            if (!l || l.id == null) return;
+            const mine = lMap.get(l.id);
+            if (!mine) { lMap.set(l.id, l); return; }
+            // 中文课文按 zhAt 新者胜：一端导入课文后合并，不被对端旧课时快照顶掉
+            const a = Number(mine.zhAt) || 0, b = Number(l.zhAt) || 0;
+            if (b > a && (l.zh || '') !== (mine.zh || '')) lMap.set(l.id, Object.assign({}, mine, { zh: l.zh, zhAt: l.zhAt }));
+        });
         return { books: Array.from(bMap.values()), lessons: Array.from(lMap.values()) };
     };
     const newerAt = (localEcAt && cloudEcAt && String(localEcAt) > String(cloudEcAt)) ? localEcAt : (cloudEcAt || localEcAt || '');
@@ -10943,6 +10950,28 @@ function ecEditLessonNote(id) {
         lesson.note = v;
         state._ecEditLessonId = null;
         ecAfterAction(v ? '已保存语法要点' : '已清空语法要点');
+    });
+}
+// 导入 / 编辑中文课文（背诵板块：看中文说英文自检）
+function ecEditLessonZh(id) {
+    const lesson = ecLessonById(id);
+    if (!lesson) return;
+    uiModal({
+        title: '🇨🇳 中文课文 · ' + lesson.name,
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">粘贴本课的<b>中文翻译</b>（建议一句一行）。保存后背诵板块直接显示中文 —— 背书时看中文 → 说出英文 → 再对照原文自检，不用再单独点开。</div>
+               <textarea id="ecZhTA" rows="12" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.7" placeholder="例如：&#10;对不起，这是你的手提包吗？&#10;打扰一下，请问我能坐在这里吗？">${escapeHtml(lesson.zh || '')}</textarea>
+               <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">保存后自动云同步到其他设备；背诵板块可用 🙈 隐藏中文凭记忆背诵。</div>`,
+        getValue: () => {
+            const v = (document.getElementById('ecZhTA') || {}).value || '';
+            return v.trim().slice(0, 8000);
+        },
+        okText: '保存'
+    }).then(v => {
+        if (v == null) return;
+        lesson.zh = v;
+        lesson.zhAt = Date.now();
+        if (state._ecZhHide) delete state._ecZhHide[id];
+        ecAfterAction(v ? '已保存中文课文，背诵板块直接看中文背英文' : '已清空中文课文');
     });
 }
 async function ecRenameLesson(id) {
@@ -11525,6 +11554,13 @@ function ecQuizPlayHTML() {
         inputArea = `<textarea class="ec-quiz-essay" data-action="ec-quiz-input" rows="5" placeholder="写下你的作答……">${escapeHtml(ans || '')}</textarea>
             <div class="ec-hint">作文题：不参与自动判分与计分，提交后可自评，也可收藏做笔记。</div>`;
     }
+    // 答题即时反馈：答完一题立即显示对错 / 你的答案 / 正确答案 / 解析（默认开，可在顶部开关关闭）
+    const inst = q.settings.instantFeedback !== false;
+    let confirmBtn = '';
+    if (inst && (question.type === 'fill' || question.type === 'reading' || question.type === 'essay')) {
+        confirmBtn = `<button class="btn btn-sm btn-primary ec-quiz-confirm" data-action="ec-quiz-check">✅ 确认答案</button>`;
+    }
+    const fb = (inst && s.checked && s.checked[key]) ? ecQuizFeedbackBlock(question, ans) : '';
     return `
     <div class="card ec-quiz-play">
         <div class="ec-quiz-play-top">
@@ -11532,16 +11568,38 @@ function ecQuizPlayHTML() {
             <div class="ec-quiz-play-progress">第 ${s.idx + 1} / ${total} 题 · 已答 ${answeredN}</div>
             <div class="ec-quiz-timer" title="本题已用时">⏱ ${ecQuizFmtSecs(elapsed)}</div>
             <button class="btn btn-sm btn-secondary" data-action="ec-quiz-fav" title="收藏本题">${faved ? '⭐' : '☆'}</button>
+            <label class="ec-quiz-fb-toggle" title="答完一题立即显示对错与解析；关闭则为考试模式，交卷后才看结果"><input type="checkbox" data-action="ec-quiz-fb-toggle" ${inst ? 'checked' : ''}> 即时反馈</label>
         </div>
         <div class="ec-quiz-bar"><div class="ec-quiz-bar-in" style="width:${Math.round(answeredN / total * 100)}%"></div></div>
         <div class="ec-quiz-tags"><span class="ec-quiz-tag">${EC_QUIZ_TYPE_NAMES[question.type] || '题目'}</span><span class="ec-quiz-tag">${escapeHtml(found.book.name)}</span><span class="ec-quiz-tag">${escapeHtml(found.lesson.name)}</span><span class="ec-quiz-tag">${modeTag}</span></div>
         <div class="ec-quiz-stem">${escapeHtml(question.stem)}</div>
         ${inputArea}
+        ${confirmBtn}
+        ${fb}
         <div class="ec-quiz-nav">
             <button class="btn btn-secondary" data-action="ec-quiz-go" data-d="-1" ${s.idx <= 0 ? 'disabled' : ''}>← 上一题</button>
             <button class="btn btn-secondary" data-action="ec-quiz-go" data-d="1" ${s.idx + 1 >= total ? 'disabled' : ''}>下一题 →</button>
         </div>
         <button class="btn btn-primary ec-quiz-submit" data-action="ec-quiz-submit-exam">📮 提交试卷${answeredN < total ? `（还有 ${total - answeredN} 题未答）` : ''}</button>
+    </div>`;
+}
+// 答题即时反馈块：答完一题立即显示对错 / 你的答案 / 正确答案 / 解析
+function ecQuizFeedbackBlock(question, ans) {
+    const isEssay = question.type === 'essay';
+    const ok = isEssay ? null : (ecQuizJudge(question, ans) === true);
+    const verdict = ok === true ? '✅ 回答正确' : ok === false ? '❌ 回答错误' : '📝 作文题不参与自动判分';
+    const vcls = ok === true ? 'ok' : ok === false ? 'no' : 'mid';
+    const yourAns = isEssay
+        ? `<div class="ec-quiz-answer">你的作答：<b>${escapeHtml((ans == null ? '' : String(ans)) || '（未作答）')}</b></div>`
+        : `<div class="ec-quiz-answer">你的答案：<b>${escapeHtml(ecQuizAnsText(question, ans))}</b></div>`;
+    const rightLabel = isEssay ? '参考范文 / 评分要点' : '正确答案';
+    const rightAns = `<div class="ec-quiz-answer">${rightLabel}：<b>${escapeHtml(ecQuizRightText(question))}</b></div>`;
+    const analysis = question.analysis ? `<div class="ec-quiz-analysis">💡 ${escapeHtml(question.analysis)}</div>` : '';
+    return `<div class="ec-quiz-fb">
+        <div class="ec-quiz-verdict ${vcls}">${verdict}</div>
+        ${yourAns}
+        ${rightAns}
+        ${analysis}
     </div>`;
 }
 function ecQuizResultHTML() {
@@ -11862,7 +11920,7 @@ function ecQuizStart(mode, bankId, lessonId) {
     if (mode === 'random') {
         for (let i = keys.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = keys[i]; keys[i] = keys[j]; keys[j] = t; }
     }
-    state._quizSession = { bankId: bank.id, lessonId: lesson.id, mode: mode || 'order', keys, idx: 0, ans: {}, startedAt: Date.now() };
+    state._quizSession = { bankId: bank.id, lessonId: lesson.id, mode: mode || 'order', keys, idx: 0, ans: {}, checked: {}, startedAt: Date.now() };
     state._quizView = 'play';
     render();
 }
@@ -11879,7 +11937,7 @@ function ecQuizPractice(mode, bankId, lessonId) {
         if (bk) keys = pool.filter(k => bk.lessons.some(l => k.indexOf(l.id + '|') === 0));
     }
     if (!keys.length) { toast(mode === 'wrong' ? '没有待攻克的错题' : '还没有收藏题目'); return; }
-    state._quizSession = { bankId: bankId || '', lessonId: lessonId || '', mode: mode || 'wrong', keys, idx: 0, ans: {}, startedAt: Date.now() };
+    state._quizSession = { bankId: bankId || '', lessonId: lessonId || '', mode: mode || 'wrong', keys, idx: 0, ans: {}, checked: {}, startedAt: Date.now() };
     state._quizView = 'play';
     render();
 }
@@ -11897,6 +11955,14 @@ function ecQuizPick(i) {
     } else {
         s.ans[key] = i;
     }
+    if (ecQuizData().settings.instantFeedback !== false) s.checked[key] = true; // 答题即时反馈：选择题点选即判定
+    render();
+}
+// 填空/阅读/作文：点「确认答案」后显示即时反馈（自由输入需显式确认）
+function ecQuizCheck() {
+    const s = state._quizSession;
+    if (!s) return;
+    s.checked[s.keys[s.idx]] = true;
     render();
 }
 // 填空/作文输入（input 事件直调，不触发重渲染，避免焦点丢失）
@@ -13180,10 +13246,27 @@ function ecTaskRow(lessonId, taskDef) {
 // 背诵面板（FSRS）
 function ecRecitePanel(lessonId) {
     const d = ecData();
+    const lesson = ecLessonById(lessonId);
     const rec = d.fsrs[lessonId];
     const st = ecReciteStatus(rec, Date.now());
     const rv = state._ecLastReview;
     const rvHtml = (rv && rv.id === lessonId) ? `<div class="ec-review-feedback">${escapeHtml(rv.text)}</div>` : '';
+    // 中文课文块：看中文说英文自检（默认显示；🙈 可隐藏凭记忆背诵）
+    const zhHidden = !!(state._ecZhHide && state._ecZhHide[lessonId]);
+    const zhLines = (lesson && lesson.zh) ? String(lesson.zh).split('\n').map(s => s.trim()).filter(Boolean) : [];
+    const zhBody = !lesson ? '' : !zhLines.length ? `
+            <div class="ec-zh-empty" data-action="ec-zh-edit" data-lesson="${lessonId}">🇨🇳 还没有导入中文课文，点这里粘贴本课中文翻译 —— 背书时<b>看中文 → 说英文</b>，自检更快更高效。</div>` : zhHidden ? `
+            <div class="ec-zh-text ec-zh-off">中文已隐藏 🙈 凭记忆背诵这一课，需要提示时点 👁 再看。</div>` : `
+            <div class="ec-zh-text">${zhLines.map(s => `<p>${escapeHtml(s)}</p>`).join('')}</div>`;
+    const zhHead = !lesson ? '' : `
+        <div class="ec-zh-head">
+            <span class="ec-zh-title">🇨🇳 中文课文 · 看中文说英文</span>
+            <span class="ec-zh-actions">
+                ${zhLines.length ? `<button class="ec-edit-btn" data-action="ec-zh-toggle" data-lesson="${lessonId}" title="${zhHidden ? '显示中文提示' : '隐藏中文（凭记忆背诵）'}">${zhHidden ? '👁' : '🙈'}</button>` : ''}
+                <button class="ec-edit-btn" data-action="ec-zh-edit" data-lesson="${lessonId}" title="导入 / 编辑中文课文">✏️</button>
+            </span>
+        </div>`;
+    const zhBox = !lesson ? '' : `<div class="ec-zh-box">${zhHead}${zhBody}</div>`;
     let body;
     if (st === 'new') {
         body = `
@@ -13235,7 +13318,7 @@ function ecRecitePanel(lessonId) {
             <span class="ec-group-title">📖 背诵板块 · 整篇课文</span>
             <span class="ec-group-sub">FSRS 复习曲线</span>
         </div>
-        <div class="ec-group-body">${body}${rvHtml}</div>
+        <div class="ec-group-body">${zhBox}${body}${rvHtml}</div>
     </div>`;
 }
 
@@ -13450,6 +13533,14 @@ document.addEventListener('click', async e => {
     if (action === 'ec-edit-time') { ecEditTaskTime(el.dataset.lesson, el.dataset.task); return; }
     if (action === 'ec-clear-records') { ecClearRecords(); return; }
     if (action === 'ec-recite') { ecReciteAction(el.dataset.lesson, el.dataset.mode); return; }
+    if (action === 'ec-zh-edit') { ecEditLessonZh(el.dataset.lesson); return; }
+    if (action === 'ec-zh-toggle') {
+        const id = el.dataset.lesson;
+        state._ecZhHide = state._ecZhHide || {};
+        state._ecZhHide[id] = !state._ecZhHide[id];
+        render();
+        return;
+    }
     if (action === 'ec-early-review') { state._ecEarlyId = state._ecEarlyId === el.dataset.lesson ? null : el.dataset.lesson; render(); return; }
     if (action === 'ec-toggle-add') { state._ecAddOpen = !state._ecAddOpen; render(); return; }
     // ---------- 刷题题库 ----------
@@ -13460,6 +13551,8 @@ document.addEventListener('click', async e => {
     if (action === 'ec-quiz-start') { ecQuizStart(el.dataset.mode, el.dataset.bank, el.dataset.lesson); return; }
     if (action === 'ec-quiz-practice') { ecQuizPractice(el.dataset.mode, el.dataset.bank, el.dataset.lesson); return; }
     if (action === 'ec-quiz-pick') { ecQuizPick(parseInt(el.dataset.i, 10)); return; }
+    if (action === 'ec-quiz-check') { ecQuizCheck(); return; }
+    if (action === 'ec-quiz-fb-toggle') { ecQuizData().settings.instantFeedback = el.checked ? true : false; render(); return; }
     if (action === 'ec-quiz-go') { ecQuizGo(parseInt(el.dataset.d, 10)); return; }
     if (action === 'ec-quiz-submit-exam') { ecQuizSubmitExam(); return; }
     if (action === 'ec-quiz-self') { ecQuizSelf(el.dataset.k, el.dataset.v); return; }

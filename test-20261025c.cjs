@@ -74,7 +74,7 @@ ok('CSS 有评价反馈条', /\.ec-review-feedback/.test(CSS));
 ok('打分后清除行内展开', /state\._ecEarlyId = null;/.test(APP));
 ok('打分后记录即时反馈', /state\._ecLastReview = \{ id: lessonId/.test(APP));
 ok('复习三列表显示反馈条', /rvFeedback\(it\.lesson\.id\)/.test(APP));
-ok('课程页背诵面板显示反馈条', /ec-group-body">\$\{body\}\$\{rvHtml\}/.test(APP));
+ok('课程页背诵面板显示反馈条', /ec-group-body">\$\{zhBox\}\$\{body\}\$\{rvHtml\}/.test(APP));
 // ============ v20261025e：课程列表 4 项 UI 优化 ============
 ok('CSS 有推荐卡样式', /\.ec-reco \{/.test(CSS) && /\.ec-reco-tag/.test(CSS) && /\.ec-reco-done/.test(CSS));
 ok('CSS 有完成态/锁/行内编辑按钮', /\.ec-lesson-card\.ec-lesson-done/.test(CSS) && /\.ec-lock/.test(CSS) && /\.ec-edit-btn/.test(CSS) && /\.ec-lesson-side/.test(CSS));
@@ -119,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizFeedbackBlock, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizCheck, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, getElementsByName: (name) => { const k = '__byname_' + name; if (!elCache[k]) elCache[k] = []; return elCache[k]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
@@ -1217,6 +1217,134 @@ function makeZip(files) {
         ok('records 上限常量存在', /EC_QUIZ_RECORDS_CAP = 300/.test(APP));
     }
 }
+
+// ============ 十五、v20261026e：答题即时反馈（答完一题立即显示对错/答案/解析） ============
+console.log('—— v20261026e 答题即时反馈 ——');
+{
+    const mkQ = () => { const EC = makeEC(); const d = EC.ecQuizData(); d.banks.push({ id: 'b1', name: '测试集', tag: '导入', source: '', lessons: [{ id: 'l1', name: '课1', questions: [{ id: 'q1', type: 'single', stem: '2+2=?', options: ['3', '4', '5'], answer: 1, analysis: '基础加法' }] }] }); return EC; };
+    // 1. ecQuizFeedbackBlock 对错展示
+    {
+        const EC = makeEC();
+        const qSingle = { type: 'single', stem: '1+1=?', options: ['1', '2', '3'], answer: 1, analysis: '基础加法' };
+        const fbRight = EC.ecQuizFeedbackBlock(qSingle, 1);
+        ok('即时反馈·答对显示正确+答案+解析', fbRight.includes('✅ 回答正确') && fbRight.includes('正确答案') && fbRight.includes('基础加法'));
+        const fbWrong = EC.ecQuizFeedbackBlock(qSingle, 0);
+        ok('即时反馈·答错显示错误', fbWrong.includes('❌ 回答错误') && fbWrong.includes('正确答案'));
+        const qEssay = { type: 'essay', stem: '写作文', answer: '参考范文：……', analysis: '注意结构' };
+        const fbEssay = EC.ecQuizFeedbackBlock(qEssay, '我的作文');
+        ok('即时反馈·作文显示参考与解析', fbEssay.includes('参考范文 / 评分要点') && fbEssay.includes('注意结构'));
+        ok('即时反馈·无解析不报错', typeof EC.ecQuizFeedbackBlock({ type: 'single', stem: 'x', options: ['a'], answer: 0 }, 0) === 'string');
+    }
+    // 2. ecQuizPick 写入 checked（默认开）
+    {
+        const EC = mkQ();
+        EC.state._quizSession = { bankId: 'b1', lessonId: 'l1', mode: 'order', keys: ['l1|q1'], idx: 0, ans: {}, checked: {}, startedAt: Date.now() };
+        EC.ecQuizPick(1);
+        ok('ecQuizPick 默认即时反馈写入 checked', EC.state._quizSession.checked['l1|q1'] === true);
+        ok('ecQuizPick 记录答案', EC.state._quizSession.ans['l1|q1'] === 1);
+    }
+    // 3. 关闭即时反馈时 ecQuizPick 不写 checked（考试模式）
+    {
+        const EC = mkQ();
+        EC.ecQuizData().settings.instantFeedback = false;
+        EC.state._quizSession = { bankId: 'b1', lessonId: 'l1', mode: 'order', keys: ['l1|q1'], idx: 0, ans: {}, checked: {}, startedAt: Date.now() };
+        EC.ecQuizPick(1);
+        ok('关闭即时反馈时 ecQuizPick 不写 checked', !EC.state._quizSession.checked['l1|q1']);
+    }
+    // 4. ecQuizCheck 写入 checked（填空/作文确认）
+    {
+        const EC = makeEC(); const d = EC.ecQuizData();
+        d.banks.push({ id: 'b1', name: '集', tag: '', source: '', lessons: [{ id: 'l1', name: '课', questions: [{ id: 'q1', type: 'fill', stem: 'cat is ___', answer: 'on', analysis: '' }] }] });
+        EC.state._quizSession = { bankId: 'b1', lessonId: 'l1', mode: 'order', keys: ['l1|q1'], idx: 0, ans: { 'l1|q1': 'on' }, checked: {}, startedAt: Date.now() };
+        EC.ecQuizCheck();
+        ok('ecQuizCheck 写入 checked', EC.state._quizSession.checked['l1|q1'] === true);
+    }
+    // 5. ecQuizPlayHTML 含反馈块 / 开关 / 确认按钮
+    {
+        const EC = mkQ();
+        EC.state._quizSession = { bankId: 'b1', lessonId: 'l1', mode: 'order', keys: ['l1|q1'], idx: 0, ans: { 'l1|q1': 1 }, checked: { 'l1|q1': true }, startedAt: Date.now() };
+        const ph = EC.ecQuizPlayHTML();
+        ok('ecQuizPlayHTML 含即时反馈开关', ph.includes('ec-quiz-fb-toggle'));
+        ok('ecQuizPlayHTML 已答显示反馈块', ph.includes('ec-quiz-fb') && ph.includes('✅ 回答正确'));
+    }
+    {
+        const EC = makeEC(); const d = EC.ecQuizData();
+        d.banks.push({ id: 'b1', name: '集', tag: '', source: '', lessons: [{ id: 'l1', name: '课', questions: [{ id: 'q1', type: 'fill', stem: 'cat is ___', answer: 'on', analysis: '' }] }] });
+        EC.state._quizSession = { bankId: 'b1', lessonId: 'l1', mode: 'order', keys: ['l1|q1'], idx: 0, ans: {}, checked: {}, startedAt: Date.now() };
+        const ph = EC.ecQuizPlayHTML();
+        ok('填空含确认答案按钮', ph.includes('ec-quiz-check') && ph.includes('确认答案'));
+    }
+    // 6. 分发器含两个新动作
+    ok('分发器含 ec-quiz-check', /if \(action === 'ec-quiz-check'\)/.test(APP));
+    ok('分发器含 ec-quiz-fb-toggle', /if \(action === 'ec-quiz-fb-toggle'\)/.test(APP));
+    ok('CSS 含 ec-quiz-fb 反馈块样式', CSS.includes('.ec-quiz-fb') && CSS.includes('.ec-quiz-fb-toggle'));
+}
+
+// ============ v20261026f：背诵板块 · 中文课文（看中文说英文自检） ============
+console.log('—— 中文课文（v20261026f）——');
+// 1. 静态检查
+ok('ecEditLessonZh 函数存在', /function ecEditLessonZh/.test(APP));
+ok('课时存 zh + zhAt 字段', /lesson\.zh = v;/.test(APP) && /lesson\.zhAt = Date\.now\(\)/.test(APP));
+ok('背诵面板渲染 zhBox', /ec-group-body">\$\{zhBox\}\$\{body\}\$\{rvHtml\}/.test(APP));
+ok('中文课文编辑入口按钮', /data-action="ec-zh-edit"/.test(APP));
+ok('中文显隐切换按钮', /data-action="ec-zh-toggle"/.test(APP));
+ok('分发器含 ec-zh-edit / ec-zh-toggle', /if \(action === 'ec-zh-edit'\)/.test(APP) && /if \(action === 'ec-zh-toggle'\)/.test(APP));
+ok('中文课文弹窗 textarea', APP.includes('ecZhTA'));
+ok('中文课文按 zhAt 新者胜合并', /zhAt\) \|\| 0, b = Number\(l\.zhAt\) \|\| 0/.test(APP) && /zh: l\.zh, zhAt: l\.zhAt/.test(APP));
+ok('CSS 有中文课文样式', CSS.includes('.ec-zh-box') && CSS.includes('.ec-zh-text') && CSS.includes('.ec-zh-empty') && CSS.includes('.ec-zh-off'));
+// 2. 合并功能：zhAt 新者胜（双向）
+{
+    const EC = makeEC();
+    const base = () => ({ books: [], lessons: [], tasks: {}, fsrs: {}, tombs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' });
+    const L = (zh, zhAt) => ({ id: 'lx', bookId: 'b1', name: 'L1', note: '', order: 0, createdAt: '', ...(zh !== undefined ? { zh, zhAt } : {}) });
+    // 本地导入中文（zhAt 新）→ 云端旧快照无 zh → 保留本地
+    const local1 = base(); local1.lessons = [L('本地新课文', 9000)];
+    const cloud1 = base(); cloud1.lessons = [L()];
+    const m1 = EC.ecMergeEngcheck(local1, cloud1, '2026-10-27T09', '2026-10-27T09');
+    ok('合并：本地新导入中文不被旧快照顶掉', (m1.lessons.find(l => l.id === 'lx') || {}).zh === '本地新课文');
+    // 云端导入（zhAt 更新）→ 本地旧 → 采用云端
+    const local2 = base(); local2.lessons = [L('本地旧课文', 1000)];
+    const cloud2 = base(); cloud2.lessons = [L('云端新课文', 9000)];
+    const m2 = EC.ecMergeEngcheck(local2, cloud2, '2026-10-27T09', '2026-10-27T09');
+    ok('合并：云端更新中文时采用云端', (m2.lessons.find(l => l.id === 'lx') || {}).zh === '云端新课文');
+    // 双方 zhAt 相同 → 不互相覆盖
+    const local3 = base(); local3.lessons = [L('甲', 5000)];
+    const cloud3 = base(); cloud3.lessons = [L('乙', 5000)];
+    const m3 = EC.ecMergeEngcheck(local3, cloud3, '2026-10-27T09', '2026-10-27T09');
+    ok('合并：zhAt 相同时权威端（win）保留', (m3.lessons.find(l => l.id === 'lx') || {}).zh === '甲');
+}
+// 3. 背诵面板渲染中文 / 隐藏切换 / 空态引导
+{
+    const EC = makeEC();
+    EC.state.data.engcheck.lessons.push({ id: 'lx', bookId: 'b1', name: 'L1', note: '', order: 0, createdAt: '', zh: '对不起，这是你的手提包吗？\n这是一张漂亮的照片。' });
+    EC.state.data.engcheck.books.push({ id: 'b1', name: '新概念1', order: 0, createdAt: '', tasks: [] });
+    EC.state._ecLessonId = 'lx';
+    const p1 = EC.ecRecitePanel('lx');
+    ok('面板显示中文课文标题', p1.includes('中文课文') && p1.includes('看中文说英文'));
+    ok('面板逐行渲染中文', p1.includes('<p>对不起，这是你的手提包吗？</p>') && p1.includes('漂亮的照片'));
+    ok('面板有 🙈 隐藏按钮和 ✏️ 编辑按钮', p1.includes('ec-zh-toggle') && p1.includes('ec-zh-edit'));
+    // 隐藏态
+    EC.state._ecZhHide = { lx: true };
+    const p2 = EC.ecRecitePanel('lx');
+    ok('隐藏态显示凭记忆提示 + 👁', p2.includes('ec-zh-off') && p2.includes('👁'));
+    ok('隐藏态不再显示中文内容', !p2.includes('手提包'));
+    // 空态引导
+    EC.state.data.engcheck.lessons[0].zh = '';
+    EC.state._ecZhHide = {};
+    const p3 = EC.ecRecitePanel('lx');
+    ok('空态显示导入引导（可点）', p3.includes('ec-zh-empty') && p3.includes('还没有导入中文课文'));
+}
+// 4. 编辑保存流程（uiModal getValue）
+(async () => {
+    const EC = makeEC();
+    EC.state.data.engcheck.lessons.push({ id: 'lx', bookId: 'b1', name: 'L1', note: '', order: 0, createdAt: '' });
+    EC._inputs['ecZhTA'] = '  对不起，这是你的手提包吗？\n打扰一下。  ';
+    EC.ecEditLessonZh('lx');
+    await flush();
+    const l = EC.state.data.engcheck.lessons[0];
+    ok('ecEditLessonZh 保存去首尾空白', l.zh === '对不起，这是你的手提包吗？\n打扰一下。');
+    ok('ecEditLessonZh 写入 zhAt 时间戳', Number(l.zhAt) > 0);
+})();
 
 // 等待异步断言后汇总
 setTimeout(() => {
