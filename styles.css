@@ -4247,6 +4247,8 @@ select.input {
 /* 卡片行内右侧：小编辑按钮 + 箭头（默认不占独立一行） */
 .ec-lesson-side, .ec-book-side { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .ec-edit-btn { width: 26px; height: 26px; border: none; border-radius: 8px; background: transparent; font-size: 13px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; opacity: 0.5; }
+.ec-head-btns .ec-edit-btn { opacity: 0.65; flex-shrink: 0; }
+.ec-head-btns .ec-edit-btn.ec-edit-on { opacity: 1; background: var(--surface-2); }
 .ec-edit-btn:hover { opacity: 1; background: var(--surface-2); }
 
 /* 课程卡片状态区分 */
@@ -4477,6 +4479,8 @@ select.input {
 .ec-tm-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border); margin-bottom: 8px; }
 .ec-tm-icon { font-size: 18px; flex-shrink: 0; }
 .ec-tm-info { flex: 1; min-width: 0; }
+.ec-tm-btns { display: flex; gap: 4px; flex-shrink: 0; }
+.ec-tm-btns .btn { padding: 4px 7px; min-width: 0; }
 .ec-tm-name { font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .ec-tm-tag { font-size: 10px; font-weight: 600; color: var(--text-secondary); background: var(--surface-2); border-radius: 999px; padding: 1px 8px; }
 .ec-tm-desc { font-size: 11px; color: var(--text-secondary); margin-top: 2px; line-height: 1.4; }

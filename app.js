@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261026j';
+const APP_BUILD = '20261026m';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -2657,6 +2657,7 @@ const state = {
     _ecEarlyId: null,
     _ecLastReview: null,
     _ecAddOpen: false,
+    _ecHeadEdit: false,
     _loadingHot: false,
     _waterMode: null,
     _waterSelected: new Set(),
@@ -2696,7 +2697,7 @@ const state = {
         bookRead: [], // 阅读板块：看过的书（收藏书屋数据源），元素为 {title, author, tags, markedAt}
         // 英语打卡（三级目录 + FSRS 背诵复习 + 积分成就）：
         // books=一级(书)、lessons=二级(课)、tasks=三级(任务记录)、fsrs=背书复习记录
-        engcheck: { books: [], lessons: [], tasks: {}, fsrs: {}, tombs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' }
+        engcheck: { books: [], lessons: [], tasks: {}, fsrs: {}, tombs: {}, tombTasks: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' }
     },
     supabase: null,
     syncStatus: 'offline',
@@ -2986,7 +2987,7 @@ function migrateData() {
     if (!Array.isArray(state.data.bookRead)) state.data.bookRead = [];
     state.data.settings = state.data.settings || { theme: state.settings && state.settings.theme ? state.settings.theme : 'light' };
     // 英语打卡数据兼容：老账号没有该字段时补空结构（新增模块自动追加逻辑会保证导航里出现）
-    if (!state.data.engcheck || typeof state.data.engcheck !== 'object') state.data.engcheck = { books: [], lessons: [], tasks: {}, fsrs: {}, tombs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' };
+    if (!state.data.engcheck || typeof state.data.engcheck !== 'object') state.data.engcheck = { books: [], lessons: [], tasks: {}, fsrs: {}, tombs: {}, tombTasks: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' };
     if (!Array.isArray(state.data.engcheck.books)) state.data.engcheck.books = [];
     if (!Array.isArray(state.data.engcheck.lessons)) state.data.engcheck.lessons = [];
     if (!state.data.engcheck.tasks || typeof state.data.engcheck.tasks !== 'object') state.data.engcheck.tasks = {};
@@ -10411,6 +10412,7 @@ function ecData() {
     if (!Array.isArray(d.books)) d.books = [];
     if (!Array.isArray(d.lessons)) d.lessons = [];
     if (!d.tasks || typeof d.tasks !== 'object') d.tasks = {};
+    if (!d.tombTasks || typeof d.tombTasks !== 'object') d.tombTasks = {}; // 任务定义删除墓碑（bookId|taskId → ts）
     if (!d.fsrs || typeof d.fsrs !== 'object') d.fsrs = {};
     if (!d.achievements || typeof d.achievements !== 'object') d.achievements = {};
     if (!d.days || typeof d.days !== 'object') d.days = {};
@@ -10554,23 +10556,26 @@ function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
     const taskCut = Math.max(Number(localEc.clearedAt) || 0, Number(cloudEc.clearedAt) || 0);
     const fsrsCut = Math.max(Number(localEc.fsrsClearedAt) || 0, Number(cloudEc.fsrsClearedAt) || 0);
     const byId = (arr) => { const m = new Map(); (arr || []).forEach(x => { if (x && x.id != null) m.set(x.id, x); }); return m; };
-    // tasks 合并：win 优先；lose 独有的键并入（打卡跨设备同步），但满足以下之一则丢弃：
-    // ① cut 之前的旧记录（清零分界线前）② 本地墓碑删除过（取消完成，墓碑时间 ≥ 记录时间）
+    // tasks 合并：两端键并集，同键取 at 较新者；满足以下之一则丢弃：
+    // ① cut 之前的旧记录（清零分界线前）② 墓碑删除过（取消完成，墓碑时间 ≥ 记录时间）
+    // 墓碑两端并集（同键取较新）——否则本地（lose）刚写的「取消完成」墓碑会丢，取消不生效
     const mergeTasks = (win, lose, cut) => {
         const out = {};
         const tombs = { ...(win.tombs || {}) };
-        Object.keys(win.tasks || {}).forEach(k => {
-            if (!cut || (Number(win.tasks[k] && win.tasks[k].at) || 0) >= cut) out[k] = win.tasks[k];
+        Object.keys(lose.tombs || {}).forEach(k => {
+            const t = Number(lose.tombs[k]) || 0;
+            if (t > (Number(tombs[k]) || 0)) tombs[k] = t;
         });
-        Object.keys(lose.tasks || {}).forEach(k => {
-            if (out[k] !== undefined) return;
-            const r = lose.tasks[k];
-            const at = Number(r && r.at) || 0;
+        const put = (k, r) => {
+            if (!r) return;
+            const at = Number(r.at) || 0;
             if (cut && at < cut) return;
             const t = Number(tombs[k]) || 0;
             if (t && t >= at) return;
-            out[k] = r;
-        });
+            if (!out[k] || (Number(out[k].at) || 0) < at) out[k] = r;
+        };
+        Object.keys(win.tasks || {}).forEach(k => put(k, win.tasks[k]));
+        Object.keys(lose.tasks || {}).forEach(k => put(k, lose.tasks[k]));
         // 清理失效墓碑（对应记录已不存在于任何一端，墓碑没必要保留）
         Object.keys(tombs).forEach(k => { if (out[k] === undefined) delete tombs[k]; });
         return { tasks: out, tombs };
@@ -10590,7 +10595,36 @@ function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
     };
     const mergeCatalog = (win, lose) => {
         const bMap = byId(win.books), lMap = byId(win.lessons);
-        (lose.books || []).forEach(b => { if (b && b.id != null && !bMap.has(b.id)) bMap.set(b.id, b); });
+        // 任务定义删除墓碑（bookId|taskId → ts）：两端并集，同键取较新
+        const tombTasks = { ...(win.tombTasks || {}) };
+        Object.keys(lose.tombTasks || {}).forEach(k => {
+            const t = Number(lose.tombTasks[k]) || 0;
+            if (t > (Number(tombTasks[k]) || 0)) tombTasks[k] = t;
+        });
+        (lose.books || []).forEach(b => {
+            if (!b || b.id == null) return;
+            const mine = bMap.get(b.id);
+            if (!mine) { bMap.set(b.id, b); return; }
+            // 任务定义按 id 并集：一端新增的打卡任务不能被另一端旧书快照顶掉
+            //（用户反馈「新增打卡项目，打卡后又自动合并回未完成」的根因：整本 book 用 win 覆盖，新任务定义丢失）
+            const winTasks = Array.isArray(mine.tasks) ? mine.tasks : [];
+            const seen = new Set(winTasks.map(t => t && t.id));
+            const extra = (Array.isArray(b.tasks) ? b.tasks : []).filter(t => t && t.id != null && !seen.has(t.id));
+            if (extra.length) bMap.set(b.id, Object.assign({}, mine, { tasks: winTasks.concat(extra) }));
+        });
+        // 剔除已删除的任务定义（墓碑命中）；并清理失效墓碑
+        Array.from(bMap.keys()).forEach(bid => {
+            const bk = bMap.get(bid);
+            if (!bk || !Array.isArray(bk.tasks)) return;
+            const kept = bk.tasks.filter(t => !(t && t.id != null && (Number(tombTasks[bid + '|' + t.id]) || 0)));
+            if (kept.length !== bk.tasks.length) bMap.set(bid, Object.assign({}, bk, { tasks: kept }));
+        });
+        Object.keys(tombTasks).forEach(k => {
+            const bid = k.slice(0, k.indexOf('|'));
+            const bk = bMap.get(bid);
+            const still = bk && Array.isArray(bk.tasks) && bk.tasks.some(t => t && t.id != null && bid + '|' + t.id === k);
+            if (!still) delete tombTasks[k];
+        });
         (lose.lessons || []).forEach(l => {
             if (!l || l.id == null) return;
             const mine = lMap.get(l.id);
@@ -10599,7 +10633,7 @@ function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
             const a = Number(mine.zhAt) || 0, b = Number(l.zhAt) || 0;
             if (b > a && (l.zh || '') !== (mine.zh || '')) lMap.set(l.id, Object.assign({}, mine, { zh: l.zh, zhAt: l.zhAt }));
         });
-        return { books: Array.from(bMap.values()), lessons: Array.from(lMap.values()) };
+        return { books: Array.from(bMap.values()), lessons: Array.from(lMap.values()), tombTasks };
     };
     const newerAt = (localEcAt && cloudEcAt && String(localEcAt) > String(cloudEcAt)) ? localEcAt : (cloudEcAt || localEcAt || '');
 
@@ -11187,16 +11221,43 @@ function ecAddTaskToBook() {
     });
     ecAfterAction('✅ 已添加任务「' + name.slice(0, 20) + '」');
 }
-async function ecRenameBookTask(bookId, taskId) {
+// 编辑任务（名称 + 说明双字段；说明显示在任务名下方）
+function ecRenameBookTask(bookId, taskId) {
     const book = ecBookById(bookId);
-    const def = book ? ecBookTasks(bookId).find(t => t.id === taskId) : null;
-    if (!book || !def) return;
-    const name = await uiPrompt('修改任务名称', def.name, { title: '✏️ 重命名任务', placeholder: '任务名称' });
-    if (name == null) return;
-    const v = String(name).trim();
-    if (!v) { toast('名称不能为空'); return; }
-    def.name = v.slice(0, 20);
-    ecAfterAction('已重命名任务');
+    if (!book || !Array.isArray(book.tasks)) return;
+    const def = book.tasks.find(t => t && t.id === taskId);
+    if (!def) return;
+    uiModal({
+        title: '✏️ 编辑任务',
+        html: `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">任务名称</div>
+               <input type="text" id="ecTaskNameIn" class="input" style="width:100%;box-sizing:border-box" maxlength="20" value="${escapeHtml(def.name)}">
+               <div style="font-size:13px;color:var(--text-secondary);margin:10px 0 6px">说明（显示在任务名下方）</div>
+               <textarea id="ecTaskDescIn" rows="3" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;line-height:1.6" maxlength="60" placeholder="如：听课文录音→逐句跟读、标记重点">${escapeHtml(def.desc || '')}</textarea>`,
+        getValue: () => {
+            const name = ((document.getElementById('ecTaskNameIn') || {}).value || '').trim();
+            if (!name) { toast('任务名称不能为空'); return null; }
+            const desc = ((document.getElementById('ecTaskDescIn') || {}).value || '').trim();
+            return { name: name.slice(0, 20), desc: desc.slice(0, 60) };
+        },
+        okText: '保存'
+    }).then(v => {
+        if (!v) return;
+        def.name = v.name;
+        def.desc = v.desc;
+        ecAfterAction('✅ 已保存任务「' + v.name + '」');
+    });
+}
+// 任务排序（在本书任务列表内上移/下移；数组顺序 = 课程页显示顺序）
+function ecMoveBookTask(bookId, taskId, dir) {
+    const book = ecBookById(bookId);
+    if (!book || !Array.isArray(book.tasks) || book.tasks.length < 2) return;
+    const i = book.tasks.findIndex(t => t && t.id === taskId);
+    const j = i + (Number(dir) >= 0 ? 1 : -1);
+    if (i < 0 || j < 0 || j >= book.tasks.length) return;
+    const tmp = book.tasks[i];
+    book.tasks[i] = book.tasks[j];
+    book.tasks[j] = tmp;
+    ecAfterAction(Number(dir) >= 0 ? '⬇️ 已下移「' + book.tasks[j].name + '」' : '⬆️ 已上移「' + book.tasks[i].name + '」');
 }
 async function ecDelBookTask(bookId, taskId) {
     const book = ecBookById(bookId);
@@ -11207,6 +11268,9 @@ async function ecDelBookTask(bookId, taskId) {
     const ok = await uiConfirm(`将删除《${book.name}》的任务「${def.name}」及 ${cnt} 条完成记录（积分不扣回），且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
     if (!ok) return;
     book.tasks = (Array.isArray(book.tasks) ? book.tasks : ecCloneDefaultTasks()).filter(t => t.id !== taskId);
+    // 任务定义删除墓碑：否则合并时会被另一端旧书快照并集「复活」
+    d.tombTasks = d.tombTasks || {};
+    d.tombTasks[bookId + '|' + taskId] = Date.now();
     d.lessons.forEach(l => { if (l.bookId === bookId) { const k = ecTaskKey(l.id, taskId); delete d.tasks[k]; ecTomb(k); } });
     ecAfterAction('🗑️ 已删除任务「' + def.name + '」');
 }
@@ -13119,8 +13183,12 @@ function ecTaskManageHTML(book) {
                 <div class="ec-tm-name">${escapeHtml(t.name)}<span class="ec-tm-tag">${t.group === 'input' ? '📥 输入 · 听读' : '📤 输出 · 说写'}</span></div>
                 <div class="ec-tm-desc">${escapeHtml(t.desc || '')}</div>
             </div>
-            <button class="btn btn-sm btn-secondary" data-action="ec-rename-task" data-book="${book.id}" data-task="${t.id}" title="改名">✏️</button>
-            <button class="btn btn-sm btn-danger" data-action="ec-del-task" data-book="${book.id}" data-task="${t.id}" title="删除任务">🗑️</button>
+            <div class="ec-tm-btns">
+                <button class="btn btn-sm btn-secondary" data-action="ec-task-move" data-book="${book.id}" data-task="${t.id}" data-d="-1" title="上移">▲</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-task-move" data-book="${book.id}" data-task="${t.id}" data-d="1" title="下移">▼</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-rename-task" data-book="${book.id}" data-task="${t.id}" title="编辑名称与说明">✏️</button>
+                <button class="btn btn-sm btn-danger" data-action="ec-del-task" data-book="${book.id}" data-task="${t.id}" title="删除任务">🗑️</button>
+            </div>
         </div>`).join('');
     return `
     <div class="ec-task-man">
@@ -13180,16 +13248,19 @@ function ecRenderBooks() {
         </div>`;
     }).join('');
     const addOpen = !!state._ecAddOpen;
+    const headEdit = !!state._ecHeadEdit || selMode || addOpen; // 管理按钮收起，点 ✏️ 才展开
     return `
     ${ecHeaderHTML()}
     <div class="card">
         <div class="card-header">
             <div class="card-title">📚 我的书单（一级目录）</div>
             <div class="ec-head-btns">
+                ${headEdit ? `
                 ${books.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-book-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
                 <button class="btn btn-sm btn-secondary" data-action="ec-clear-records" title="清空所有打卡/背诵记录，书单和课程目录保留（测试期重来用）">🧹 清零</button>
                 <button class="btn btn-sm btn-secondary" data-action="ec-clear-zh" title="清空所有书的全部中文课文（目录/打卡/背诵记录不受影响）">🗑️ 中文</button>
-                <button class="btn btn-sm ${addOpen ? 'btn-secondary' : 'btn-primary'}" data-action="ec-toggle-add">${addOpen ? '✕ 收起' : '➕ 新增'}</button>
+                <button class="btn btn-sm ${addOpen ? 'btn-secondary' : 'btn-primary'}" data-action="ec-toggle-add">${addOpen ? '✕ 收起' : '➕ 新增'}</button>` : ''}
+                <button class="ec-edit-btn${headEdit ? ' ec-edit-on' : ''}" data-action="ec-head-edit" title="${headEdit ? '收起管理按钮' : '展开管理按钮（批量删除 / 清零 / 中文 / 新增）'}">${headEdit ? '✕' : '✏️'}</button>
             </div>
         </div>
         ${addOpen ? `
@@ -13262,16 +13333,19 @@ function ecRenderLessons() {
         </div>`;
     }).join('');
     const addOpen = !!state._ecAddOpen;
+    const headEdit = !!state._ecHeadEdit || selMode || addOpen; // 管理按钮收起，点 ✏️ 才展开
     return `
     <div class="card">
         <div class="card-header">
             <div class="card-title">📖 ${escapeHtml(book.name)}</div>
             <div class="ec-head-btns">
                 <button class="btn btn-sm btn-secondary" data-action="ec-back-books">‹ 返回书单</button>
-                ${lessons.length ? `                <button class="btn btn-sm btn-secondary" data-action="ec-lesson-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
+                ${headEdit ? `
+                ${lessons.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-lesson-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
                 <button class="btn btn-sm ${addOpen ? 'btn-secondary' : 'btn-primary'}" data-action="ec-toggle-add">${addOpen ? '✕ 收起' : '➕ 新增'}</button>
                 <button class="btn btn-sm btn-secondary" data-action="ec-batch-zh" data-book="${book.id}" title="一次粘贴整本书，按课时名自动匹配导入各课中文课文">📥 批量中文</button>
-                <button class="btn btn-sm btn-secondary" data-action="ec-clear-zh" data-book="${book.id}" title="清空本书全部中文课文">🗑️ 中文</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-clear-zh" data-book="${book.id}" title="清空本书全部中文课文">🗑️ 中文</button>` : ''}
+                <button class="ec-edit-btn${headEdit ? ' ec-edit-on' : ''}" data-action="ec-head-edit" title="${headEdit ? '收起管理按钮' : '展开管理按钮（批量删除 / 新增 / 批量中文 / 中文）'}">${headEdit ? '✕' : '✏️'}</button>
             </div>
         </div>
         ${addOpen ? `
@@ -13651,8 +13725,10 @@ document.addEventListener('click', async e => {
     if (action === 'ec-add-task') { ecAddTaskToBook(); return; }
     if (action === 'ec-rename-task') { ecRenameBookTask(el.dataset.book, el.dataset.task); return; }
     if (action === 'ec-del-task') { ecDelBookTask(el.dataset.book, el.dataset.task); return; }
-    if (action === 'ec-open-book') { state._ecBookId = el.dataset.id; state._ecLessonId = null; state._ecEditBookId = null; state._ecBookSelMode = false; state._ecBookSel = {}; state._ecAddOpen = false; render(); return; }
-    if (action === 'ec-back-books') { state._ecBookId = null; state._ecLessonSelMode = false; state._ecLessonSel = {}; state._ecAddOpen = false; render(); return; }
+    if (action === 'ec-task-move') { ecMoveBookTask(el.dataset.book, el.dataset.task, el.dataset.d); return; }
+    if (action === 'ec-open-book') { state._ecBookId = el.dataset.id; state._ecLessonId = null; state._ecEditBookId = null; state._ecBookSelMode = false; state._ecBookSel = {}; state._ecAddOpen = false; state._ecHeadEdit = false; render(); return; }
+    if (action === 'ec-back-books') { state._ecBookId = null; state._ecLessonSelMode = false; state._ecLessonSel = {}; state._ecAddOpen = false; state._ecHeadEdit = false; render(); return; }
+    if (action === 'ec-head-edit') { state._ecHeadEdit = !state._ecHeadEdit; render(); return; }
     if (action === 'ec-add-lesson') { ecAddLesson(); return; }
     if (action === 'ec-batch-lessons') { ecBatchLessons(); return; }
     if (action === 'ec-import-lessons') { ecImportLessons(); return; }

@@ -119,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizFeedbackBlock, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizCheck, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizFeedbackBlock, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizCheck, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, getElementsByName: (name) => { const k = '__byname_' + name; if (!elCache[k]) elCache[k] = []; return elCache[k]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
@@ -374,7 +374,7 @@ console.log('—— 渲染冒烟 ——');
     const d = EC.ecData();
     let h = EC.ecRenderBooks();
     ok('空书单渲染', h.includes('还没有书单') && h.includes('Lv.1'));
-    ok('书单页默认折叠：只有新增按钮', h.includes('data-action="ec-toggle-add"') && h.includes('➕ 新增') && !h.includes('ecBookBatchNames'));
+    ok('书单页默认折叠：只有 ✏️ 编辑按钮', h.includes('data-action="ec-head-edit"') && !h.includes('data-action="ec-toggle-add"') && !h.includes('ecBookBatchNames'));
     EC.state._ecAddOpen = true;
     h = EC.ecRenderBooks();
     ok('书单页展开后有批量建书区', h.includes('ecBookBatchNames') && h.includes('批量新增书单'));
@@ -384,8 +384,12 @@ console.log('—— 渲染冒烟 ——');
     d.lessons.push({ id: 'l1', bookId: 'b1', name: 'Lesson 1', order: 1, createdAt: 'x' });
     h = EC.ecRenderLessons();
     ok('课程列表渲染', h.includes('新概念英语一') && h.includes('Lesson 1'));
-    ok('课程页有批量删除入口', h.includes('data-action="ec-lesson-sel-mode"'));
-    ok('课程页默认折叠：只有新增按钮', h.includes('data-action="ec-toggle-add"') && !h.includes('ecLessonNoteInput'));
+    ok('课程页默认折叠：只有 ✏️（无新增按钮）', h.includes('data-action="ec-head-edit"') && !h.includes('data-action="ec-toggle-add"') && !h.includes('ecLessonNoteInput'));
+    EC.state._ecHeadEdit = true;
+    h = EC.ecRenderLessons();
+    ok('课程页展开后有批量删除入口', h.includes('data-action="ec-lesson-sel-mode"'));
+    ok('课程页展开后有新增按钮', h.includes('data-action="ec-toggle-add"'));
+    EC.state._ecHeadEdit = false;
     EC.state._ecAddOpen = true;
     h = EC.ecRenderLessons();
     ok('课程页展开后有语法输入框', h.includes('ecLessonNoteInput') && h.includes('ecImportNames') && h.includes('ecBatchPrefix'));
@@ -1431,6 +1435,93 @@ ok('分发器含 ec-batch-zh', /if \(action === 'ec-batch-zh'\)/.test(APP));
     const r10 = EC.ecBatchZhParse('1、2 Excuse me!\n无前缀数字标题的中文', ['1、2 Excuse me! Is this your...?']);
     ok('无前缀行首数字（1、2）也命中', (r10.map['1、2 Excuse me! Is this your...?'] || '') === '无前缀数字标题的中文');
     ok('编号提取 1、2 → [1,2]', JSON.stringify(EC.ecZhTitleNums('1、2 Excuse me!')) === '[1,2]');
+    // v20261026k：任务排序 + 名称/说明双字段编辑
+    ok('ecMoveBookTask 函数存在', /function ecMoveBookTask/.test(APP));
+    ok('分发器含 ec-task-move', /if \(action === 'ec-task-move'\)/.test(APP));
+    ok('任务行有上移/下移按钮', /data-action="ec-task-move" data-book="\$\{book\.id\}" data-task="\$\{t\.id\}" data-d="-1"/.test(APP) && /data-d="1"/.test(APP));
+    ok('编辑任务为名称+说明双字段弹窗', APP.includes('ecTaskNameIn') && APP.includes('ecTaskDescIn') && /说明（显示在任务名下方）/.test(APP));
+    ok('CSS 有任务按钮组样式', CSS.includes('.ec-tm-btns'));
+    {
+        const EC = makeEC();
+        const book = { id: 'b1', name: '书', order: 0, createdAt: '', tasks: [
+            { id: 't1', group: 'input', icon: '🎧', name: 'A 听力', desc: '旧说明一', points: 2 },
+            { id: 't2', group: 'output', icon: '🗣️', name: 'B 跟读', desc: '', points: 2 },
+            { id: 't3', group: 'input', icon: '📖', name: 'C 朗读', desc: '', points: 2 }
+        ] };
+        EC.state.data.engcheck.books.push(book);
+        // 下移 t1 → 顺序 B A C
+        EC.ecMoveBookTask('b1', 't1', 1);
+        ok('任务下移交换成功', book.tasks.map(t => t.id).join(',') === 't2,t1,t3');
+        // 再上移 t3（原 C）两次 → C B A？当前 [t2,t1,t3]，上移 t3 → [t2,t3,t1] → 再上移 t3 → [t3,t2,t1]
+        EC.ecMoveBookTask('b1', 't3', -1);
+        EC.ecMoveBookTask('b1', 't3', -1);
+        ok('任务上移到顶成功', book.tasks.map(t => t.id).join(',') === 't3,t2,t1');
+        // 边界：已在顶部再上移 → 不变
+        EC.ecMoveBookTask('b1', 't3', -1);
+        ok('顶部再上移保持不变', book.tasks[0].id === 't3');
+        // 双字段编辑：uiModal mock 用 getValue → 返回 {name, desc}
+        EC._inputs['ecTaskNameIn'] = 'A 听力（改）';
+        EC._inputs['ecTaskDescIn'] = '新说明内容';
+        EC.ecRenameBookTask('b1', 't2');
+        (async () => {
+            await flush();
+            const t2 = book.tasks.find(t => t.id === 't2');
+            ok('任务名与说明同时更新', t2.name === 'A 听力（改）' && t2.desc === '新说明内容');
+        })();
+    }
+    // v20261026l：头部管理按钮收进 ✏️（点开才显示）
+    ok('ec-head-edit 分发器存在', /if \(action === 'ec-head-edit'\)/.test(APP));
+    ok('headEdit 状态控制显隐', /const headEdit = !!state\._ecHeadEdit \|\| selMode \|\| addOpen/.test(APP) && /state\._ecHeadEdit = false/.test(APP));
+    ok('头部有 ✏️ 展开按钮（书单页+书页）', (APP.match(/data-action="ec-head-edit"/g) || []).length >= 2);
+    ok('CSS 有 ec-edit-on 展开态', /\.ec-head-btns \.ec-edit-btn\.ec-edit-on/.test(CSS));
+    // v20261026m：新增任务打卡后被云端旧快照冲掉（book.tasks 整对象 win 覆盖丢新任务）
+    {
+        const EC = makeEC();
+        const d = EC.ecData();
+        const tpl = [{ id: 't1', group: 'input', icon: '🎧', name: 'Do. 听默音课', desc: '', points: 2 },
+                     { id: 't2', group: 'output', icon: '📝', name: 'Me. 习题训练', desc: '', points: 2 }];
+        d.books.push({ id: 'b1', name: '新概念一', order: 0, createdAt: 'x', tasks: tpl.map(t => ({ ...t })) });
+        d.lessons.push({ id: 'l1', bookId: 'b1', name: 'L1、L2 Excuse me!', order: 0, createdAt: 'x' });
+        EC.state._ecEditBookId = 'b1';
+        EC._inputs['ecNewTaskName'] = 'Re. 观看视频';
+        EC._inputs['ecNewTaskGroup'] = 'input';
+        EC._inputs['ecNewTaskIcon'] = '🎬';
+        EC.ecAddTaskToBook();
+        const nt = d.books[0].tasks.find(t => t.name === 'Re. 观看视频');
+        ok('新增任务成功', !!nt);
+        // 打卡（模拟 ecAfterAction 的 updatedAt 推进）
+        d.updatedAt = '2026-10-27T05:10:00.000Z';
+        EC.ecToggleTask('l1', nt.id);
+        const key = EC.ecTaskKey('l1', nt.id);
+        ok('新增任务打卡写入', !!d.tasks[key]);
+        // 云端旧快照：无新任务定义、无该打卡记录，且时间戳更晚（最坏情况）
+        const cloud = JSON.parse(JSON.stringify(d));
+        cloud.books = [{ id: 'b1', name: '新概念一', order: 0, createdAt: 'x', tasks: tpl.map(t => ({ ...t })) }];
+        cloud.tasks = { 'l1|t1': { at: 1 } };
+        cloud.updatedAt = '2026-10-27T06:00:00.000Z';
+        const m = EC.ecMergeEngcheck(d, cloud, d.updatedAt, cloud.updatedAt);
+        ok('合并后新增任务定义不丢（云端较新）', m.books[0].tasks.some(t => t.name === 'Re. 观看视频'));
+        ok('合并后新增任务打卡记录保留', !!m.tasks[key]);
+        // 删除任务 → 墓碑 → 合并不复活
+        d.tombTasks = { ['b1|' + nt.id]: Date.now() };
+        d.books[0].tasks = d.books[0].tasks.filter(t => t.id !== nt.id);
+        delete d.tasks[key];
+        const m2 = EC.ecMergeEngcheck(d, cloud, d.updatedAt, '2026-10-27T04:00:00.000Z');
+        ok('删除任务不复活（墓碑生效）', !m2.books[0].tasks.some(t => t.id === nt.id));
+        // 打卡记录：同键取 at 较新者（取消后再打卡不回退）
+        d.books[0].tasks.push({ id: 't9', group: 'input', icon: '🎬', name: 'X', desc: '', points: 2 });
+        d.tasks['l1|t9'] = { at: 2000 };
+        const cloud3 = JSON.parse(JSON.stringify(d));
+        cloud3.tasks['l1|t9'] = { at: 1000 };
+        const m3 = EC.ecMergeEngcheck(d, cloud3, d.updatedAt, '2026-10-27T07:00:00.000Z');
+        ok('打卡记录同键取较新（at 大者胜）', (m3.tasks['l1|t9'] || {}).at === 2000);
+        // 本地墓碑（取消完成）两端并集后仍生效
+        d.tombs = { 'l1|t2': 3000 };
+        d.tasks['l1|t2'] = undefined;
+        delete d.tasks['l1|t2'];
+        const m4 = EC.ecMergeEngcheck(d, cloud3, '2026-10-27T08:00:00.000Z', '2026-10-27T07:00:00.000Z');
+        ok('本地取消完成的墓碑不被 win 端清掉', Number(m4.tombs['l1|t2']) === 3000 || m4.tasks['l1|t2'] === undefined);
+    }
 }
 // 3. v20261026h：清空中文课文 + 导入预览确认
 ok('ecClearZh 函数存在', /async function ecClearZh/.test(APP));
