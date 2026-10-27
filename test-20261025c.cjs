@@ -119,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizFeedbackBlock, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizCheck, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizFeedbackBlock, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizCheck, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, getElementsByName: (name) => { const k = '__byname_' + name; if (!elCache[k]) elCache[k] = []; return elCache[k]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
@@ -1345,6 +1345,40 @@ ok('CSS 有中文课文样式', CSS.includes('.ec-zh-box') && CSS.includes('.ec-
     ok('ecEditLessonZh 保存去首尾空白', l.zh === '对不起，这是你的手提包吗？\n打扰一下。');
     ok('ecEditLessonZh 写入 zhAt 时间戳', Number(l.zhAt) > 0);
 })();
+
+// ============ v20261026g：整本批量导入中文课文 ============
+console.log('—— 批量中文课文（v20261026g）——');
+// 1. 静态检查
+ok('ecBatchZhParse 函数存在', /function ecBatchZhParse/.test(APP));
+ok('ecBatchZhImport 函数存在', /function ecBatchZhImport/.test(APP));
+ok('书页头部含批量中文按钮', /data-action="ec-batch-zh"/.test(APP));
+ok('分发器含 ec-batch-zh', /if \(action === 'ec-batch-zh'\)/.test(APP));
+// 2. 解析功能：精确 / 归一化大小写 / 前缀 / 未匹配
+{
+    const EC = makeEC();
+    const names = ['Lesson 1', 'Lesson 2', 'Unit 3 复习课'];
+    const text = [
+        'lesson 1',
+        '对不起，这是你的手提包吗？',
+        '这是一张漂亮的照片。',
+        '',
+        'Lesson 2',
+        '打扰一下，请问我能坐在这里吗？',
+        'Unit 3 复习',
+        '这一课是复习课的中文。'
+    ].join('\n');
+    const r = EC.ecBatchZhParse(text, names);
+    ok('归一化(小写)匹配 Lesson 1', (r.map['Lesson 1'] || '').includes('手提包') && (r.map['Lesson 1'] || '').includes('漂亮的照片'));
+    ok('精确匹配 Lesson 2', (r.map['Lesson 2'] || '').includes('打扰一下'));
+    ok('前缀匹配 Unit 3 复习课（标题写 Unit 3 复习）', (r.map['Unit 3 复习课'] || '').includes('复习课的中文'));
+    ok('未匹配清单正确（无遗漏）', r.unmatched.length === 0);
+    // 大小写+空格差异也能命中
+    const r2 = EC.ecBatchZhParse('Lesson  1\n中文一\nLesson  2\n中文二', names);
+    ok('中间空格归一化也能命中', !!r2.map['Lesson 1'] && !!r2.map['Lesson 2']);
+    // 有课时没匹配到
+    const r3 = EC.ecBatchZhParse('Lesson 1\n中文一', names);
+    ok('部分课未匹配进入 unmatched', r3.unmatched.length === 2 && r3.unmatched.includes('Lesson 2'));
+}
 
 // 等待异步断言后汇总
 setTimeout(() => {
