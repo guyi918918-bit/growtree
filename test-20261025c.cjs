@@ -1378,7 +1378,30 @@ ok('分发器含 ec-batch-zh', /if \(action === 'ec-batch-zh'\)/.test(APP));
     // 有课时没匹配到
     const r3 = EC.ecBatchZhParse('Lesson 1\n中文一', names);
     ok('部分课未匹配进入 unmatched', r3.unmatched.length === 2 && r3.unmatched.includes('Lesson 2'));
+    // v20261026h：去标点归一化——弯引号/直引号、全角空格、顿号差异不影响识别
+    const names2 = ["L25、L26 Mrs. Smith's kitchen", "L23、L24 Which glasses?"];
+    const r4 = EC.ecBatchZhParse([
+        'L25、L26 Mrs. Smith’s kitchen',   // 弯引号 ’ ≠ 课时名的直引号 '
+        '厨房很小。',
+        '',
+        'L23、L24 Which glasses',          // 截断标题（前缀）
+        '请把那几只杯子给我。'
+    ].join('\n'), names2);
+    ok('弯引号 ’ vs ’ 差异仍命中', (r4.map["L25、L26 Mrs. Smith's kitchen"] || '') === '厨房很小。');
+    ok('截断标题前缀命中', (r4.map['L23、L24 Which glasses?'] || '') === '请把那几只杯子给我。');
+    ok('全部匹配无遗漏', r4.unmatched.length === 0);
+    // 全角空格 + 标点全不同
+    const r5 = EC.ecBatchZhParse('L25、L26　Mrs．Smith’s　kitchen\n中文A', names2);
+    ok('全角空格/全角句点也命中', (r5.map["L25、L26 Mrs. Smith's kitchen"] || '') === '中文A');
 }
+// 3. v20261026h：清空中文课文 + 导入预览确认
+ok('ecClearZh 函数存在', /async function ecClearZh/.test(APP));
+ok('清空写 zhAt 保证跨设备生效', /l\.zh = ''; l\.zhAt = now;/.test(APP));
+ok('分发器含 ec-clear-zh', /if \(action === 'ec-clear-zh'\)/.test(APP));
+ok('书页有清空本书中文按钮', /data-action="ec-clear-zh" data-book="\$\{book\.id\}"/.test(APP));
+ok('书单页有清空全部中文按钮', /data-action="ec-clear-zh" title="清空所有书的全部中文课文/.test(APP));
+ok('导入前预览确认（uiConfirm）', /导入预览/.test(APP) && /确认导入吗/.test(APP));
+ok('解析说明去标点归一化', /去标点归一化/.test(APP) && /function ecBatchZhParse/.test(APP));
 
 // 等待异步断言后汇总
 setTimeout(() => {
