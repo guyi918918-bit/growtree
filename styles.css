@@ -4344,6 +4344,13 @@ select.input {
 .ec-cal-count { flex: 0 0 auto; font-size: 14px; font-weight: 800; color: var(--primary-dark); line-height: 1.3; }
 .ec-cal-unit { font-size: 10px; font-weight: 600; color: var(--text-secondary); margin-left: 1px; }
 
+/* 复习中心：三级子目录（面包屑 + 子导航） */
+.ec-crumb { font-size: 12px; color: var(--text-secondary); padding: 2px 4px 8px; }
+.ec-review-subnav { padding: 6px 8px; }
+.ec-review-subnav .tab-bar { background: var(--surface-2); }
+.ec-review-subnav .tab-btn { font-size: 13px; padding: 7px 12px; border-radius: 999px; min-width: 0; flex: 1 0 auto; }
+.ec-review-subnav .tab-btn.active { box-shadow: 0 2px 8px rgba(107, 142, 94, 0.22); }
+
 /* 悦己享瘦模块（iframe 嵌入成长小树）——v20261025b 误删导致 iframe 高度塌陷只剩默认 150px，板块显示空白 */
 .yjxs-host { position: absolute; inset: 0; overflow: hidden; background: #fff; }
 .yjxs-host iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }

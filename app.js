@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261026p';
+const APP_BUILD = '20261026q';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -5607,12 +5607,11 @@ const moduleRenderers = {
     },
 
     engcheck() {
-        // 子标签顺序与显隐由用户在「⚙️ 子标签显示设置」里自定义（state.data.engcheck.tabCfg）
+        // 子标签顺序与显隐由用户在「⚙️ 子标签显示设置」弹窗里自定义（state.data.engcheck.tabCfg）
         const tabs = ecTabCfgVisible();
         const tab = validSubTab('engcheck', tabs, tabs[0].id);
-        const on = !!state._ecTabCfg;
-        const extra = `<button class="ec-tabcfg-btn${on ? ' on' : ''}" data-action="ec-tabcfg-toggle" title="${on ? '收起子标签设置' : '子标签显示设置（隐藏 / 排序）'}">⚙️</button>`;
-        return `<div class="card tab-card">${subTabs(tabs, tab, 'engcheck', extra)}${on ? ecTabCfgHTML() : ''}</div><div class="ec-page">${renderEngCheckPage(tab)}</div>`;
+        const extra = `<button class="ec-tabcfg-btn" data-action="ec-tabcfg-open" title="子标签显示设置（隐藏 / 排序）">⚙️</button>`;
+        return `<div class="card tab-card">${subTabs(tabs, tab, 'engcheck', extra)}</div><div class="ec-page">${renderEngCheckPage(tab)}</div>`;
     },
 
     yjxs() {
@@ -10502,11 +10501,23 @@ function ecTabCfgHTML() {
     <div class="ec-tabcfg">
         <div class="ec-tabcfg-head">
             <span class="ec-tabcfg-title">⚙️ 子标签显示设置</span>
-            <button class="ec-edit-btn ec-edit-on" data-action="ec-tabcfg-toggle" title="收起设置">✕</button>
         </div>
         <div class="ec-tabcfg-tip">勾选 = 显示；取消勾选 = 隐藏（数据不会删除，随时可再打开）　▲▼ = 调整标签排列顺序，<b>排第一的就是进英语打卡默认打开的页面</b></div>
         ${rows}
     </div>`;
+}
+
+// 打开「子标签显示设置」弹窗（不再内联展开，点 ⚙️ 才弹出，关掉不影响主界面）
+function ecOpenTabCfg() {
+    uiModal({ title: '⚙️ 子标签显示设置', html: ecTabCfgHTML(), okText: '完成' });
+}
+
+// 弹窗开着时，设置项变动后重绘弹窗内容（主界面会随 ecAfterAction 重渲染，但弹窗是独立浮层需单独刷新）
+function ecTabCfgRefreshIfModal() {
+    const modal = document.getElementById('uiModal');
+    if (!modal || !modal.style || modal.style.display !== 'flex') return;
+    const msg = document.getElementById('uiModalMsg');
+    if (msg && msg.querySelector('.ec-tabcfg')) msg.innerHTML = ecTabCfgHTML();
 }
 
 // ---------- 数据 ----------
@@ -13880,6 +13891,14 @@ function ecReviewCalendarHTML(days) {
         <div class="ec-hint">只做预览：点课名可直接进入该课背诵页；「提前复习」请到下方清单里操作。想调整节奏就按实际背诵情况重新自评，间隔会自动重排。</div>
     </div>`;
 }
+// 复习中心内部分层（三级目录）：概览 / 待背诵 / 学习中 / 已掌握
+const EC_REVIEW_SUBTABS = [
+    { id: 'overview', name: '📊 概览', icon: '' },
+    { id: 'due', name: '⏰ 待背诵', icon: '' },
+    { id: 'waiting', name: '📖 学习中', icon: '' },
+    { id: 'mastered', name: '🏆 已掌握', icon: '' }
+];
+
 function ecRenderReview() {
     const stats = ecGlobalStats();
     const dueList = ecDueRecites();
@@ -13939,33 +13958,49 @@ function ecRenderReview() {
                     : `<div class="ec-due-btns"><button class="btn btn-sm btn-secondary" data-action="ec-early-review" data-lesson="${it.lesson.id}">🔁 再背一次自检</button></div>`}
             </div>
         </div>`).join('');
+    const rtabRaw = (state.currentSubTab && state.currentSubTab['ec-review-sub']) || '';
+    const rtab = EC_REVIEW_SUBTABS.some(t => t.id === rtabRaw) ? rtabRaw : 'overview';
+    const nav = `<div class="card ec-review-subnav"><div class="tab-bar">${EC_REVIEW_SUBTABS.map(t => `<button class="tab-btn ${rtab === t.id ? 'active' : ''}" data-action="tab" data-module="ec-review-sub" data-tab="${t.id}">${t.name}</button>`).join('')}</div></div>`;
+    let body = '';
+    if (rtab === 'overview') {
+        body = `
+        <div class="card">
+            <div class="card-header"><div class="card-title">⏰ 复习中心 · 概览</div></div>
+            <div class="ec-stats">
+                <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">待背诵</div></div>
+                <div class="ec-stat"><div class="ec-stat-num ec-stat-late">${stats.overdue}</div><div class="ec-stat-label">已逾期</div></div>
+                <div class="ec-stat"><div class="ec-stat-num">${waiting.length}</div><div class="ec-stat-label">学习中</div></div>
+                <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.mastered}</div><div class="ec-stat-label">已掌握</div></div>
+            </div>
+            <div class="ec-hint">在池课程共 ${dueList.length + waiting.length + mastered.length} 节：初学四选一入池后，到这里看每节课的下次复习时间；觉得遗忘了可以提前复习。</div>
+        </div>
+        ${ecReviewCalendarHTML(7)}
+        ${ecFsrsCard()}`;
+    } else if (rtab === 'due') {
+        body = `
+        <div class="card">
+            <div class="card-header"><div class="card-title">⏰ 待背诵清单</div><span style="font-size:12px;color:var(--text-secondary)">点课程名 → 直接进背诵页</span></div>
+            ${dueList.length ? dueRows : `<div class="ec-empty"><div class="ec-empty-icon">🎉</div><div>当前没有到点的课文</div><div class="ec-hint">去「书单课目」学新课，或看看「学习中」</div></div>`}
+        </div>`;
+    } else if (rtab === 'waiting') {
+        body = `
+        <div class="card">
+            <div class="card-header"><div class="card-title">📖 学习中（未到复习时间）</div><span style="font-size:12px;color:var(--text-secondary)">可提前自评</span></div>
+            ${waiting.length ? waitRows : `<div class="ec-empty"><div class="ec-empty-icon">🌱</div><div>还没有在学的课文</div><div class="ec-hint">学新课时选一档难度，就会加入这里</div></div>`}
+        </div>`;
+    } else { // mastered
+        body = mastered.length ? `
+        <div class="card">
+            <div class="card-header"><div class="card-title">🏆 已掌握</div><span style="font-size:12px;color:var(--text-secondary)">稳定性 ≥ 60 天</span></div>
+            ${masterRows}
+        </div>` : `
+        <div class="ec-empty"><div class="ec-empty-icon">🌟</div><div>还没有已掌握的课文</div><div class="ec-hint">稳定性达到 60 天后会出现在这里</div></div>`;
+    }
     return `
     ${ecHeaderHTML()}
-    <div class="card">
-        <div class="card-header"><div class="card-title">⏰ 复习中心</div></div>
-        <div class="ec-stats">
-            <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">待背诵</div></div>
-            <div class="ec-stat"><div class="ec-stat-num ec-stat-late">${stats.overdue}</div><div class="ec-stat-label">已逾期</div></div>
-            <div class="ec-stat"><div class="ec-stat-num">${waiting.length}</div><div class="ec-stat-label">学习中</div></div>
-            <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.mastered}</div><div class="ec-stat-label">已掌握</div></div>
-        </div>
-        <div class="ec-hint">在池课程共 ${dueList.length + waiting.length + mastered.length} 节：初学四选一入池后，到这里看每节课的下次复习时间；觉得遗忘了可以提前复习。</div>
-    </div>
-    ${ecReviewCalendarHTML(7)}
-    ${ecFsrsCard()}
-    <div class="card">
-        <div class="card-header"><div class="card-title">⏰ 待背诵清单</div><span style="font-size:12px;color:var(--text-secondary)">点课程名 → 直接进背诵页</span></div>
-        ${dueList.length ? dueRows : `<div class="ec-empty"><div class="ec-empty-icon">🎉</div><div>当前没有到点的课文</div><div class="ec-hint">去「书单课目」学新课，或看看下面的「学习中」</div></div>`}
-    </div>
-    <div class="card">
-        <div class="card-header"><div class="card-title">📖 学习中（未到复习时间）</div><span style="font-size:12px;color:var(--text-secondary)">可提前自评</span></div>
-        ${waiting.length ? waitRows : `<div class="ec-empty"><div class="ec-empty-icon">🌱</div><div>还没有在学的课文</div><div class="ec-hint">学新课时选一档难度，就会加入这里</div></div>`}
-    </div>
-    ${mastered.length ? `
-    <div class="card">
-        <div class="card-header"><div class="card-title">🏆 已掌握</div><span style="font-size:12px;color:var(--text-secondary)">稳定性 ≥ 60 天</span></div>
-        ${masterRows}
-    </div>` : ''}`;
+    <div class="ec-crumb">英语打卡 › 复习中心</div>
+    ${nav}
+    ${body}`;
 }
 
 // 成就榜 Tab
@@ -14079,11 +14114,11 @@ document.addEventListener('click', async e => {
     if (action === 'ec-clear-zh') { ecClearZh(el.dataset.book || ''); return; }
     if (action === 'ec-early-review') { state._ecEarlyId = state._ecEarlyId === el.dataset.lesson ? null : el.dataset.lesson; render(); return; }
     if (action === 'ec-toggle-add') { state._ecAddOpen = !state._ecAddOpen; render(); return; }
-    // ---------- 英语打卡：子标签显示设置（隐藏 / 排序）----------
-    if (action === 'ec-tabcfg-toggle') { state._ecTabCfg = !state._ecTabCfg; render(); return; }
-    if (action === 'ec-tabcfg-show') { ecTabCfgToggleShow(el.dataset.tab); return; }
-    if (action === 'ec-tabcfg-up') { ecTabCfgMove(el.dataset.tab, 'up'); return; }
-    if (action === 'ec-tabcfg-down') { ecTabCfgMove(el.dataset.tab, 'down'); return; }
+    // ---------- 英语打卡：子标签显示设置（隐藏 / 排序，弹窗内操作）----------
+    if (action === 'ec-tabcfg-open') { ecOpenTabCfg(); return; }
+    if (action === 'ec-tabcfg-show') { ecTabCfgToggleShow(el.dataset.tab); ecTabCfgRefreshIfModal(); return; }
+    if (action === 'ec-tabcfg-up') { ecTabCfgMove(el.dataset.tab, 'up'); ecTabCfgRefreshIfModal(); return; }
+    if (action === 'ec-tabcfg-down') { ecTabCfgMove(el.dataset.tab, 'down'); ecTabCfgRefreshIfModal(); return; }
     // ---------- 刷题题库 ----------
     if (action === 'ec-quiz-view') { state._quizView = el.dataset.v; state._quizSession = null; state._quizEditBankId = ''; state._quizEditLessonId = ''; render(); return; }
     if (action === 'ec-quiz-bank') { state._quizBookId = el.dataset.id; state._quizView = 'lessons'; state._quizSession = null; state._quizEditBankId = ''; state._quizEditLessonId = ''; render(); return; }

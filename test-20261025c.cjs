@@ -119,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecBatchZhImport, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecOpenRecite, ecTxtBlockHTML, ecTabCfgGet, ecTabCfgAll, ecTabCfgVisible, ecTabCfgToggleShow, ecTabCfgMove, ecTabCfgHTML, ecMergeTabCfg, ecReviewCalendarHTML, EC_SUBTABS, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizFeedbackBlock, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizCheck, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecBatchZhImport, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecOpenRecite, ecTxtBlockHTML, ecTabCfgGet, ecTabCfgAll, ecTabCfgVisible, ecTabCfgToggleShow, ecTabCfgMove, ecTabCfgHTML, ecMergeTabCfg, ecReviewCalendarHTML, EC_SUBTABS, ecOpenTabCfg, ecTabCfgRefreshIfModal, EC_REVIEW_SUBTABS, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizFeedbackBlock, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizCheck, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, getElementsByName: (name) => { const k = '__byname_' + name; if (!elCache[k]) elCache[k] = []; return elCache[k]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
@@ -135,6 +135,7 @@ function makeEC(overrides) {
     inst._el = (id) => docMock.getElementById(id);
     inst._elCache = elCache;
     inst._setConfirm = (v) => { confirmAnswer = v; };
+    inst.state = mockState;
     return inst;
 }
 
@@ -244,24 +245,31 @@ console.log('—— 初学入池与复习页 ——');
     ok('初学 Again S=0.5', d.fsrs.l2.s === 0.5);
     ok('初学 Again D 上升', d.fsrs.l2.d > 5);
     ok('两次入池共 +10 分', d.score === 10);
-    // 复习页：l1 未到点（due 在 3 天后）→ 学习中列表 + 提前复习按钮
+    // 复习页（三级子导航）：overview 汇总在池数
+    EC.state.currentSubTab = { 'ec-review-sub': 'overview' };
     let h = EC.ecRenderReview();
+    ok('复习页汇总在池数', h.includes('在池课程共 2 节'));
+    // waiting 子标签：l1 未到点（due 在 3 天后）→ 学习中列表 + 提前复习按钮
+    EC.state.currentSubTab = { 'ec-review-sub': 'waiting' };
+    h = EC.ecRenderReview();
     ok('复习页有学习中列表', h.includes('学习中（未到复习时间）') && h.includes('Lesson 1'));
     ok('学习中显示下次复习时间', h.includes('下次复习：') && /周[日一二三四五六]/.test(h));
     ok('学习中显示提前复习按钮', h.includes('data-action="ec-early-review"'));
-    ok('复习页汇总在池数', h.includes('在池课程共 2 节'));
     // 点提前复习 → 展开四档
     EC.state._ecEarlyId = 'l1';
     h = EC.ecRenderReview();
     ok('展开后行内四档可打分', h.includes('ec-grade-mini'));
     EC.state._ecEarlyId = null;
-    // l1 改判 Good（提前复习，晚于 due 之前）→ 学习中移出
+    // l1 改判 Good（提前复习）→ 学习中移出
     EC.ecReciteAction('l1', '3');
     ok('提前复习后 n=2', d.fsrs.l1.n === 2);
     // 已掌握列表：把 l1 的 S 推到 60+
     d.fsrs.l1.s = 60;
+    EC.state.currentSubTab = { 'ec-review-sub': 'mastered' };
     h = EC.ecRenderReview();
     ok('已掌握列表出现', h.includes('🏆 已掌握') && h.includes('Lesson 1') && h.includes('再背一次自检'));
+    EC.state.currentSubTab = { 'ec-review-sub': 'overview' };
+    h = EC.ecRenderReview();
     ok('已掌握统计=1', h.includes('ec-stat-num ec-stat-ok">1<'));
 }
 
@@ -528,6 +536,8 @@ console.log('—— v20261025d 新功能 ——');
     EC2.state._ecLessonId = 'l1';
     const hLesson = EC2.ecRenderLesson();
     ok('课程页背诵面板显示反馈条', hLesson.includes('ec-review-feedback') && hLesson.includes('已评价'));
+    // 反馈条在复习页（waiting 子标签，l1 未到复习时间）也会呈现
+    EC2.state.currentSubTab = { 'ec-review-sub': 'waiting' };
     const hReview = EC2.ecRenderReview();
     ok('复习页显示反馈条', hReview.includes('ec-review-feedback'));
 }
@@ -1637,13 +1647,30 @@ ok('清空课文同时清中文和英文', /if \(l\.zh\) \{ l\.zh = ''; l\.zhAt 
 console.log('—— 复习日历预览 / 子标签设置（v20261026p）——');
 ok('EC_SUBTABS 四个子标签齐全', /const EC_SUBTABS = \[/.test(APP) && /id: 'ec-books', name: '书单课目'/.test(APP) && /id: 'ec-achieve', name: '成就榜'/.test(APP));
 ok('子标签配置存 engcheck.tabCfg（order/hidden/at）', /d\.tabCfg = \{ order: \[\], hidden: \[\], at: 0 \}/.test(APP) && /function ecTabCfgGet/.test(APP));
-ok('渲染改用配置：ecTabCfgVisible + ⚙️ 按钮', /const tabs = ecTabCfgVisible\(\);/.test(APP) && /class="ec-tabcfg-btn/.test(APP) && /data-action="ec-tabcfg-toggle"/.test(APP));
+ok('渲染改用配置：ecTabCfgVisible + ⚙️ 弹窗按钮', /const tabs = ecTabCfgVisible\(\);/.test(APP) && /class="ec-tabcfg-btn/.test(APP) && /data-action="ec-tabcfg-open"/.test(APP));
+ok('⚙️ 改为弹窗：打开函数与刷新函数存在', /function ecOpenTabCfg/.test(APP) && /function ecTabCfgRefreshIfModal/.test(APP) && /uiModal\(\{ title: '⚙️ 子标签显示设置'/.test(APP));
+ok('不再内联展开设置面板', !/ec-tabcfg-toggle/.test(APP));
 ok('配置面板有勾选与 ▲▼', /data-action="ec-tabcfg-show"/.test(APP) && /data-action="ec-tabcfg-up"/.test(APP) && /data-action="ec-tabcfg-down"/.test(APP));
 ok('配置面板文案（勾选=显示 / 取消勾选=隐藏）', /勾选 = 显示；取消勾选 = 隐藏/.test(APP) && /数据不会删除/.test(APP));
 ok('配置面板样式存在', /\.ec-tabcfg\b/.test(CSS) && /\.ec-tabcfg-row/.test(CSS) && /\.ec-tabcfg-arrows/.test(CSS) && /\.ec-tabcfg-btn/.test(CSS));
 ok('日历卡片样式存在', /\.ec-cal\b/.test(CSS) && /\.ec-cal-row/.test(CSS) && /\.ec-cal-chip/.test(CSS) && /\.ec-cal-late/.test(CSS));
 ok('复习中心接入日历预览', /ecReviewCalendarHTML\(7\)/.test(APP) && /接下来 \$\{N\} 天复习预览/.test(APP));
 ok('子标签配置跨设备按 at 取新', /function ecMergeTabCfg/.test(APP) && /merged\.tabCfg = ecMergeTabCfg\(win\.tabCfg, lose\.tabCfg\)/.test(APP));
+ok('复习中心新增三级子目录', /const EC_REVIEW_SUBTABS = \[/.test(APP) && /id: 'overview'/.test(APP) && /id: 'due'/.test(APP) && /id: 'waiting'/.test(APP) && /id: 'mastered'/.test(APP));
+ok('三级子目录用独立 namespace（ec-review-sub）', /data-module="ec-review-sub"/.test(APP) && /data-action="tab"/.test(APP) && /id: 'overview'/.test(APP));
+ok('复习中心渲染含面包屑与子导航', /英语打卡 › 复习中心/.test(APP) && /class="card ec-review-subnav"/.test(APP) && /ec-crumb/.test(APP));
+{
+    const EC = makeEC();
+    EC.state.currentSubTab = { 'ec-review-sub': 'due' };
+    const html = EC.ecRenderReview();
+    ok('切到「待背诵」只渲染待背诵卡片（不含学习中/已掌握内容标题）', /card-title">⏰ 待背诵清单/.test(html) && !/card-title">📖 学习中/.test(html) && !/card-title">🏆 已掌握/.test(html));
+    EC.state.currentSubTab = { 'ec-review-sub': 'overview' };
+    const ov = EC.ecRenderReview();
+    ok('概览同时含统计卡与日历预览与 FSRS 说明', /复习中心 · 概览/.test(ov) && /接下来 7 天复习预览/.test(ov) && /背诵复习 · FSRS 算法/.test(ov));
+    EC.state.currentSubTab = { 'ec-review-sub': 'mastered' };
+    const ms = EC.ecRenderReview();
+    ok('「已掌握」空态有兜底文案', /还没有已掌握的课文/.test(ms));
+}
 {
     const EC = makeEC();
     // ---- 子标签配置：默认顺序 / 隐藏 / 排序 / 保底 ----
