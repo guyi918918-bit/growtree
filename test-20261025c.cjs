@@ -119,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizFeedbackBlock, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizCheck, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecBatchZhImport, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecOpenRecite, ecTxtBlockHTML, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, EC_QUIZ_BUILTIN, ecQuizBuiltinFresh, ecQuizData, ecQuizMigrate, ecQuizBookById, ecQuizLessonById, ecQuizFindQ, ecQuizQById, ecQuizBookProgress, ecQuizLessonQuestions, ecQuizLessonSummary, ecQuizToday, ecQuizStreak, ecQuizJudge, ecQuizAnsText, ecQuizRightText, ecQuizSilentSync, ecRenderQuizPage, ecQuizHomeHTML, ecQuizBanksHTML, ecQuizLessonsHTML, ecQuizPlayHTML, ecQuizFeedbackBlock, ecQuizResultHTML, ecQuizWrongHTML, ecQuizFavHTML, ecQuizRecordsHTML, ecQuizStatsHTML, ecQuizManageHTML, ecQuizStart, ecQuizPractice, ecQuizPick, ecQuizInput, ecQuizGo, ecQuizCheck, ecQuizSubmitExam, ecQuizSelf, ecQuizExit, ecQuizToggleFav, ecQuizToggleFavKey, ecQuizSetMastered, ecQuizUnfav, ecQuizFavNote, ecQuizNewBook, ecQuizRenBook, ecQuizDelBook, ecQuizNewLesson, ecQuizRenLesson, ecQuizDelLesson, ecQuizDelQuestion, ecQuizExportCSV, ecQuizNormType, ecQuizNormQuestion, ecQuizTypeFromStem, ecFullToHalf, ecQuizLinesToQuestions, ecQuizTableRow, ecQuizDetectHeader, ecQuizTemplateItem, ecQuizImportRows, ecQuizImportTarget, ecQuizApplyImport, ecQuizFileRows, ecSplitCSVLine, ecQuizMerge, ecQuizImportOpen, ecQuizParseFile, ecUnzipEntries, ecQuizXLSXRows, ecQuizParseXLSX, ecQuizParseDOCX, ecDocxLines, state };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, getElementsByName: (name) => { const k = '__byname_' + name; if (!elCache[k]) elCache[k] = []; return elCache[k]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
@@ -1284,70 +1284,83 @@ console.log('—— v20261026e 答题即时反馈 ——');
     ok('CSS 含 ec-quiz-fb 反馈块样式', CSS.includes('.ec-quiz-fb') && CSS.includes('.ec-quiz-fb-toggle'));
 }
 
-// ============ v20261026f：背诵板块 · 中文课文（看中文说英文自检） ============
-console.log('—— 中文课文（v20261026f）——');
+// ============ v20261026f/n：背诵板块 · 课文对照（中/英双语，默认隐藏） ============
+console.log('—— 课文对照（v20261026n）——');
 // 1. 静态检查
 ok('ecEditLessonZh 函数存在', /function ecEditLessonZh/.test(APP));
-ok('课时存 zh + zhAt 字段', /lesson\.zh = v;/.test(APP) && /lesson\.zhAt = Date\.now\(\)/.test(APP));
-ok('背诵面板渲染 zhBox', /ec-group-body">\$\{zhBox\}\$\{body\}\$\{rvHtml\}/.test(APP));
-ok('中文课文编辑入口按钮', /data-action="ec-zh-edit"/.test(APP));
-ok('中文显隐切换按钮', /data-action="ec-zh-toggle"/.test(APP));
-ok('分发器含 ec-zh-edit / ec-zh-toggle', /if \(action === 'ec-zh-edit'\)/.test(APP) && /if \(action === 'ec-zh-toggle'\)/.test(APP));
-ok('中文课文弹窗 textarea', APP.includes('ecZhTA'));
-ok('中文课文按 zhAt 新者胜合并', /zhAt\) \|\| 0, b = Number\(l\.zhAt\) \|\| 0/.test(APP) && /zh: l\.zh, zhAt: l\.zhAt/.test(APP));
-ok('CSS 有中文课文样式', CSS.includes('.ec-zh-box') && CSS.includes('.ec-zh-text') && CSS.includes('.ec-zh-empty') && CSS.includes('.ec-zh-off'));
-// 2. 合并功能：zhAt 新者胜（双向）
+ok('课时存 zh + zhAt 字段', /lesson\.zh = zh;/.test(APP) && /lesson\.zhAt = now;/.test(APP));
+ok('课时存 en + enAt 字段', /lesson\.en = en;/.test(APP) && /lesson\.enAt = now;/.test(APP));
+ok('编辑弹窗同时有中文/英文两个输入框', APP.includes('ecZhTA') && APP.includes('ecEnTA'));
+ok('背诵面板渲染课文对照块', /ec-group-body">\$\{zhBox\}\$\{body\}\$\{rvHtml\}/.test(APP));
+ok('语言切换按钮 ec-txt-toggle', /data-action="ec-txt-toggle"/.test(APP));
+ok('分发器含 ec-zh-edit / ec-txt-toggle / ec-open-recite',
+    /if \(action === 'ec-zh-edit'\)/.test(APP) && /if \(action === 'ec-txt-toggle'\)/.test(APP) && /if \(action === 'ec-open-recite'\)/.test(APP));
+ok('合并按 zhAt / enAt 各自新者胜', /\[\['zh', 'zhAt'\], \['en', 'enAt'\]\]/.test(APP));
+ok('CSS 有语言按钮样式', CSS.includes('.ec-lang-btn') && CSS.includes('.ec-lang-btn.on'));
+ok('CSS 有去背诵入口样式', CSS.includes('.ec-due-go') && CSS.includes('.ec-due-click'));
+// 2. 面板：默认隐藏 + 中文/英文各自展开
+{
+    const EC = makeEC();
+    EC.state.data.engcheck.books.push({ id: 'b1', name: '新概念1', order: 0, createdAt: '', tasks: [] });
+    EC.state.data.engcheck.lessons.push({ id: 'lx', bookId: 'b1', name: 'L1', note: '', order: 0, createdAt: '', zh: '你的新连衣裙是什么颜色的？\n是绿色的。', en: "What colour's your new dress?\nIt's green." });
+    EC.state._ecLessonId = 'lx';
+    const p0 = EC.ecRecitePanel('lx');
+    ok('默认隐藏：中文内容不显示', !p0.includes('连衣裙'));
+    ok('默认隐藏：英文内容不显示', !p0.includes('new dress'));
+    ok('面板显示两个语言按钮', p0.includes('data-lang="zh"') && p0.includes('data-lang="en"'));
+    ok('默认显示「已藏起来」提示', p0.includes('课文已藏起来'));
+    // 只展开中文
+    EC.state._ecTxt = { lx: { zh: true } };
+    const p1 = EC.ecRecitePanel('lx');
+    ok('点中文后显示中文课文', p1.includes('连衣裙') && p1.includes('🇨🇳 中文'));
+    ok('中文展开时英文仍隐藏', !p1.includes('new dress'));
+    // 只展开英文
+    EC.state._ecTxt = { lx: { en: true } };
+    const p2 = EC.ecRecitePanel('lx');
+    ok('点英文后显示英文原文', p2.includes('new dress'));
+    ok('英文展开时中文仍隐藏', !p2.includes('连衣裙'));
+    // 两个都展开
+    EC.state._ecTxt = { lx: { zh: true, en: true } };
+    const p3 = EC.ecRecitePanel('lx');
+    ok('中英可同时展开对照', p3.includes('连衣裙') && p3.includes('new dress'));
+    // 空态
+    EC.state._ecTxt = {};
+    EC.state.data.engcheck.lessons[0].zh = '';
+    EC.state.data.engcheck.lessons[0].en = '';
+    const p4 = EC.ecRecitePanel('lx');
+    ok('空态显示导入引导（可点）', p4.includes('ec-zh-empty') && p4.includes('还没有导入课文'));
+    ok('空态语言按钮变「＋中文 / ＋英文」', p4.includes('＋中文') && p4.includes('＋英文'));
+}
+// 3. 合并：中文 / 英文各自时间戳保护
 {
     const EC = makeEC();
     const base = () => ({ books: [], lessons: [], tasks: {}, fsrs: {}, tombs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' });
-    const L = (zh, zhAt) => ({ id: 'lx', bookId: 'b1', name: 'L1', note: '', order: 0, createdAt: '', ...(zh !== undefined ? { zh, zhAt } : {}) });
-    // 本地导入中文（zhAt 新）→ 云端旧快照无 zh → 保留本地
-    const local1 = base(); local1.lessons = [L('本地新课文', 9000)];
-    const cloud1 = base(); cloud1.lessons = [L()];
-    const m1 = EC.ecMergeEngcheck(local1, cloud1, '2026-10-27T09', '2026-10-27T09');
-    ok('合并：本地新导入中文不被旧快照顶掉', (m1.lessons.find(l => l.id === 'lx') || {}).zh === '本地新课文');
-    // 云端导入（zhAt 更新）→ 本地旧 → 采用云端
-    const local2 = base(); local2.lessons = [L('本地旧课文', 1000)];
-    const cloud2 = base(); cloud2.lessons = [L('云端新课文', 9000)];
-    const m2 = EC.ecMergeEngcheck(local2, cloud2, '2026-10-27T09', '2026-10-27T09');
-    ok('合并：云端更新中文时采用云端', (m2.lessons.find(l => l.id === 'lx') || {}).zh === '云端新课文');
-    // 双方 zhAt 相同 → 不互相覆盖
-    const local3 = base(); local3.lessons = [L('甲', 5000)];
-    const cloud3 = base(); cloud3.lessons = [L('乙', 5000)];
-    const m3 = EC.ecMergeEngcheck(local3, cloud3, '2026-10-27T09', '2026-10-27T09');
-    ok('合并：zhAt 相同时权威端（win）保留', (m3.lessons.find(l => l.id === 'lx') || {}).zh === '甲');
+    const L = (o) => Object.assign({ id: 'lx', bookId: 'b1', name: 'L1', note: '', order: 0, createdAt: '' }, o);
+    // 本地新中文 + 云端新英文 → 两边都要保住
+    const local = base(); local.lessons = [L({ zh: '本地中文', zhAt: 9000, en: '旧英文', enAt: 1000 })];
+    const cloud = base(); cloud.lessons = [L({ zh: '旧中文', zhAt: 1000, en: '云端新英文', enAt: 9000 })];
+    const m = EC.ecMergeEngcheck(local, cloud, '2026-10-27T09', '2026-10-27T09');
+    const got = m.lessons.find(l => l.id === 'lx') || {};
+    ok('合并：中文按 zhAt 取较新', got.zh === '本地中文');
+    ok('合并：英文按 enAt 取较新', got.en === '云端新英文');
+    // 云端旧快照完全没有课文 → 本地导入的不能被顶掉
+    const c2 = base(); c2.lessons = [L({})];
+    const m2 = EC.ecMergeEngcheck(local, c2, '2026-10-27T09', '2026-10-27T09');
+    ok('合并：旧快照不会顶掉本地课文', (m2.lessons.find(l => l.id === 'lx') || {}).zh === '本地中文');
 }
-// 3. 背诵面板渲染中文 / 隐藏切换 / 空态引导
-{
-    const EC = makeEC();
-    EC.state.data.engcheck.lessons.push({ id: 'lx', bookId: 'b1', name: 'L1', note: '', order: 0, createdAt: '', zh: '对不起，这是你的手提包吗？\n这是一张漂亮的照片。' });
-    EC.state.data.engcheck.books.push({ id: 'b1', name: '新概念1', order: 0, createdAt: '', tasks: [] });
-    EC.state._ecLessonId = 'lx';
-    const p1 = EC.ecRecitePanel('lx');
-    ok('面板显示中文课文标题', p1.includes('中文课文') && p1.includes('看中文说英文'));
-    ok('面板逐行渲染中文', p1.includes('<p>对不起，这是你的手提包吗？</p>') && p1.includes('漂亮的照片'));
-    ok('面板有 🙈 隐藏按钮和 ✏️ 编辑按钮', p1.includes('ec-zh-toggle') && p1.includes('ec-zh-edit'));
-    // 隐藏态
-    EC.state._ecZhHide = { lx: true };
-    const p2 = EC.ecRecitePanel('lx');
-    ok('隐藏态显示凭记忆提示 + 👁', p2.includes('ec-zh-off') && p2.includes('👁'));
-    ok('隐藏态不再显示中文内容', !p2.includes('手提包'));
-    // 空态引导
-    EC.state.data.engcheck.lessons[0].zh = '';
-    EC.state._ecZhHide = {};
-    const p3 = EC.ecRecitePanel('lx');
-    ok('空态显示导入引导（可点）', p3.includes('ec-zh-empty') && p3.includes('还没有导入中文课文'));
-}
-// 4. 编辑保存流程（uiModal getValue）
+// 4. 编辑保存流程（双栏 getValue）
 (async () => {
     const EC = makeEC();
     EC.state.data.engcheck.lessons.push({ id: 'lx', bookId: 'b1', name: 'L1', note: '', order: 0, createdAt: '' });
-    EC._inputs['ecZhTA'] = '  对不起，这是你的手提包吗？\n打扰一下。  ';
+    EC._inputs['ecZhTA'] = '  你的新连衣裙是什么颜色的？\n是绿色的。  ';
+    EC._inputs['ecEnTA'] = "  What colour's your new dress?\nIt's green.  ";
     EC.ecEditLessonZh('lx');
     await flush();
     const l = EC.state.data.engcheck.lessons[0];
-    ok('ecEditLessonZh 保存去首尾空白', l.zh === '对不起，这是你的手提包吗？\n打扰一下。');
-    ok('ecEditLessonZh 写入 zhAt 时间戳', Number(l.zhAt) > 0);
+    ok('保存中文去首尾空白', l.zh === '你的新连衣裙是什么颜色的？\n是绿色的。');
+    ok('保存英文去首尾空白', l.en === "What colour's your new dress?\nIt's green.");
+    ok('写入 zhAt / enAt 时间戳', Number(l.zhAt) > 0 && Number(l.enAt) > 0);
+    ok('保存后自动展开刚写入的语言', !!(EC.state._ecTxt && EC.state._ecTxt['lx'] && EC.state._ecTxt['lx'].zh && EC.state._ecTxt['lx'].en));
 })();
 
 // ============ v20261026g：整本批量导入中文课文 ============
@@ -1528,9 +1541,97 @@ ok('ecClearZh 函数存在', /async function ecClearZh/.test(APP));
 ok('清空写 zhAt 保证跨设备生效', /l\.zh = ''; l\.zhAt = now;/.test(APP));
 ok('分发器含 ec-clear-zh', /if \(action === 'ec-clear-zh'\)/.test(APP));
 ok('书页有清空本书中文按钮', /data-action="ec-clear-zh" data-book="\$\{book\.id\}"/.test(APP));
-ok('书单页有清空全部中文按钮', /data-action="ec-clear-zh" title="清空所有书的全部中文课文/.test(APP));
+ok('书单页有清空全部课文按钮', /data-action="ec-clear-zh" title="清空所有书的全部课文/.test(APP));
 ok('导入前预览确认（uiConfirm）', /导入预览/.test(APP) && /确认导入吗/.test(APP));
 ok('解析说明去标点归一化', /去标点归一化/.test(APP) && /function ecBatchZhParse/.test(APP));
+
+// ============ v20261026n：复习中心直达背诵页 + 批量中英双语 ============
+console.log('—— 复习直达背诵 / 双语批量（v20261026n）——');
+ok('ecOpenRecite 函数存在', /function ecOpenRecite/.test(APP));
+ok('待背诵清单标题可点去背诵', /class="ec-due-title ec-due-click" data-action="ec-open-recite"/.test(APP));
+ok('「去背诵」入口出现 3 处（待背诵/学习中/已掌握）', (APP.match(/ec-due-go">去背诵/g) || []).length === 3);
+ok('分发器含 ec-open-recite', /if \(action === 'ec-open-recite'\)/.test(APP));
+{
+    const EC = makeEC();
+    EC.state.data.engcheck.books.push({ id: 'b1', name: '新概念1', order: 0, createdAt: '', tasks: [] });
+    EC.state.data.engcheck.lessons.push({ id: 'lx', bookId: 'b1', name: 'L1', note: '', order: 0, createdAt: '' });
+    EC.state.currentSubTab = { engcheck: 'ec-review' };
+    EC.state._ecEditBookId = 'b1';
+    EC.state._ecEditLessonId = 'lx';
+    EC.ecOpenRecite('lx');
+    ok('跳转：切到书单课目 tab', EC.state.currentSubTab.engcheck === 'ec-books');
+    ok('跳转：定位到该课背诵页', EC.state._ecBookId === 'b1' && EC.state._ecLessonId === 'lx');
+    ok('跳转：清掉编辑展开态', EC.state._ecEditBookId === null && EC.state._ecEditLessonId === null);
+}
+// 批量导入：单元内中英双语分栏
+{
+    const EC = makeEC();
+    const names = ['L1、L2 Excuse me!', 'L3、L4 Sorry, sir.'];
+    const txt = ['L1、L2 Excuse me!', '【中文】', '对不起！', '这是您的手提包吗？', '【英文】', 'Excuse me!', 'Is this your handbag?', '//', 'L3、L4 Sorry, sir.', '请把我的大衣和伞拿给我。'].join('\n');
+    const r = EC.ecBatchZhParse(txt, names);
+    ok('双语：中文进 map', (r.map[names[0]] || '').includes('手提包'));
+    ok('双语：英文进 mapEn', (r.mapEn[names[0]] || '').includes('handbag'));
+    ok('双语：标记行本身不进正文', !(r.map[names[0]] || '').includes('【英文】') && !(r.mapEn[names[0]] || '').includes('【中文】'));
+    ok('双语：无标记的单元全当中文', (r.map[names[1]] || '').includes('大衣'));
+    ok('双语：该课没有英文就不写英文', r.mapEn[names[1]] === undefined);
+    const r2 = EC.ecBatchZhParse(['L1、L2 Excuse me!', 'EN:', 'Hello.', 'ZH:', '你好。', '//', 'L3、L4 Sorry, sir.', '请把我的大衣和伞拿给我。'].join('\n'), names);
+    ok('EN: / ZH: 标记也认', (r2.mapEn[names[0]] || '') === 'Hello.' && (r2.map[names[0]] || '') === '你好。');
+    const r3 = EC.ecBatchZhParse(['L1、L2 Excuse me!', '【中文】', '对不起！', '【英文】', 'Excuse me!', 'L3、L4 Sorry, sir.', '请把我的大衣和伞拿给我。'].join('\n'), names);
+    ok('标题行模式（无 //）也支持双语', (r3.mapEn[names[0]] || '') === 'Excuse me!' && (r3.map[names[0]] || '').includes('对不起'));
+}
+ok('批量导入同时写 zh/en 时间戳', /l\.zh = r\.map\[l\.name\]; l\.zhAt = now;/.test(APP) && /l\.en = en; l\.enAt = now;/.test(APP));
+// 批量导入语言模式：同一份中英双语文本，可只取中文 / 只取英文 / 一起取
+{
+    const EC = makeEC();
+    const names = ['L1、L2 Excuse me!', 'L3、L4 Sorry, sir.'];
+    const txt = ['L1、L2 Excuse me!', '【中文】', '对不起！', '这是您的手提包吗？', '【英文】', 'Excuse me!', 'Is this your handbag?', '//', 'L3、L4 Sorry, sir.', '【中文】', '请把我的大衣和伞拿给我。', '【英文】', 'My coat and my umbrella please.'].join('\n');
+    const rz = EC.ecBatchZhParse(txt, names, { lang: 'zh' });
+    ok('只导中文：中文有内容', (rz.map[names[0]] || '').includes('手提包'));
+    ok('只导中文：英文段被跳过，不混进中文', !Object.keys(rz.mapEn).length && !(rz.map[names[0]] || '').includes('handbag'));
+    const re = EC.ecBatchZhParse(txt, names, { lang: 'en' });
+    ok('只导英文：英文有内容', (re.mapEn[names[0]] || '').includes('handbag'));
+    ok('只导英文：中文段被跳过', !Object.keys(re.map).length);
+    ok('语言模式回传（zh/en/mix）', rz.lang === 'zh' && re.lang === 'en' && EC.ecBatchZhParse(txt, names).lang === 'mix');
+    const re2 = EC.ecBatchZhParse('L3、L4 Sorry, sir.\nMy coat and my umbrella please.', names, { lang: 'en' });
+    ok('只导英文：无标记内容默认算英文', (re2.mapEn[names[1]] || '').includes('umbrella') && !re2.map[names[1]]);
+    const rz2 = EC.ecBatchZhParse('L3、L4 Sorry, sir.\n请把我的大衣和伞拿给我。', names, { lang: 'zh' });
+    ok('只导中文：无标记内容默认算中文', (rz2.map[names[1]] || '').includes('大衣') && !Object.keys(rz2.mapEn).length);
+}
+ok('批量导入弹窗有语言三选一', /name="ecBatchLang" value="mix"/.test(APP) && /name="ecBatchLang" value="zh"/.test(APP) && /name="ecBatchLang" value="en"/.test(APP));
+ok('批量导入读取所选语言模式', /input\[name="ecBatchLang"\]:checked/.test(APP) && /ecBatchZhParse\(t, names, \{ lang: useLang \}\)/.test(APP));
+ok('语言模式选择器样式存在', /\.ec-lang-pick/.test(CSS) && /\.ec-lang-opt/.test(CSS));
+// 批量导入端到端：同一份双语文本，三种模式各自写入，互不覆盖
+(async () => {
+    const EC = makeEC();
+    const d = EC.state.data.engcheck;
+    d.books.push({ id: 'b1', name: '新概念一', tasks: [], createdAt: '' });
+    d.lessons.push({ id: 'l1', bookId: 'b1', name: 'L1、L2 Excuse me!', order: 0, createdAt: '' });
+    d.lessons.push({ id: 'l2', bookId: 'b1', name: 'L3、L4 Sorry, sir.', order: 1, createdAt: '' });
+    EC._setConfirm(true);
+    const txt = ['L1、L2 Excuse me!', '【中文】', '对不起！', '【英文】', 'Excuse me!', '//', 'L3、L4 Sorry, sir.', '【中文】', '请把我的大衣和伞拿给我。', '【英文】', 'My coat and my umbrella please.'].join('\n');
+    const L = () => d.lessons.find(x => x.id === 'l1');
+    const L2 = () => d.lessons.find(x => x.id === 'l2');
+    // ① 只导中文：只有 zh 落库，en 不动
+    EC._inputs['ecBatchZhTA'] = txt;
+    EC.ecBatchZhImport('b1', 'zh');
+    await flush(); await flush();
+    ok('端到端·只导中文：中文写入', (L().zh || '').includes('对不起'));
+    ok('端到端·只导中文：英文保持空', !L().en);
+    ok('端到端·只导中文：写 zhAt 时间戳', !!L().zhAt);
+    // ② 只导英文：只补 en，不动已有 zh
+    EC._inputs['ecBatchZhTA'] = txt;
+    EC.ecBatchZhImport('b1', 'en');
+    await flush(); await flush();
+    ok('端到端·只导英文：英文补上', (L().en || '').includes('Excuse me!'));
+    ok('端到端·只导英文：中文没被覆盖', (L().zh || '').includes('对不起') && !!L().zhAt);
+    ok('端到端·只导英文：写 enAt 时间戳', !!L().enAt);
+    // ③ 中英一起：两课双语同时落库
+    EC._inputs['ecBatchZhTA'] = txt;
+    EC.ecBatchZhImport('b1', 'mix');
+    await flush(); await flush();
+    ok('端到端·中英一起：第二课也双语', (L2().zh || '').includes('大衣') && (L2().en || '').includes('umbrella'));
+})();
+ok('清空课文同时清中文和英文', /if \(l\.zh\) \{ l\.zh = ''; l\.zhAt = now; \}/.test(APP) && /if \(l\.en\) \{ l\.en = ''; l\.enAt = now; \}/.test(APP));
 
 // 等待异步断言后汇总
 setTimeout(() => {

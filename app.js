@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261026m';
+const APP_BUILD = '20261026o';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -2656,6 +2656,7 @@ const state = {
     _ecLessonSel: {},
     _ecEarlyId: null,
     _ecLastReview: null,
+    _ecTxt: {},
     _ecAddOpen: false,
     _ecHeadEdit: false,
     _loadingHot: false,
@@ -10629,9 +10630,14 @@ function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
             if (!l || l.id == null) return;
             const mine = lMap.get(l.id);
             if (!mine) { lMap.set(l.id, l); return; }
-            // 中文课文按 zhAt 新者胜：一端导入课文后合并，不被对端旧课时快照顶掉
-            const a = Number(mine.zhAt) || 0, b = Number(l.zhAt) || 0;
-            if (b > a && (l.zh || '') !== (mine.zh || '')) lMap.set(l.id, Object.assign({}, mine, { zh: l.zh, zhAt: l.zhAt }));
+            // 课文（中文 zh / 英文 en）各自按时间戳新者胜：一端导入课文后合并，不被对端旧课时快照顶掉
+            let merged = mine;
+            [['zh', 'zhAt'], ['en', 'enAt']].forEach(pair => {
+                const k = pair[0], ak = pair[1];
+                const a = Number(merged[ak]) || 0, b = Number(l[ak]) || 0;
+                if (b > a && (l[k] || '') !== (merged[k] || '')) merged = Object.assign({}, merged, { [k]: l[k], [ak]: l[ak] });
+            });
+            if (merged !== mine) lMap.set(l.id, merged);
         });
         return { books: Array.from(bMap.values()), lessons: Array.from(lMap.values()), tombTasks };
     };
@@ -10987,25 +10993,45 @@ function ecEditLessonNote(id) {
     });
 }
 // 导入 / 编辑中文课文（背诵板块：看中文说英文自检）
+// 中英文课文编辑：一个弹窗里同时维护「中文」「英文」两份原文
+// 中文用来做「看中文说英文」自检，英文用来对照原文核对发音/表达
 function ecEditLessonZh(id) {
     const lesson = ecLessonById(id);
     if (!lesson) return;
+    const taStyle = 'width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.7';
     uiModal({
-        title: '🇨🇳 中文课文 · ' + lesson.name,
-        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">粘贴本课的<b>中文翻译</b>（建议一句一行）。保存后背诵板块直接显示中文 —— 背书时看中文 → 说出英文 → 再对照原文自检，不用再单独点开。</div>
-               <textarea id="ecZhTA" rows="12" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.7" placeholder="例如：&#10;对不起，这是你的手提包吗？&#10;打扰一下，请问我能坐在这里吗？">${escapeHtml(lesson.zh || '')}</textarea>
-               <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">保存后自动云同步到其他设备；背诵板块可用 🙈 隐藏中文凭记忆背诵。</div>`,
+        title: '📝 中英文课文 · ' + lesson.name,
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">两栏都可以填，也可以只填一栏（建议一句一行）。背诵板块里会显示「🇨🇳 中文」「🇬🇧 英文」两个按钮，<b>平时默认隐藏</b>，需要对照时再点开。</div>
+               <div style="font-size:12px;font-weight:700;color:var(--text);margin:8px 0 4px">🇨🇳 中文课文（看中文说英文用）</div>
+               <textarea id="ecZhTA" rows="8" style="${taStyle}" placeholder="例如：&#10;你的新连衣裙是什么颜色的？&#10;是绿色的。">${escapeHtml(lesson.zh || '')}</textarea>
+               <div style="font-size:12px;font-weight:700;color:var(--text);margin:12px 0 4px">🇬🇧 英文原文（对照核对用）</div>
+               <textarea id="ecEnTA" rows="8" style="${taStyle}" placeholder="例如：&#10;What colour's your new dress?&#10;It's green.">${escapeHtml(lesson.en || '')}</textarea>
+               <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">保存后自动云同步到其他设备。</div>`,
         getValue: () => {
-            const v = (document.getElementById('ecZhTA') || {}).value || '';
-            return v.trim().slice(0, 8000);
+            const zh = ((document.getElementById('ecZhTA') || {}).value || '').trim().slice(0, 8000);
+            const en = ((document.getElementById('ecEnTA') || {}).value || '').trim().slice(0, 8000);
+            return { zh, en };
         },
         okText: '保存'
     }).then(v => {
         if (v == null) return;
-        lesson.zh = v;
-        lesson.zhAt = Date.now();
-        if (state._ecZhHide) delete state._ecZhHide[id];
-        ecAfterAction(v ? '已保存中文课文，背诵板块直接看中文背英文' : '已清空中文课文');
+        const now = Date.now();
+        const zh = typeof v === 'string' ? v : (v.zh || '');
+        const en = typeof v === 'string' ? '' : (v.en || '');
+        const zhChanged = (zh || '') !== (lesson.zh || '');
+        const enChanged = (en || '') !== (lesson.en || '');
+        lesson.zh = zh;
+        if (zhChanged || !lesson.zhAt) lesson.zhAt = now;
+        lesson.en = en;
+        if (enChanged || !lesson.enAt) lesson.enAt = now;
+        // 新保存的课文默认展开显示一次（用户刚导入，一定想看），之后按按钮自己控
+        state._ecTxt = state._ecTxt || {};
+        const cur = state._ecTxt[id] || {};
+        state._ecTxt[id] = { zh: !!zh && (zhChanged || !!cur.zh), en: !!en && (enChanged || !!cur.en) };
+        const bits = [];
+        if (zh) bits.push('中文');
+        if (en) bits.push('英文');
+        ecAfterAction(bits.length ? `已保存课文（${bits.join(' + ')}），背诵板块可用按钮随时展开对照` : '已清空中文和英文课文');
     });
 }
 // 提取标题中的课次编号序列（如 "L1、L2 Excuse me!" → [1,2]，"Lesson 3" → [3]，"第113课" → [113]）。
@@ -11023,7 +11049,10 @@ function ecZhTitleNums(s) {
 // ① 分割线模式（推荐）：单元之间用单独一行的「//」分隔，每个单元第一行 = 课时标题，其余行 = 中文；
 // ② 标题行模式（兼容旧用法）：以「课时名」整行作为分段起点，其下内容归入该课（不依赖空行）。
 // 标题匹配层层放宽（抗 TXT 空格/标点差异）：精确 → 课次编号（优先，文字差异不影响）→ 去标点归一化 → 去标点前缀
-function ecBatchZhParse(text, lessonNames) {
+// opts.lang：'mix' 中英一起（默认，按【中文】/【英文】标记分栏）｜'zh' 只取中文｜'en' 只取英文
+// 三种模式吃的是**同一份文本**：只导中文时英文段被自动跳过，只导英文时中文段被跳过，互相不覆盖
+function ecBatchZhParse(text, lessonNames, opts) {
+    const lang = ((opts || {}).lang || 'mix');
     const norm = (s) => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
     const strip = (s) => norm(s).replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
     const names = (lessonNames || []);
@@ -11054,18 +11083,41 @@ function ecBatchZhParse(text, lessonNames) {
         return hit;
     };
     const sepRe = /^\s*(?:\/\/+|／／+)\s*$/;
+    // 语言分段标记（单独一行）：【英文】/ EN: / 【中文】/ ZH: —— 一个单元里可同时给中文和英文
+    const enMark = /^[【\[（(]?\s*(?:en|eng|english|英文|英语|原文)\s*[】\]）)]?\s*[:：]?$/i;
+    const zhMark = /^[【\[（(]?\s*(?:zh|cn|chinese|中文|译文|翻译)\s*[】\]）)]?\s*[:：]?$/i;
+    // 把一个单元的行按语言标记切开：
+    // - lang='mix'：无标记全当中文（兼容旧用法），有标记就分栏
+    // - lang='zh' ：默认中文，遇到【英文】标记后面那段直接丢弃（不污染中文）
+    // - lang='en' ：默认英文，遇到【中文】标记后面那段直接丢弃
+    const splitLang = (arr) => {
+        const zh = [], en = [];
+        let curLang = lang === 'en' ? 'en' : 'zh';
+        const onEn = lang === 'zh' ? 'skip' : 'en';
+        const onZh = lang === 'en' ? 'skip' : 'zh';
+        arr.forEach(t => {
+            if (enMark.test(t)) { curLang = onEn; return; }
+            if (zhMark.test(t)) { curLang = onZh; return; }
+            if (curLang === 'skip') return;
+            (curLang === 'en' ? en : zh).push(t);
+        });
+        return { zh: zh.join('\n').trim(), en: en.join('\n').trim() };
+    };
     const lines = String(text || '').split('\n');
     const useSep = lines.some(l => sepRe.test(l));
-    const map = {}, matched = {}, unknownTitles = [];
+    const map = {}, mapEn = {}, matched = {}, unknownTitles = [];
     if (useSep) {
         // ---- 分割线模式：// 行切单元，单元首行 = 标题 ----
         let title = null, buf = [];
         const flushUnit = () => {
             if (title == null) return;
-            const content = buf.join('\n').trim();
             const hit = hitOf(title);
-            if (hit) { if (content) map[hit] = content; matched[hit] = true; }
-            else unknownTitles.push(title);
+            if (hit) {
+                const lz = splitLang(buf);
+                if (lz.zh) map[hit] = lz.zh;
+                if (lz.en) mapEn[hit] = lz.en;
+                matched[hit] = true;
+            } else unknownTitles.push(title);
             title = null; buf = [];
         };
         for (let raw of lines) {
@@ -11078,7 +11130,14 @@ function ecBatchZhParse(text, lessonNames) {
     } else {
         // ---- 标题行模式：课时名整行 = 分段起点 ----
         let cur = null, curBuf = [];
-        const flush = () => { if (cur && curBuf.length) { const c = curBuf.join('\n').trim(); if (c) map[cur] = c; } curBuf = []; };
+        const flush = () => {
+            if (cur && curBuf.length) {
+                const lz = splitLang(curBuf);
+                if (lz.zh) map[cur] = lz.zh;
+                if (lz.en) mapEn[cur] = lz.en;
+            }
+            curBuf = [];
+        };
         for (let raw of lines) {
             const t = raw.replace(/\r$/, '').trim();
             if (!t) continue; // 空行忽略，不影响分段
@@ -11090,57 +11149,98 @@ function ecBatchZhParse(text, lessonNames) {
         flush();
     }
     const unmatched = names.filter(n => !matched[n]);
-    return { map, unmatched, unknownTitles, mode: useSep ? 'sep' : 'title' };
+    return { map, mapEn, unmatched, unknownTitles, mode: useSep ? 'sep' : 'title', lang };
 }
-// 整本批量导入中文课文（按课时名自动匹配）
-function ecBatchZhImport(bookId) {
+// 整本批量导入课文（中文 / 英文 / 中英一起，按课时名自动匹配）
+// lang: 'mix' 中英一起（默认）｜'zh' 只导中文｜'en' 只导英文
+function ecBatchZhImport(bookId, lang) {
     const book = ecBookById(bookId);
     if (!book) return;
     const lessons = ecLessonsOf(bookId);
-    if (!lessons.length) { toast('这本书还没有课程，先添加课程再批量导入中文'); return; }
+    if (!lessons.length) { toast('这本书还没有课程，先添加课程再批量导入课文'); return; }
+    const L = (lang === 'zh' || lang === 'en') ? lang : 'mix';
     const namesList = lessons.map(l => `<li>${escapeHtml(l.name)}</li>`).join('');
+    const langPick = `
+        <div class="ec-lang-pick">
+            <label class="ec-lang-opt${L === 'mix' ? ' on' : ''}"><input type="radio" name="ecBatchLang" value="mix"${L === 'mix' ? ' checked' : ''}><span>🇨🇳🇬🇧 中英一起</span></label>
+            <label class="ec-lang-opt${L === 'zh' ? ' on' : ''}"><input type="radio" name="ecBatchLang" value="zh"${L === 'zh' ? ' checked' : ''}><span>🇨🇳 只导中文</span></label>
+            <label class="ec-lang-opt${L === 'en' ? ' on' : ''}"><input type="radio" name="ecBatchLang" value="en"${L === 'en' ? ' checked' : ''}><span>🇬🇧 只导英文</span></label>
+        </div>
+        <div class="ec-lang-hint">三种模式用的是<b>同一份文本</b>：选「只导中文」时英文段自动跳过，选「只导英文」时中文段自动跳过，<b>都不会覆盖另一种语言</b>。所以可以一次导全，也可以分两次单独导。</div>`;
+    const title = L === 'zh' ? '📥 批量导入中文课文 · ' : (L === 'en' ? '📥 批量导入英文课文 · ' : '📥 批量导入课文 · ');
     uiModal({
-        title: '📥 批量导入中文课文 · ' + book.name,
-        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">一次性粘贴整本：<b>推荐用「//」作为单元分割线</b>——每个单元之间单独一行写「//」，单元<b>第一行写课时标题</b>（如 L1、L2 Excuse me!），下面紧跟该课中文，一句一行。没有「//」也能用：直接以课时名整行作为分段起点。匹配已做<b>去标点/空格归一化 + 课次编号兜底</b>（L15 ↔ L15、L16），引号、顿号、全角空格差异都不影响。点「导入」后会先显示<b>匹配预览</b>，确认后才写入。</div>
+        title: title + book.name,
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">一次性粘贴整本：<b>推荐用「//」作为单元分割线</b>——每个单元之间单独一行写「//」，单元<b>第一行写课时标题</b>（如 L1、L2 Excuse me!）。<br>中英分开写在同一个单元里时，单独一行写「【中文】」「【英文】」分栏；<b>不写标记就按上面的模式全部当作中文（或英文）</b>。没有「//」也能用：直接以课时名整行作为分段起点。匹配已做<b>去标点/空格归一化 + 课次编号兜底</b>（L15 ↔ L15、L16）。点「导入」后先显示<b>匹配预览</b>，确认后才写入。</div>
+               ${langPick}
                <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:13px">👀 本书现有课时名（对照用，标题不必完全一致）</summary><ul style="columns:2;font-size:12px;color:var(--text-secondary);margin:6px 0;padding-left:16px">${namesList}</ul></details>
-               <textarea id="ecBatchZhTA" rows="12" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.7" placeholder="L1、L2 Excuse me!&#10;对不起！&#10;什么事？&#10;这是您的手提包吗？&#10;//&#10;L3、L4 Sorry, sir.&#10;请把我的大衣和伞拿给我。&#10;这是我的牌子。&#10;//&#10;……"></textarea>`,
-        getValue: () => (document.getElementById('ecBatchZhTA') || {}).value || '',
+               <textarea id="ecBatchZhTA" rows="12" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.7" placeholder="L1、L2 Excuse me!&#10;【中文】&#10;对不起！&#10;这是您的手提包吗？&#10;【英文】&#10;Excuse me!&#10;Is this your handbag?&#10;//&#10;L3、L4 Sorry, sir.&#10;【中文】&#10;请把我的大衣和伞拿给我。&#10;【英文】&#10;My coat and my umbrella please.&#10;//&#10;……"></textarea>`,
+        getValue: () => {
+            let useL = L;
+            try {
+                const el2 = document.querySelector('input[name="ecBatchLang"]:checked');
+                if (el2 && el2.value) useL = el2.value;
+            } catch (err) { /* 拿不到选择控件时用默认模式 */ }
+            return {
+                text: (document.getElementById('ecBatchZhTA') || {}).value || '',
+                lang: useL
+            };
+        },
         okText: '导入'
-    }).then(async t => {
-        if (t == null) return;
+    }).then(async v => {
+        if (v == null) return;
+        const t = typeof v === 'string' ? v : (v.text || '');
+        const useLang = (typeof v === 'string' ? 'mix' : (v.lang || 'mix'));
         const names = lessons.map(l => l.name);
-        const r = ecBatchZhParse(t, names);
-        const cnt = Object.keys(r.map).length;
-        if (!cnt) { toast('没有匹配到任何课时，请核对粘贴里的课时名与本书是否一致'); return; }
+        const r = ecBatchZhParse(t, names, { lang: useLang });
+        const cnt = Object.keys(r.map).length + Object.keys(r.mapEn).length;
+        if (!cnt) {
+            toast(useLang === 'en' ? '没有匹配到任何英文课文，请核对粘贴内容里的课时标题与本书是否一致' : '没有匹配到任何课时，请核对粘贴里的课时名与本书是否一致');
+            return;
+        }
         // 预览确认：先告诉用户会写入哪些课、哪些没匹配上，确认才写入（防止错并）
-        const totalLines = Object.values(r.map).reduce((s, v) => s + v.split('\n').filter(Boolean).length, 0);
-        const shown = names.filter(n => r.map[n] != null).slice(0, 12).join('、');
-        const more = cnt > 12 ? ` 等 ${cnt} 课` : '';
+        const zhCnt = Object.keys(r.map).length, enCnt = Object.keys(r.mapEn || {}).length;
+        const totalLines = Object.values(r.map).reduce((s, v2) => s + v2.split('\n').filter(Boolean).length, 0)
+            + Object.values(r.mapEn || {}).reduce((s, v2) => s + v2.split('\n').filter(Boolean).length, 0);
+        const shown = names.filter(n => r.map[n] != null || (r.mapEn || {})[n] != null).slice(0, 12).join('、');
+        const more = Math.max(zhCnt, enCnt) > 12 ? ` 等 ${Math.max(zhCnt, enCnt)} 课` : '';
+        const head = useLang === 'zh' ? `解析完成：中文 ${zhCnt} 课（共 ${totalLines} 行）`
+            : (useLang === 'en' ? `解析完成：英文 ${enCnt} 课（共 ${totalLines} 行）`
+                : `解析完成：中文 ${zhCnt} 课、英文 ${enCnt} 课（共 ${totalLines} 行）`);
         const un = r.unmatched.length ? `\n未匹配 ${r.unmatched.length} 课：${r.unmatched.slice(0, 15).join('、')}${r.unmatched.length > 15 ? ' 等' : ''}（这些课保持原样）` : '';
         const unk = (r.unknownTitles && r.unknownTitles.length) ? `\n⚠️ TXT 里 ${r.unknownTitles.length} 个标题没对上课时：${r.unknownTitles.slice(0, 10).join(' ｜ ')}${r.unknownTitles.length > 10 ? ' 等' : ''}（请对照上方课时名修正标题）` : '';
-        const okGo = await uiConfirm(`解析完成：将写入 ${cnt} 课（共 ${totalLines} 行中文）。已匹配：${shown}${more}。${un}${unk}\n确认导入吗？`, { title: '📥 导入预览', okText: '导入' });
+        const okGo = await uiConfirm(`${head}。已匹配：${shown}${more}。${un}${unk}\n确认导入吗？`, { title: '📥 导入预览', okText: '导入' });
         if (!okGo) return;
         const now = Date.now();
-        lessons.forEach(l => { if (r.map[l.name] != null) { l.zh = r.map[l.name]; l.zhAt = now; } });
-        if (state._ecZhHide) state._ecZhHide = {};
+        lessons.forEach(l => {
+            if (r.map[l.name] != null) { l.zh = r.map[l.name]; l.zhAt = now; }
+            const en = (r.mapEn || {})[l.name];
+            if (en != null) { l.en = en; l.enAt = now; }
+        });
+        state._ecTxt = {};
         const extra = r.unmatched.length ? `；未匹配 ${r.unmatched.length} 课：${r.unmatched.join('、')}` : '';
         const extra2 = (r.unknownTitles && r.unknownTitles.length) ? `；TXT 标题未对上 ${r.unknownTitles.length} 个` : '';
-        ecAfterAction(`已导入 ${cnt} 课中文课文${extra}${extra2}`);
+        const langName = useLang === 'zh' ? '中文' : (useLang === 'en' ? '英文' : '中文');
+        ecAfterAction(useLang === 'mix'
+            ? `已导入中文 ${zhCnt} 课、英文 ${enCnt} 课${extra}${extra2}`
+            : `已导入${langName} ${useLang === 'en' ? enCnt : zhCnt} 课（另一种语言保持原样）${extra}${extra2}`);
     });
 }
-// 清空中文课文（bookId 为空 = 全部书）；zhAt 更新保证跨设备合并时「清空」生效
+// 清空课文（中文 + 英文；bookId 为空 = 全部书）；时间戳更新保证跨设备合并时「清空」生效
 async function ecClearZh(bookId) {
     const d = ecData();
     const lessons = bookId ? ecLessonsOf(bookId) : d.lessons;
-    const n = lessons.filter(l => l.zh).length;
-    if (!n) { toast('没有可清空的中文课文'); return; }
+    const n = lessons.filter(l => l.zh || l.en).length;
+    if (!n) { toast('没有可清空的课文'); return; }
     const scope = bookId ? `本书（${(ecBookById(bookId) || {}).name || ''}）` : '所有书';
-    const okGo = await uiConfirm(`将清空${scope}的 ${n} 课中文课文（只清中文，课程目录/打卡/背诵记录不受影响），且跨设备同步。确定吗？`, { isDanger: true, okText: '清空' });
+    const okGo = await uiConfirm(`将清空${scope}的 ${n} 课课文（中文和英文都清，课程目录/打卡/背诵记录不受影响），且跨设备同步。确定吗？`, { isDanger: true, okText: '清空' });
     if (!okGo) return;
     const now = Date.now();
-    lessons.forEach(l => { if (l.zh) { l.zh = ''; l.zhAt = now; } });
-    if (state._ecZhHide) state._ecZhHide = {};
-    ecAfterAction(`已清空${scope}的 ${n} 课中文课文`);
+    lessons.forEach(l => {
+        if (l.zh) { l.zh = ''; l.zhAt = now; }
+        if (l.en) { l.en = ''; l.enAt = now; }
+    });
+    state._ecTxt = {};
+    ecAfterAction(`已清空${scope}的 ${n} 课课文`);
 }
 async function ecRenameLesson(id) {
     const lesson = ecLessonById(id);
@@ -13258,7 +13358,7 @@ function ecRenderBooks() {
                 ${headEdit ? `
                 ${books.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-book-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
                 <button class="btn btn-sm btn-secondary" data-action="ec-clear-records" title="清空所有打卡/背诵记录，书单和课程目录保留（测试期重来用）">🧹 清零</button>
-                <button class="btn btn-sm btn-secondary" data-action="ec-clear-zh" title="清空所有书的全部中文课文（目录/打卡/背诵记录不受影响）">🗑️ 中文</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-clear-zh" title="清空所有书的全部课文（中文+英文，目录/打卡/背诵记录不受影响）">🗑️ 课文</button>
                 <button class="btn btn-sm ${addOpen ? 'btn-secondary' : 'btn-primary'}" data-action="ec-toggle-add">${addOpen ? '✕ 收起' : '➕ 新增'}</button>` : ''}
                 <button class="ec-edit-btn${headEdit ? ' ec-edit-on' : ''}" data-action="ec-head-edit" title="${headEdit ? '收起管理按钮' : '展开管理按钮（批量删除 / 清零 / 中文 / 新增）'}">${headEdit ? '✕' : '✏️'}</button>
             </div>
@@ -13343,9 +13443,9 @@ function ecRenderLessons() {
                 ${headEdit ? `
                 ${lessons.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-lesson-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
                 <button class="btn btn-sm ${addOpen ? 'btn-secondary' : 'btn-primary'}" data-action="ec-toggle-add">${addOpen ? '✕ 收起' : '➕ 新增'}</button>
-                <button class="btn btn-sm btn-secondary" data-action="ec-batch-zh" data-book="${book.id}" title="一次粘贴整本书，按课时名自动匹配导入各课中文课文">📥 批量中文</button>
-                <button class="btn btn-sm btn-secondary" data-action="ec-clear-zh" data-book="${book.id}" title="清空本书全部中文课文">🗑️ 中文</button>` : ''}
-                <button class="ec-edit-btn${headEdit ? ' ec-edit-on' : ''}" data-action="ec-head-edit" title="${headEdit ? '收起管理按钮' : '展开管理按钮（批量删除 / 新增 / 批量中文 / 中文）'}">${headEdit ? '✕' : '✏️'}</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-batch-zh" data-book="${book.id}" title="一次粘贴整本书，按课时名自动匹配导入各课课文；可选中英一起 / 只导中文 / 只导英文">📥 导入课文</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-clear-zh" data-book="${book.id}" title="清空本书全部课文（中文+英文）">🗑️ 课文</button>` : ''}
+                <button class="ec-edit-btn${headEdit ? ' ec-edit-on' : ''}" data-action="ec-head-edit" title="${headEdit ? '收起管理按钮' : '展开管理按钮（批量删除 / 新增 / 导入课文 / 清空课文）'}">${headEdit ? '✕' : '✏️'}</button>
             </div>
         </div>
         ${addOpen ? `
@@ -13454,6 +13554,65 @@ function ecTaskRow(lessonId, taskDef) {
     </div>`;
 }
 
+// 从复习中心 / 待背诵清单点课程 → 直接进该课的背诵页面（并滚动定位到背诵板块）
+function ecOpenRecite(lessonId) {
+    const lesson = ecLessonById(lessonId);
+    if (!lesson) return;
+    state.currentSubTab = state.currentSubTab || {};
+    state.currentSubTab['engcheck'] = 'ec-books';
+    state._ecBookId = lesson.bookId;
+    state._ecLessonId = lessonId;
+    state._ecEditBookId = null;
+    state._ecEditLessonId = null;
+    state._ecBookSelMode = false;
+    state._ecLessonSelMode = false;
+    state._ecBookSel = {};
+    state._ecLessonSel = {};
+    state._ecAddOpen = false;
+    state._ecHeadEdit = false;
+    state._ecEarlyId = null;
+    render();
+    try {
+        if (typeof document !== 'undefined' && document.querySelector) {
+            setTimeout(() => {
+                const el = document.querySelector('.ec-group-recite');
+                if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 30);
+        }
+    } catch (err) { /* 滚动定位失败不影响跳转本身 */ }
+}
+
+// 课文对照块：中文 / 英文各自一个按钮，默认全部隐藏（合上书先自己背，需要提示时才点开）
+function ecTxtBlockHTML(lessonId) {
+    const lesson = ecLessonById(lessonId);
+    if (!lesson) return '';
+    const open = (state._ecTxt && state._ecTxt[lessonId]) || {};
+    const lines = (s) => String(s || '').split('\n').map(x => x.trim()).filter(Boolean);
+    const zhLines = lines(lesson.zh), enLines = lines(lesson.en);
+    const hasZh = zhLines.length > 0, hasEn = enLines.length > 0;
+    const langBtn = (lang, label, icon, has) => has
+        ? `<button class="ec-lang-btn${open[lang] ? ' on' : ''}" data-action="ec-txt-toggle" data-lesson="${lessonId}" data-lang="${lang}" title="${open[lang] ? '收起' : '显示'}${label}">${icon} ${label}${open[lang] ? '' : ' 👁'}</button>`
+        : `<button class="ec-lang-btn ec-lang-add" data-action="ec-zh-edit" data-lesson="${lessonId}" title="导入${label}课文">＋${label}</button>`;
+    const parts = [];
+    if (hasZh && open.zh) parts.push(`<div class="ec-zh-text"><div class="ec-txt-label">🇨🇳 中文</div>${zhLines.map(s => `<p>${escapeHtml(s)}</p>`).join('')}</div>`);
+    if (hasEn && open.en) parts.push(`<div class="ec-zh-text ec-txt-en"><div class="ec-txt-label">🇬🇧 英文原文</div>${enLines.map(s => `<p>${escapeHtml(s)}</p>`).join('')}</div>`);
+    let inner;
+    if (parts.length) inner = parts.join('');
+    else if (hasZh || hasEn) inner = `<div class="ec-zh-text ec-zh-off">课文已藏起来 —— 先合上书自己背一遍，需要提示时点上方「🇨🇳 中文」或「🇬🇧 英文」。</div>`;
+    else inner = `<div class="ec-zh-empty" data-action="ec-zh-edit" data-lesson="${lessonId}">还没有导入课文 —— 点这里粘贴本课的<b>中文和英文</b>，背书时看中文说英文，再展开英文核对原文。</div>`;
+    return `
+        <div class="ec-zh-box">
+            <div class="ec-zh-head">
+                <span class="ec-zh-title">📄 课文对照 · 看中文说英文</span>
+                <span class="ec-zh-actions">
+                    ${langBtn('zh', '中文', '🇨🇳', hasZh)}
+                    ${langBtn('en', '英文', '🇬🇧', hasEn)}
+                    <button class="ec-edit-btn" data-action="ec-zh-edit" data-lesson="${lessonId}" title="导入 / 编辑中英文课文">✏️</button>
+                </span>
+            </div>
+            ${inner}
+        </div>`;
+}
 // 背诵面板（FSRS）
 function ecRecitePanel(lessonId) {
     const d = ecData();
@@ -13462,22 +13621,7 @@ function ecRecitePanel(lessonId) {
     const st = ecReciteStatus(rec, Date.now());
     const rv = state._ecLastReview;
     const rvHtml = (rv && rv.id === lessonId) ? `<div class="ec-review-feedback">${escapeHtml(rv.text)}</div>` : '';
-    // 中文课文块：看中文说英文自检（默认显示；🙈 可隐藏凭记忆背诵）
-    const zhHidden = !!(state._ecZhHide && state._ecZhHide[lessonId]);
-    const zhLines = (lesson && lesson.zh) ? String(lesson.zh).split('\n').map(s => s.trim()).filter(Boolean) : [];
-    const zhBody = !lesson ? '' : !zhLines.length ? `
-            <div class="ec-zh-empty" data-action="ec-zh-edit" data-lesson="${lessonId}">🇨🇳 还没有导入中文课文，点这里粘贴本课中文翻译 —— 背书时<b>看中文 → 说英文</b>，自检更快更高效。</div>` : zhHidden ? `
-            <div class="ec-zh-text ec-zh-off">中文已隐藏 🙈 凭记忆背诵这一课，需要提示时点 👁 再看。</div>` : `
-            <div class="ec-zh-text">${zhLines.map(s => `<p>${escapeHtml(s)}</p>`).join('')}</div>`;
-    const zhHead = !lesson ? '' : `
-        <div class="ec-zh-head">
-            <span class="ec-zh-title">🇨🇳 中文课文 · 看中文说英文</span>
-            <span class="ec-zh-actions">
-                ${zhLines.length ? `<button class="ec-edit-btn" data-action="ec-zh-toggle" data-lesson="${lessonId}" title="${zhHidden ? '显示中文提示' : '隐藏中文（凭记忆背诵）'}">${zhHidden ? '👁' : '🙈'}</button>` : ''}
-                <button class="ec-edit-btn" data-action="ec-zh-edit" data-lesson="${lessonId}" title="导入 / 编辑中文课文">✏️</button>
-            </span>
-        </div>`;
-    const zhBox = !lesson ? '' : `<div class="ec-zh-box">${zhHead}${zhBody}</div>`;
+    const zhBox = !lesson ? '' : ecTxtBlockHTML(lessonId);
     let body;
     if (st === 'new') {
         body = `
@@ -13577,7 +13721,7 @@ function ecRenderReview() {
         return `
         <div class="ec-due-row${late ? ' late' : ''}">
             <div class="ec-due-info">
-                <div class="ec-due-title">📖 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span></div>
+                <div class="ec-due-title ec-due-click" data-action="ec-open-recite" data-lesson="${it.lesson.id}" title="点击直接进入这一课的背诵页面">📖 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span><span class="ec-due-go">去背诵 ›</span></div>
                 <div class="ec-due-meta">应复习：${ecFmtWeek(it.rec.due)}（${ecRelText(it.rec.due)}） · 稳定性 ${ecSDays(it.rec.s)} · D=${it.rec.d.toFixed(1)} · 已成功 ${it.rec.n} 次</div>
                 ${rvFeedback(it.lesson.id)}
                 <div class="ec-recite-actions ec-recite-inline">${gradeMini(it.lesson.id)}</div>
@@ -13597,7 +13741,7 @@ function ecRenderReview() {
     const waitRows = waiting.map(it => `
         <div class="ec-due-row">
             <div class="ec-due-info">
-                <div class="ec-due-title">📖 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span></div>
+                <div class="ec-due-title ec-due-click" data-action="ec-open-recite" data-lesson="${it.lesson.id}" title="点击直接进入这一课的背诵页面">📖 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span><span class="ec-due-go">去背诵 ›</span></div>
                 <div class="ec-due-meta">下次复习：${ecFmtWeek(it.rec.due)}（${ecRelText(it.rec.due)}） · 稳定性 ${ecSDays(it.rec.s)} · D=${it.rec.d.toFixed(1)} · 已成功 ${it.rec.n} 次</div>
                 ${rvFeedback(it.lesson.id)}
                 ${earlyId === it.lesson.id
@@ -13615,7 +13759,7 @@ function ecRenderReview() {
     const masterRows = mastered.map(it => `
         <div class="ec-due-row">
             <div class="ec-due-info">
-                <div class="ec-due-title">🏆 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span></div>
+                <div class="ec-due-title ec-due-click" data-action="ec-open-recite" data-lesson="${it.lesson.id}" title="点击直接进入这一课的背诵页面">🏆 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span><span class="ec-due-go">去背诵 ›</span></div>
                 <div class="ec-due-meta">稳定性 ${ecSDays(it.rec.s)} · 成功复习 ${it.rec.n} 次 · D=${it.rec.d.toFixed(1)}${earlyId === it.lesson.id ? '' : ''}</div>
                 ${rvFeedback(it.lesson.id)}
                 ${earlyId === it.lesson.id
@@ -13637,7 +13781,7 @@ function ecRenderReview() {
     </div>
     ${ecFsrsCard()}
     <div class="card">
-        <div class="card-header"><div class="card-title">⏰ 待背诵清单</div><span style="font-size:12px;color:var(--text-secondary)">按应复习时间排序</span></div>
+        <div class="card-header"><div class="card-title">⏰ 待背诵清单</div><span style="font-size:12px;color:var(--text-secondary)">点课程名 → 直接进背诵页</span></div>
         ${dueList.length ? dueRows : `<div class="ec-empty"><div class="ec-empty-icon">🎉</div><div>当前没有到点的课文</div><div class="ec-hint">去「书单课目」学新课，或看看下面的「学习中」</div></div>`}
     </div>
     <div class="card">
@@ -13747,14 +13891,18 @@ document.addEventListener('click', async e => {
     if (action === 'ec-clear-records') { ecClearRecords(); return; }
     if (action === 'ec-recite') { ecReciteAction(el.dataset.lesson, el.dataset.mode); return; }
     if (action === 'ec-zh-edit') { ecEditLessonZh(el.dataset.lesson); return; }
-    if (action === 'ec-zh-toggle') {
-        const id = el.dataset.lesson;
-        state._ecZhHide = state._ecZhHide || {};
-        state._ecZhHide[id] = !state._ecZhHide[id];
+    // 课文对照：中文/英文各自独立展开收起（默认都隐藏）
+    if (action === 'ec-txt-toggle') {
+        const id = el.dataset.lesson, lang = el.dataset.lang === 'en' ? 'en' : 'zh';
+        state._ecTxt = state._ecTxt || {};
+        const cur = state._ecTxt[id] || {};
+        state._ecTxt[id] = { zh: !!cur.zh, en: !!cur.en };
+        state._ecTxt[id][lang] = !cur[lang];
         render();
         return;
     }
-    if (action === 'ec-batch-zh') { ecBatchZhImport(el.dataset.book); return; }
+    if (action === 'ec-open-recite') { ecOpenRecite(el.dataset.lesson); return; }
+    if (action === 'ec-batch-zh') { ecBatchZhImport(el.dataset.book, el.dataset.lang || 'mix'); return; }
     if (action === 'ec-clear-zh') { ecClearZh(el.dataset.book || ''); return; }
     if (action === 'ec-early-review') { state._ecEarlyId = state._ecEarlyId === el.dataset.lesson ? null : el.dataset.lesson; render(); return; }
     if (action === 'ec-toggle-add') { state._ecAddOpen = !state._ecAddOpen; render(); return; }

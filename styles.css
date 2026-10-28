@@ -4283,16 +4283,34 @@ select.input {
 .ec-review-feedback { margin-top: 8px; padding: 8px 12px; border-radius: var(--radius-sm); background: rgba(52,199,89,0.12); border: 1px solid rgba(52,199,89,0.35); color: var(--text); font-size: 11px; font-weight: 600; line-height: 1.6; }
 [data-theme="dark"] .ec-review-feedback { background: rgba(52,199,89,0.18); border-color: rgba(52,199,89,0.4); }
 
-/* 背诵板块 · 中文课文（看中文说英文自检）：默认显示，🙈 可隐藏凭记忆背诵 */
+/* 背诵板块 · 课文对照（中文/英文）：默认隐藏，点「🇨🇳 中文」「🇬🇧 英文」才展开 */
 .ec-zh-box { border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 10px; background: var(--surface-2); }
-.ec-zh-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.ec-zh-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
 .ec-zh-title { font-size: 12px; font-weight: 700; color: var(--text); }
-.ec-zh-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.ec-zh-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; flex-wrap: wrap; }
 .ec-zh-text { font-size: 13px; line-height: 1.9; color: var(--text); }
 .ec-zh-text p { margin: 2px 0; }
 .ec-zh-text.ec-zh-off { font-size: 12px; color: var(--text-secondary); }
 .ec-zh-empty { font-size: 12px; color: var(--text-secondary); line-height: 1.7; cursor: pointer; }
 .ec-zh-empty b { color: var(--text); }
+/* 语言切换小按钮：未展开=描边，已展开=实心高亮 */
+.ec-lang-btn { display: inline-flex; align-items: center; gap: 3px; height: 26px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); font-size: 11px; font-weight: 600; line-height: 1; cursor: pointer; white-space: nowrap; }
+.ec-lang-btn:hover { border-color: var(--accent); color: var(--text); }
+.ec-lang-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ec-lang-btn.ec-lang-add { border-style: dashed; }
+.ec-txt-label { font-size: 11px; font-weight: 700; color: var(--text-secondary); margin: 4px 0 2px; }
+.ec-zh-text.ec-txt-en { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+/* 复习中心：点课程名直接进背诵页 */
+.ec-due-click { cursor: pointer; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.ec-due-click:hover .ec-due-go { opacity: 1; transform: translateX(2px); }
+.ec-due-go { font-size: 11px; font-weight: 600; color: var(--accent); opacity: 0.55; transition: opacity .15s, transform .15s; white-space: nowrap; }
+/* 批量导入：语言模式三选一（中英一起 / 只导中文 / 只导英文） */
+.ec-lang-pick { display: flex; gap: 6px; margin: 8px 0 6px; flex-wrap: wrap; }
+.ec-lang-opt { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-size: 12px; font-weight: 600; color: var(--text-secondary); cursor: pointer; user-select: none; }
+.ec-lang-opt input { margin: 0; accent-color: var(--accent); }
+.ec-lang-opt:has(input:checked) { border-color: var(--accent); color: var(--accent); background: rgba(255, 159, 10, 0.12); }
+.ec-lang-hint { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 8px; }
+.ec-lang-hint b { color: var(--text); }
 
 /* 悦己享瘦模块（iframe 嵌入成长小树）——v20261025b 误删导致 iframe 高度塌陷只剩默认 150px，板块显示空白 */
 .yjxs-host { position: absolute; inset: 0; overflow: hidden; background: #fff; }
