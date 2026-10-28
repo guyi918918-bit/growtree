@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261026o';
+const APP_BUILD = '20261026p';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -2659,6 +2659,7 @@ const state = {
     _ecTxt: {},
     _ecAddOpen: false,
     _ecHeadEdit: false,
+    _ecTabCfg: false,
     _loadingHot: false,
     _waterMode: null,
     _waterSelected: new Set(),
@@ -4987,12 +4988,13 @@ function attachCheckinCalendarSwipe() {
     });
 }
 
-function subTabs(tabs, current, module) {
+function subTabs(tabs, current, module, extraHTML) {
     return `
         <div class="tab-bar">
             ${tabs.map(t => `
                 <button class="tab-btn ${current === t.id ? 'active' : ''}" data-action="tab" data-module="${module}" data-tab="${t.id}">${t.icon || ''} ${t.name}</button>
             `).join('')}
+            ${extraHTML || ''}
         </div>
     `;
 }
@@ -5605,14 +5607,12 @@ const moduleRenderers = {
     },
 
     engcheck() {
-        const tabs = [
-            { id: 'ec-books', name: '书单课目', icon: '📚' },
-            { id: 'ec-review', name: '复习中心', icon: '⏰' },
-            { id: 'ec-quiz', name: '刷题', icon: '📝' },
-            { id: 'ec-achieve', name: '成就榜', icon: '🏆' }
-        ];
-        const tab = validSubTab('engcheck', tabs, 'ec-books');
-        return `<div class="card tab-card">${subTabs(tabs, tab, 'engcheck')}</div><div class="ec-page">${renderEngCheckPage(tab)}</div>`;
+        // 子标签顺序与显隐由用户在「⚙️ 子标签显示设置」里自定义（state.data.engcheck.tabCfg）
+        const tabs = ecTabCfgVisible();
+        const tab = validSubTab('engcheck', tabs, tabs[0].id);
+        const on = !!state._ecTabCfg;
+        const extra = `<button class="ec-tabcfg-btn${on ? ' on' : ''}" data-action="ec-tabcfg-toggle" title="${on ? '收起子标签设置' : '子标签显示设置（隐藏 / 排序）'}">⚙️</button>`;
+        return `<div class="card tab-card">${subTabs(tabs, tab, 'engcheck', extra)}${on ? ecTabCfgHTML() : ''}</div><div class="ec-page">${renderEngCheckPage(tab)}</div>`;
     },
 
     yjxs() {
@@ -10406,6 +10406,109 @@ const EC_ACHIEVEMENTS = [
     { id: 'points500', icon: '👑', name: '五百达人', desc: '累计获得 500 积分' }
 ];
 
+// 英语打卡的 4 个子标签（顺序 / 显隐可自定义，配置存在 d.tabCfg）
+const EC_SUBTABS = [
+    { id: 'ec-books', name: '书单课目', icon: '📚' },
+    { id: 'ec-review', name: '复习中心', icon: '⏰' },
+    { id: 'ec-quiz', name: '刷题', icon: '📝' },
+    { id: 'ec-achieve', name: '成就榜', icon: '🏆' }
+];
+// 子标签配置：order=[id...]（未列出的按默认顺序追加）；hidden=[id...]；at=最后修改时间（跨设备取新）
+function ecTabCfgGet() {
+    const d = ecData();
+    if (!d.tabCfg || typeof d.tabCfg !== 'object') d.tabCfg = { order: [], hidden: [], at: 0 };
+    const c = d.tabCfg;
+    if (!Array.isArray(c.order)) c.order = [];
+    if (!Array.isArray(c.hidden)) c.hidden = [];
+    if (typeof c.at !== 'number') c.at = 0;
+    // 只保留仍然存在的标签 id（后期增删标签不会残留脏数据）
+    const ids = EC_SUBTABS.map(t => t.id);
+    c.order = c.order.filter(id => ids.includes(id));
+    c.hidden = c.hidden.filter(id => ids.includes(id));
+    return c;
+}
+// 按用户顺序排好的全部标签（含被隐藏的）——配置面板用它，保证隐藏项也能调顺序
+function ecTabCfgAll() {
+    const c = ecTabCfgGet();
+    const map = new Map(EC_SUBTABS.map(t => [t.id, t]));
+    const out = [];
+    c.order.forEach(id => { const t = map.get(id); if (t) { out.push(t); map.delete(id); } });
+    EC_SUBTABS.forEach(t => { if (map.has(t.id)) out.push(t); });
+    return out;
+}
+// 实际渲染用：排好序 + 剔除隐藏项；保底至少留一个（全隐藏则回退到书单课目）
+function ecTabCfgVisible() {
+    const c = ecTabCfgGet();
+    const vis = ecTabCfgAll().filter(t => !c.hidden.includes(t.id));
+    return vis.length ? vis : [EC_SUBTABS[0]];
+}
+function ecTabCfgTouch() {
+    const c = ecTabCfgGet();
+    c.at = Date.now();
+    return c;
+}
+// 勾选 = 显示 / 取消勾选 = 隐藏（数据不删，随时可再打开）
+function ecTabCfgToggleShow(id) {
+    const c = ecTabCfgTouch();
+    const visCount = ecTabCfgVisible().length;
+    const hidden = c.hidden.includes(id);
+    if (!hidden && visCount <= 1) { toast('至少保留一个子标签显示'); return; }
+    c.hidden = hidden ? c.hidden.filter(x => x !== id) : c.hidden.concat(id);
+    // 刚隐藏掉当前所在标签 → 跳到第一个可见标签，避免停在空页面
+    const st = state.currentSubTab || (state.currentSubTab = {});
+    if (!hidden && st.engcheck === id) {
+        st.engcheck = ecTabCfgVisible()[0].id;
+    }
+    ecAfterAction(hidden ? '已显示子标签' : '已隐藏子标签（随时可再打开）');
+}
+// ▲▼ 调整排列顺序（第 1 个标签就是进英语打卡默认打开的页面）
+// 只在「可见」标签之间交换：隐藏项不参与，避免点了 ▲ 却看不见任何变化
+function ecTabCfgMove(id, dir) {
+    const c = ecTabCfgTouch();
+    const vis = ecTabCfgVisible().map(t => t.id);
+    const i = vis.indexOf(id);
+    if (i < 0) return;
+    const j = i + (dir === 'up' ? -1 : 1);
+    if (j < 0 || j >= vis.length) return;
+    const tmp = vis[i]; vis[i] = vis[j]; vis[j] = tmp;
+    // order = 调整后的可见顺序 + 其余（隐藏项按原相对顺序跟在后面）
+    const rest = ecTabCfgAll().map(t => t.id).filter(x => !vis.includes(x));
+    c.order = vis.concat(rest);
+    ecAfterAction('已调整子标签顺序');
+}
+// 配置面板（参考「子标签显示设置」：勾选显示 + ▲▼ 排序）
+function ecTabCfgHTML() {
+    const c = ecTabCfgGet();
+    const visIds = ecTabCfgVisible().map(t => t.id);
+    const rows = ecTabCfgAll().map(t => {
+        const on = !c.hidden.includes(t.id);
+        const vi = visIds.indexOf(t.id);
+        const upDis = !on || vi <= 0;
+        const downDis = !on || vi < 0 || vi >= visIds.length - 1;
+        return `
+        <div class="ec-tabcfg-row${on ? '' : ' ec-tabcfg-off'}">
+            <label class="ec-tabcfg-name">
+                <input type="checkbox" ${on ? 'checked' : ''} data-action="ec-tabcfg-show" data-tab="${t.id}">
+                <span class="ec-tabcfg-ico">${t.icon}</span>
+                <span>${t.name}</span>
+            </label>
+            <span class="ec-tabcfg-arrows">
+                <button class="ec-edit-btn" data-action="ec-tabcfg-up" data-tab="${t.id}" title="${on ? '上移' : '隐藏的标签不参与排序'}"${upDis ? ' disabled' : ''}>▲</button>
+                <button class="ec-edit-btn" data-action="ec-tabcfg-down" data-tab="${t.id}" title="${on ? '下移' : '隐藏的标签不参与排序'}"${downDis ? ' disabled' : ''}>▼</button>
+            </span>
+        </div>`;
+    }).join('');
+    return `
+    <div class="ec-tabcfg">
+        <div class="ec-tabcfg-head">
+            <span class="ec-tabcfg-title">⚙️ 子标签显示设置</span>
+            <button class="ec-edit-btn ec-edit-on" data-action="ec-tabcfg-toggle" title="收起设置">✕</button>
+        </div>
+        <div class="ec-tabcfg-tip">勾选 = 显示；取消勾选 = 隐藏（数据不会删除，随时可再打开）　▲▼ = 调整标签排列顺序，<b>排第一的就是进英语打卡默认打开的页面</b></div>
+        ${rows}
+    </div>`;
+}
+
 // ---------- 数据 ----------
 function ecData() {
     let d = state.data.engcheck;
@@ -10551,6 +10654,14 @@ function ecAfterActionSilent() {
 // - 任一端清零过：以清零较新一端为基底，另一端只并入清零时点之后的新记录，旧记录全丢弃
 // - 无清零：按 updatedAt 定权威端；对端「本地没有的 tasks 键」并入（手机打卡电脑端刷新也有），
 //   但本地删过的键（墓碑）不并入（取消完成跨设备生效，不会被云端旧记录复活）
+// 子标签显示设置跨设备合并：整组按 at 取较新的一端（顺序/显隐是一组原子配置，不做逐项并集）
+function ecMergeTabCfg(a, b) {
+    const A = (a && typeof a === 'object') ? a : null;
+    const B = (b && typeof b === 'object') ? b : null;
+    if (!A) return B || undefined;
+    if (!B) return A;
+    return (Number(B.at) || 0) > (Number(A.at) || 0) ? B : A;
+}
 function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
     if (!localEc) return cloudEc;
     if (!cloudEc) return localEc;
@@ -10681,6 +10792,7 @@ function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
     merged.days = { ...(lose.days || {}), ...(win.days || {}) };
     if ((lose.lastStudyDate || '') > (win.lastStudyDate || '')) merged.lastStudyDate = lose.lastStudyDate;
     merged.quiz = ecQuizMerge(win.quiz, lose.quiz); // 刷题题库跨设备并集（banks 按 id）
+    merged.tabCfg = ecMergeTabCfg(win.tabCfg, lose.tabCfg); // 子标签显示设置：按修改时间取新
     merged.updatedAt = newerAt;
     return merged;
 }
@@ -13708,6 +13820,66 @@ function ecRenderLesson() {
     ${groups}`;
 }
 
+// 复习日历预览：接下来 N 天每天要复几课、分别是哪些（只看排期，不做完整日历）
+// 逾期单独一行最上面（最该处理），最后一行「更远」兜住 7 天以后的课
+function ecReviewCalendarHTML(days) {
+    const N = days || 7;
+    const d = ecData();
+    const DAY = 86400000;
+    const todayStart = new Date().setHours(0, 0, 0, 0);
+    const items = [];
+    d.books.forEach(b => ecLessonsOf(b.id).forEach(l => {
+        const rec = d.fsrs[l.id];
+        if (!rec || !rec.last) return;
+        items.push({ lesson: l, book: b, rec, due: Number(rec.due) || 0 });
+    }));
+    items.sort((a, b) => a.due - b.due);
+    const overdue = items.filter(it => it.due < todayStart);
+    const groups = [];
+    for (let i = 0; i < N; i++) {
+        const from = todayStart + i * DAY, to = from + DAY;
+        groups.push({ i, from, list: items.filter(it => it.due >= from && it.due < to) });
+    }
+    const laterCount = items.filter(it => it.due >= todayStart + N * DAY).length;
+    const wk = ['日', '一', '二', '三', '四', '五', '六'];
+    const mmdd = (ts) => {
+        const dt = new Date(ts);
+        return `${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    };
+    const chipName = (name) => {
+        const s = String(name || '').trim();
+        return s.length > 18 ? s.slice(0, 18) + '…' : s;
+    };
+    const rowHTML = (label, sub, list, cls) => {
+        const chips = list.slice(0, 6).map(it =>
+            `<button class="ec-cal-chip" data-action="ec-open-recite" data-lesson="${it.lesson.id}" title="${escapeHtml(it.lesson.name)}（${escapeHtml(it.book.name)}）· ${escapeHtml(ecFmtWeek(it.due))}">${escapeHtml(chipName(it.lesson.name))}</button>`
+        ).join('');
+        const more = list.length > 6 ? `<span class="ec-cal-more">+${list.length - 6}</span>` : '';
+        return `
+        <div class="ec-cal-row${cls ? ' ' + cls : ''}">
+            <div class="ec-cal-day"><span class="ec-cal-label">${label}</span><span class="ec-cal-date">${sub}</span></div>
+            <div class="ec-cal-body">${list.length ? chips + more : '<span class="ec-cal-none">没有要复习的</span>'}</div>
+            <div class="ec-cal-count">${list.length || 0}<span class="ec-cal-unit">课</span></div>
+        </div>`;
+    };
+    const rows = [];
+    if (overdue.length) rows.push(rowHTML('⚠️ 已逾期', '尽快补', overdue, 'ec-cal-late'));
+    groups.forEach(g => {
+        const label = g.i === 0 ? '今天' : (g.i === 1 ? '明天' : (g.i === 2 ? '后天' : `${g.i} 天后`));
+        const dt = new Date(g.from);
+        rows.push(rowHTML(label, `${mmdd(g.from)} 周${wk[dt.getDay()]}`, g.list, g.i === 0 ? 'ec-cal-today' : ''));
+    });
+    const soonTotal = groups.reduce((s, g) => s + g.list.length, 0);
+    return `
+    <div class="card ec-cal-card">
+        <div class="card-header">
+            <div class="card-title">📅 接下来 ${N} 天复习预览</div>
+            <span style="font-size:12px;color:var(--text-secondary)">${N} 天共 ${soonTotal} 课${laterCount ? ` · 更远还有 ${laterCount} 课` : ''}</span>
+        </div>
+        <div class="ec-cal">${rows.join('')}</div>
+        <div class="ec-hint">只做预览：点课名可直接进入该课背诵页；「提前复习」请到下方清单里操作。想调整节奏就按实际背诵情况重新自评，间隔会自动重排。</div>
+    </div>`;
+}
 function ecRenderReview() {
     const stats = ecGlobalStats();
     const dueList = ecDueRecites();
@@ -13779,6 +13951,7 @@ function ecRenderReview() {
         </div>
         <div class="ec-hint">在池课程共 ${dueList.length + waiting.length + mastered.length} 节：初学四选一入池后，到这里看每节课的下次复习时间；觉得遗忘了可以提前复习。</div>
     </div>
+    ${ecReviewCalendarHTML(7)}
     ${ecFsrsCard()}
     <div class="card">
         <div class="card-header"><div class="card-title">⏰ 待背诵清单</div><span style="font-size:12px;color:var(--text-secondary)">点课程名 → 直接进背诵页</span></div>
@@ -13906,6 +14079,11 @@ document.addEventListener('click', async e => {
     if (action === 'ec-clear-zh') { ecClearZh(el.dataset.book || ''); return; }
     if (action === 'ec-early-review') { state._ecEarlyId = state._ecEarlyId === el.dataset.lesson ? null : el.dataset.lesson; render(); return; }
     if (action === 'ec-toggle-add') { state._ecAddOpen = !state._ecAddOpen; render(); return; }
+    // ---------- 英语打卡：子标签显示设置（隐藏 / 排序）----------
+    if (action === 'ec-tabcfg-toggle') { state._ecTabCfg = !state._ecTabCfg; render(); return; }
+    if (action === 'ec-tabcfg-show') { ecTabCfgToggleShow(el.dataset.tab); return; }
+    if (action === 'ec-tabcfg-up') { ecTabCfgMove(el.dataset.tab, 'up'); return; }
+    if (action === 'ec-tabcfg-down') { ecTabCfgMove(el.dataset.tab, 'down'); return; }
     // ---------- 刷题题库 ----------
     if (action === 'ec-quiz-view') { state._quizView = el.dataset.v; state._quizSession = null; state._quizEditBankId = ''; state._quizEditLessonId = ''; render(); return; }
     if (action === 'ec-quiz-bank') { state._quizBookId = el.dataset.id; state._quizView = 'lessons'; state._quizSession = null; state._quizEditBankId = ''; state._quizEditLessonId = ''; render(); return; }

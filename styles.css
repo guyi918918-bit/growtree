@@ -4311,6 +4311,38 @@ select.input {
 .ec-lang-opt:has(input:checked) { border-color: var(--accent); color: var(--accent); background: rgba(255, 159, 10, 0.12); }
 .ec-lang-hint { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 8px; }
 .ec-lang-hint b { color: var(--text); }
+/* 英语打卡：子标签显示设置（⚙️ 隐藏 / 排序） */
+.ec-tabcfg-btn { flex: 0 0 auto; align-self: center; width: 32px; height: 32px; margin-left: 2px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 50%; background: transparent; font-size: 14px; line-height: 1; cursor: pointer; color: var(--text-secondary); }
+.ec-tabcfg-btn:hover { background: var(--surface); color: var(--text); }
+.ec-tabcfg-btn.on { background: var(--surface); border-color: var(--border); color: var(--primary-dark); }
+.ec-tabcfg { margin-top: 10px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
+.ec-tabcfg-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ec-tabcfg-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.ec-tabcfg-tip { font-size: 11.5px; color: var(--text-secondary); line-height: 1.7; margin: 6px 0 6px; }
+.ec-tabcfg-tip b { color: var(--text); }
+.ec-tabcfg-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 2px; border-top: 1px dashed var(--border); }
+.ec-tabcfg-name { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
+.ec-tabcfg-name input { width: 16px; height: 16px; accent-color: var(--primary); margin: 0; }
+.ec-tabcfg-ico { font-size: 14px; }
+.ec-tabcfg-arrows { display: inline-flex; gap: 4px; }
+.ec-tabcfg-row.ec-tabcfg-off .ec-tabcfg-name { color: var(--text-secondary); }
+.ec-tabcfg-arrows .ec-edit-btn { width: 26px; height: 26px; font-size: 10px; }
+.ec-edit-btn:disabled { opacity: .28; cursor: not-allowed; }
+/* 复习日历预览：接下来 N 天每天几课、分别是哪些 */
+.ec-cal { display: flex; flex-direction: column; gap: 6px; padding: 2px 0; }
+.ec-cal-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); }
+.ec-cal-row.ec-cal-today { background: rgba(107, 142, 94, 0.12); }
+.ec-cal-row.ec-cal-late { background: rgba(255, 59, 48, 0.09); }
+.ec-cal-day { flex: 0 0 66px; display: flex; flex-direction: column; gap: 1px; }
+.ec-cal-label { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.25; }
+.ec-cal-date { font-size: 10.5px; color: var(--text-secondary); }
+.ec-cal-body { flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.ec-cal-chip { border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 11.5px; line-height: 1.2; padding: 4px 8px; border-radius: 8px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ec-cal-chip:hover { border-color: var(--primary); color: var(--primary-dark); }
+.ec-cal-more { font-size: 11px; color: var(--text-secondary); align-self: center; }
+.ec-cal-none { font-size: 11.5px; color: var(--text-secondary); }
+.ec-cal-count { flex: 0 0 auto; font-size: 14px; font-weight: 800; color: var(--primary-dark); line-height: 1.3; }
+.ec-cal-unit { font-size: 10px; font-weight: 600; color: var(--text-secondary); margin-left: 1px; }
 
 /* 悦己享瘦模块（iframe 嵌入成长小树）——v20261025b 误删导致 iframe 高度塌陷只剩默认 150px，板块显示空白 */
 .yjxs-host { position: absolute; inset: 0; overflow: hidden; background: #fff; }
