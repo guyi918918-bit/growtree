@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261026q';
+const APP_BUILD = '20261026s';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -2911,6 +2911,11 @@ function loadState() {
         repairZeroBasePoints();
         recalcPoints();
         recalcCourage();
+        // 恢复「待同步」标记：若上次关闭页面时本地还有没传上去的进度，重新显示「待同步」
+        try {
+            state._unsynced = localStorage.getItem('gt_unsynced') === '1';
+            state._unsyncedAt = Number(localStorage.getItem('gt_unsynced_at')) || 0;
+        } catch (e) { state._unsynced = false; state._unsyncedAt = 0; }
     } catch (e) {
         console.error('加载状态失败', e);
     }
@@ -3055,11 +3060,76 @@ const saveStateDebounced = debounce(saveState, 600);
 
 // 仅写本地，不触发云端上传（用于从云端拉取合并后，避免回传造成同步风暴）
 function saveStateLocal() {
+    const build = () => JSON.stringify({ settings: state.settings, data: state.data });
     try {
-        localStorage.setItem('growtree_state', JSON.stringify({ settings: state.settings, data: state.data }));
+        localStorage.setItem('growtree_state', build());
     } catch (e) {
-        console.error('本地保存失败', e);
+        // 配额不足时先丢可重建的热榜/接口缓存再试一次。
+        // 此前这里只 console.error 静默失败：云端刚合并下来的数据没落盘，
+        // 下次刷新会看到「旧数据」，用户会以为同步把数据弄丢了。
+        try {
+            state.data.hotCache = {};
+            state.data.apiCache = {};
+            localStorage.setItem('growtree_state', build());
+            try { toast('本地空间不足，已清理热榜缓存，建议到设置导出备份'); } catch (e2) { /* ignore */ }
+        } catch (e3) {
+            console.error('本地保存失败(二次)', e3);
+            try { toast('⚠️ 本地存储已满，最新数据可能未写入本地，请到设置导出备份'); } catch (e4) { /* ignore */ }
+        }
     }
+}
+
+// 「待同步」标记：本地有改动但尚未成功上传云端时为 true。
+// 用独立 localStorage 键持久化，这样即使页面被关掉再打开（reload 后内存标记丢失），
+// 仍能知道「本地还有没传上去的进度」，顶部状态显示「待同步」提醒用户点同步。
+function markUnsynced() {
+    state._unsynced = true;
+    state._unsyncedAt = Date.now();
+    try {
+        localStorage.setItem('gt_unsynced', '1');
+        localStorage.setItem('gt_unsynced_at', String(state._unsyncedAt));
+    } catch (e) { /* ignore */ }
+}
+function clearUnsynced() {
+    if (state._unsynced) {
+        state._unsynced = false;
+        state._unsyncedAt = 0;
+        try {
+            localStorage.removeItem('gt_unsynced');
+            localStorage.removeItem('gt_unsynced_at');
+        } catch (e) { /* ignore */ }
+    }
+}
+// 「待同步」是否已陈旧：超过 30 分钟仍没传上去（Supabase 免费项目休眠 / 长时间断网），
+// 说明本地很可能不再是权威版本。此时不再坚持「本地优先」，改为正常的云端优先合并
+// （各记录仍按 id/时间戳并集，本地打卡不会丢），避免出现「一台设备永远压着云端」的死锁。
+const UNSYNCED_STALE_MS = 30 * 60 * 1000;
+function unsyncedIsStale() {
+    if (!state._unsynced) return false;
+    const at = Number(state._unsyncedAt) || 0;
+    return at > 0 && (Date.now() - at) > UNSYNCED_STALE_MS;
+}
+// 真正用于合并方向判断：本地有改动且改动还不算陈旧
+function localShouldWin() {
+    return !!state._unsynced && !unsyncedIsStale();
+}
+
+// 是否为「纯对象」（非数组、非 null）：用于判断能否逐键合并
+function isPlainObj(v) {
+    return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+// 【本地优先合并】云端只补「本地没有的键」，同键一律保留本地值。
+// 用途：本机有未上传改动时（刚打卡 / 刚写完 / 刚改配置）上传前的合并。
+// 此前上传前是「云端整包覆盖本地」——只要本地有刚做的改动，就会被云端旧快照冲掉，
+// 再把冲掉后的状态写回云端，表现为「明明已打卡，2 秒后又被拖回未打卡」。
+function mergeLocalFirst(local, cloud) {
+    const out = { ...(isPlainObj(cloud) ? cloud : {}) };
+    Object.keys(isPlainObj(local) ? local : {}).forEach(k => {
+        const lv = local[k], cv = out[k];
+        if (isPlainObj(lv) && isPlainObj(cv)) out[k] = mergeLocalFirst(lv, cv);
+        else out[k] = lv;
+    });
+    return out;
 }
 
 function ensureDefaults() {
@@ -3070,7 +3140,18 @@ function ensureDefaults() {
         // 自定义积分优先；否则按花朵定级兜底（避免覆盖用户在批量积分里的设置）
         c.points = (c.customPoints != null) ? c.customPoints : flowerScore(c.stars);
     });
-    // 保证默认分类存在（新用户或旧数据）
+    // 【不再「复活」用户删掉的默认项】
+    // 此前这两个「补默认分类 / 补默认打卡项」的兜底每次刷新、每次云端合并都会跑，
+    // 结果用户把某个默认板块（如「日常」）的打卡项删空后，一刷新或一同步又被自动塞回来，
+    // 表现为「删了又自己长出来」。现在只在「首次初始化」灌注一次，之后不再自动补。
+    const hasExisting = (Array.isArray(state.data.checkIns) && state.data.checkIns.length > 0)
+        || (Array.isArray(state.data.purgedCheckInIds) && state.data.purgedCheckInIds.length > 0)
+        || Object.keys(state.data.categories || {}).length > 0;
+    const seeded = state.data.defaultsSeeded === true || hasExisting;
+    state.data.defaultsSeeded = true;
+    if (seeded) return;
+
+    // 保证默认分类存在（仅首次初始化）
     if (!state.data.categories || !Object.keys(state.data.categories).length) {
         state.data.categories = { ...DEFAULT_CHECKIN_CATEGORIES };
         state.data.categoryOrder = [...DEFAULT_CATEGORY_ORDER];
@@ -3186,9 +3267,15 @@ async function initSupabase(pull = true) {
         state.supabase = window.supabase.createClient(state.settings.supabaseUrl, state.settings.supabaseKey);
         updateSyncStatus('syncing');
         const ok = await verifySupabase();
-        if (ok && pull) {
-            // 连接成功后立刻从云端拉取一次，确保拿到其他设备的最新数据
-            await syncFromCloud();
+        if (ok) {
+            // 上次关页面/锁屏时还有没传上去的改动：优先把它推上云端（内部走本地优先合并，
+            // 不会把本地进度回滚），再考虑拉取。这样「手机背完就锁屏」的内容不会卡在本地。
+            if (state._unsynced) {
+                await syncToCloud(false);
+            } else if (pull) {
+                // 连接成功后立刻从云端拉取一次，确保拿到其他设备的最新数据
+                await syncFromCloud();
+            }
         }
         return ok;
     } catch (e) {
@@ -3269,6 +3356,46 @@ function mergeById(localArr, cloudArr, purgedIds) {
     local.forEach(x => { if (x && !purged.has(x && x.id)) map.set(makeKey(x), x); });
     cloud.forEach(x => { if (x && !purged.has(x && x.id)) { const k = makeKey(x); if (!map.has(k)) map.set(k, x); } });
     return Array.from(map.values());
+}
+
+// 阅读收藏（bookRead）：元素无 id、以 title 为业务键，不能走 mergeById。
+// 此前 bookRead 完全不在合并名单里，同步时被整组替换 → 手机收藏的书在电脑上看不到，
+// 电脑收藏的书在手机上传时被冲掉。改为按 title 并集，markedAt 新者胜，删除用墓碑过滤。
+function mergeBookRead(localArr, cloudArr, tombs) {
+    const m = new Map();
+    const t = (b) => String((b && b.markedAt) || '');
+    const put = (b) => {
+        if (!b || !b.title) return;
+        if (tombs && tombs[b.title]) return; // 删除过的书不复活
+        const cur = m.get(b.title);
+        if (!cur || t(b) > t(cur)) m.set(b.title, b);
+    };
+    (Array.isArray(localArr) ? localArr : []).forEach(put);
+    (Array.isArray(cloudArr) ? cloudArr : []).forEach(put);
+    return Array.from(m.values());
+}
+// 时间戳字典合并（键 → 毫秒时间戳），同键取较晚者
+function mergeTsMap(a, b) {
+    const out = { ...(isPlainObj(a) ? a : {}) };
+    Object.keys(isPlainObj(b) ? b : {}).forEach(k => {
+        const v = Number(b[k]) || 0;
+        if (v > (Number(out[k]) || 0)) out[k] = v;
+    });
+    return out;
+}
+// 「清空所有数据」的时间分界线过滤：丢弃早于清空时刻的记录。
+// 否则用户点了「清除所有数据」后一同步，另一台设备/云端里的旧记录会被并集合并加回来，
+// 表现为「数据清不掉，自己又回来了」。
+function dropBeforeCut(arr, cutMs) {
+    if (!Array.isArray(arr) || !cutMs) return Array.isArray(arr) ? arr : [];
+    return arr.filter(x => {
+        if (!x || typeof x !== 'object') return true;
+        const t = Date.parse(x.updatedAt || x.createdAt || x.markedAt || x.time || '') || 0;
+        if (t) return t >= cutMs;
+        // 没有精确时间戳的老记录：用 date（YYYY-MM-DD）粗判，允许一天误差
+        const d = x.date ? Date.parse(x.date + 'T00:00:00') : 0;
+        return !d || d >= cutMs - 86400000;
+    });
 }
 
 // 积分流水合并：按业务语义去重，避免同一打卡/奖励在不同设备生成多条记录后重复计分。
@@ -3416,9 +3543,13 @@ function resolvePointsCalibOnSync(cloud, localClearedAt) {
     recalcCourage();
 }
 
-async function syncFromCloud(force = false) {
+async function syncFromCloud(force = false, ignoreUnsynced = false) {
     if (_syncLock || !state.supabase) return;
-    return withSyncLock(() => _syncFromCloudCore(force));
+    // 【防回弹】本机还有没传上去的改动时，拉取走「本地优先合并」：
+    // 既能把对端新增的记录并进来（不会卡住不同步），又不会用云端旧快照
+    // 覆盖本机刚打的卡/刚背完的内容（这是「打卡又被拖回未完成」的根因）。
+    const localWins = !ignoreUnsynced && localShouldWin();
+    return withSyncLock(() => _syncFromCloudCore(force, localWins));
 }
 // 同步串行锁：避免「后台轮询」与「本地改动上传」并发执行同一段拉取/合并/上传逻辑，
 // 否则两次拉取会交错读写，导致一端刚打卡/删除的内容被另一端的上传覆盖回来（同步回弹 bug）。
@@ -3426,9 +3557,17 @@ let _syncLock = false;
 async function withSyncLock(fn) {
     if (_syncLock) return;
     _syncLock = true;
-    try { return await fn(); } finally { _syncLock = false; }
+    try { return await fn(); } finally {
+        _syncLock = false;
+        // 同步进行中又被要求上传（典型：切走/锁屏那一下正好撞上正在跑的同步）：
+        // 锁释放后补传一次，避免这次改动被静默丢掉。
+        if (state._pendingUpload) {
+            state._pendingUpload = false;
+            if (state.supabase && state._unsynced) setTimeout(() => syncToCloud(false), 0);
+        }
+    }
 }
-async function _syncFromCloudCore(force = false) {
+async function _syncFromCloudCore(force = false, localWins = false) {
     if (!state.supabase) return;
     updateSyncStatus('syncing');
     try {
@@ -3449,6 +3588,23 @@ async function _syncFromCloudCore(force = false) {
                 // updatedAt 是云端行元数据，不并入本地 state.data
                 const { updatedAt, ...cloudPayload } = cloud;
 
+                // 【清空分界线】用户点过「清除所有数据」时，云端早于该时刻的记录一律丢弃。
+                // 否则清空后一同步，另一台设备/云端的旧记录就会被并集合并加回来
+                //（用户看到的现象：「我清了所有数据，过一会儿它自己全回来了」）。
+                const cutAllMs = Math.max(
+                    Date.parse(state.data.clearedAllAt || '') || 0,
+                    Date.parse(cloud.clearedAllAt || '') || 0
+                );
+                if (cutAllMs) {
+                    ['waterLogs', 'praises', 'wishes', 'wishBin', 'userQuotes', 'praiseGroups',
+                        'quoteGroups', 'checkIns', 'checkInBin', 'bookRead'].forEach(k => {
+                        cloud[k] = dropBeforeCut(cloud[k], cutAllMs);
+                    });
+                    if (cloud.points && Array.isArray(cloud.points.history)) {
+                        cloud.points.history = dropBeforeCut(cloud.points.history, cutAllMs);
+                    }
+                }
+
                 // 【关键修复】拉取前先快照本地所有「按 id 的追加型数组」。
                 // 下方 state.data = {...state.data, ...cloudPayload} 会用云端整组替换嵌套数组，
                 // 若不在替换前保存本地引用，后续 mergeById 实际是在「云端 vs 云端」上合并，
@@ -3464,6 +3620,7 @@ async function _syncFromCloudCore(force = false) {
                     quoteGroups: Array.isArray(state.data.quoteGroups) ? state.data.quoteGroups : [],
                     checkIns: Array.isArray(state.data.checkIns) ? state.data.checkIns : [],
                     checkInBin: Array.isArray(state.data.checkInBin) ? state.data.checkInBin : [],
+                    bookRead: Array.isArray(state.data.bookRead) ? state.data.bookRead : [],
                     purgedCheckInIds: Array.isArray(state.data.purgedCheckInIds) ? state.data.purgedCheckInIds : [],
                     purgedIds: Array.isArray(state.data.purgedIds) ? state.data.purgedIds : []
                 };
@@ -3489,8 +3646,17 @@ async function _syncFromCloudCore(force = false) {
                 // 否则云端旧快照（theme=light）会把本地夜间模式冲掉，
                 // 导致 iframe 重建时闪现夜间一秒后又被 yjxs-theme=light 推回日间。
                 const localTheme = state.data.settings && state.data.settings.theme;
-                state.data = { ...state.data, ...cloudPayload };
+                // 【数据方向】localWins=true 表示本机有未上传改动（刚打卡/刚改配置），
+                // 此时必须「本地优先」：云端只补本地没有的键，绝不覆盖本地同键值。
+                // 否则云端旧快照会把刚打的卡冲掉，再被上传，等于把「已完成」写成「未完成」。
+                state.data = localWins
+                    ? mergeLocalFirst(state.data, cloudPayload)
+                    : { ...state.data, ...cloudPayload };
                 if (localTheme) state.data.settings.theme = localTheme;
+                // 「清空」是全局事件：取两端较晚的清空时刻，避免一端仍在用旧分界线导致旧记录复活
+                if (cloud.clearedAllAt && String(cloud.clearedAllAt) > String(state.data.clearedAllAt || '')) {
+                    state.data.clearedAllAt = cloud.clearedAllAt;
+                }
                 // 重新应用主题（父页面属性 + 推送给悦己享瘦 iframe），保持两端一致
                 try { if (typeof applyTheme === 'function') applyTheme(); } catch (themeErr) { /* ignore */ }
                 // 板块配置以「最后修改时间」为准：哪边更新就用哪边，实现跨设备同步
@@ -3524,6 +3690,9 @@ async function _syncFromCloudCore(force = false) {
                 state.data.wishes = mergeById(localById.wishes, cloud.wishes, mergedPurgedIds);
                 state.data.wishBin = mergeById(localById.wishBin, cloud.wishBin, mergedPurgedIds);
                 state.data.userQuotes = mergeById(localById.userQuotes, cloud.userQuotes, mergedPurgedIds);
+                // 阅读收藏（无 id，按 title 合并 + 删除墓碑），避免跨设备整组互相覆盖
+                state.data.bookReadTombs = mergeTsMap(state.data.bookReadTombs, cloud.bookReadTombs);
+                state.data.bookRead = mergeBookRead(localById.bookRead, cloud.bookRead, state.data.bookReadTombs);
                 state.data.praiseGroups = mergeById(localById.praiseGroups, cloud.praiseGroups, mergedPurgedIds);
                 state.data.quoteGroups = mergeById(localById.quoteGroups, cloud.quoteGroups, mergedPurgedIds);
                 // 打卡项 / 回收站：墓碑合并，删除(含彻底删除)跨设备传播，不会复活
@@ -3551,8 +3720,10 @@ async function _syncFromCloudCore(force = false) {
                 saveStateLocal();
                 // 悦己享瘦跨设备同步：只有云端数据确实比本地新，才接受并推回 iframe；
                 // 否则保留本地最新数据，避免把旧快照覆盖回 iframe 造成打卡被「取消」。
+                // 注意比较基准固定用「原始云端值 cloudYjxs」，不受整包合并方向影响。
                 let shouldPushYjxs = false;
                 if (cloudYjxsAt && (!localYjxsAt || cloudYjxsAt > localYjxsAt)) {
+                    state.data.yjxs = cloudYjxs;
                     shouldPushYjxs = JSON.stringify(state.data.yjxs || {}) !== JSON.stringify(localYjxs);
                 } else if (localYjxsAt) {
                     state.data.yjxs = localYjxs;
@@ -3566,7 +3737,9 @@ async function _syncFromCloudCore(force = false) {
                 // 英语打卡合并保护（墓碑机制，见 ecMergeEngcheck 注释）：
                 // 取消完成→键级墓碑；清零→clearedAt/fsrsClearedAt 时间分界线；
                 // 对端新增的 tasks 键并入（手机打卡电脑端刷新也有），本地删过的键不并入。
-                state.data.engcheck = ecMergeEngcheck(localEc, state.data.engcheck, localEcAt, cloudEcAt);
+                // 第二个入参必须是「原始云端对象」，不能传整包合并后的 state.data.engcheck——
+                // 否则本机有未上传改动（本地优先合并）时云端的新背诵记录会被本地旧值屏蔽。
+                state.data.engcheck = ecMergeEngcheck(localEc, cloudPayload.engcheck, localEcAt, cloudEcAt);
                 const after = syncDataSnapshot(state.data);
                 if (before !== after) {
                     if (isUserTyping()) {
@@ -3649,38 +3822,64 @@ function pruneOldData() {
 }
 
 async function syncToCloud(forcePull = false) {
-    if (_syncLock || !state.supabase) return;
+    if (_syncLock || !state.supabase) {
+        // 正有同步在跑：记一笔「还需上传」，等锁释放后补传（否则切走瞬间可能什么都没传就结束）
+        if (state.supabase && state._unsynced) state._pendingUpload = true;
+        return;
+    }
     return withSyncLock(async () => {
         updateSyncStatus('syncing');
         try {
-            // 【关键修复】上传前先把云端最新数据拉下来合并，避免本机旧整包覆盖其他设备的新删除/新记录。
-            // forcePull=true 时无视 lastSyncAt 时间戳，强制拉取最新版。
-            await _syncFromCloudCore(forcePull);
-            // 乐观并发：合并期间若其它设备又写入了云端（updated_at 比本地更新），再合并一次，
-            // 避免把对方刚做的「删除 / 打卡」覆盖回去，导致「手机删了又被电脑同步回来」。
-            const { data: latest, error: le } = await state.supabase
-                .from('growtree_data').select('updated_at').eq('id', getSyncId()).single();
-            if (!le && latest && latest.updated_at) {
-                if (new Date(latest.updated_at).getTime() > (state.data.lastSyncAt || 0)) {
-                    await _syncFromCloudCore(false);
+            // 【关键修复 v20261026s】上传前合并的「数据方向」按本机是否有未上传改动决定：
+            // · 本机有未上传改动（刚打卡/刚写完/刚改配置）→ 本地优先：
+            //   云端只补本地没有的键，同键保留本地值。否则云端旧快照会把刚打的卡冲掉，
+            //   接着把冲掉后的状态上传，表现为「明明已完成，几秒后又变回未完成」。
+            // · 本机没有改动 → 维持云端优先，正常吸收其他设备的改动。
+            const localWins = localShouldWin();
+            await _syncFromCloudCore(forcePull, localWins);
+            // 乐观并发：合并期间若其它设备又写入云端，再合并一次，
+            // 避免把对方刚做的「删除 / 打卡」覆盖回去（手机删了又被电脑同步回来）。
+            // 本机有未上传改动时不走这一步——再拉一次只会有回滚风险。
+            if (!localWins) {
+                const { data: latest, error: le } = await state.supabase
+                    .from('growtree_data').select('updated_at').eq('id', getSyncId()).single();
+                if (!le && latest && latest.updated_at) {
+                    if (new Date(latest.updated_at).getTime() > (state.data.lastSyncAt || 0)) {
+                        await _syncFromCloudCore(false, false);
+                    }
                 }
             }
-            state.data.lastSyncAt = now();
-            // 将本次同步时间戳落盘，确保下次拉取时「云端是否更新」的判断准确，
-            // 避免因本地 lastSyncAt 永远为空而误把云端旧数据覆盖本地修改
-            saveStateLocal();
             // 云端主表只存必要数据：可重建缓存与已独立建表的灵感数据不写入，节省免费额度
             const { apiCache, hotCache, beautyInspirations, ...dataForCloud } = state.data;
             const payload = { ...dataForCloud, updatedAt: now() };
             const syncId = getSyncId();
             const { error } = await state.supabase.from('growtree_data').upsert({ id: syncId, payload, updated_at: now() });
             if (error) throw error;
+            // 【关键】上传成功后才推进 lastSyncAt 并落盘——避免「上传失败却误标已同步」
+            // 导致后续拉取跳过云端更新；同时清除「待同步」标记。
+            state.data.lastSyncAt = now();
+            saveStateLocal();
+            clearUnsynced();
             updateSyncStatus('online');
             reportSyncSuccess();
+            return true;
         } catch (e) {
             reportSyncError(e);
+            return false;
+        } finally {
+            // 上传结束后补一次拉取：此时本地数据已上云、待同步标记已清，
+            // 拉取走「云端优先 + 记录并集」，不会回滚，同时能把对端新增并进来。
+            schedulePullAfterPush();
         }
     });
+}
+
+// 上传完成后延迟拉取（不在锁内直接调用，避免自己等自己死锁）
+function schedulePullAfterPush() {
+    clearTimeout(state._pullTimer);
+    state._pullTimer = setTimeout(() => {
+        if (state.supabase && !state._unsynced && !_syncLock) syncFromCloud(false);
+    }, 1500);
 }
 
 function queueSync() {
@@ -3691,6 +3890,8 @@ function queueSync() {
         // 手动刷新按钮才用 forcePull=true。
         state.saveTimer = setTimeout(() => syncToCloud(false), 2000);
     }
+    // 标记本地有未上传改动（顶部状态显示「待同步」，直到本次改动成功传到云端）
+    markUnsynced();
 }
 
 function formatSyncTime() {
@@ -3712,13 +3913,15 @@ function isUserTyping() {
 
 function updateSyncStatus(status) {
     state.syncStatus = status;
+    // 本地有未上传改动时，即使上次同步成功也显示「待同步」，避免误导用户以为最新进度已存云端
+    const pending = !!(state._unsynced && status === 'online');
 
     const dot = document.getElementById('syncDot');
     const text = document.getElementById('syncText');
     if (dot && text) {
-        dot.className = 'sync-dot ' + status;
-        const map = { offline: '未连接云端', online: '已同步', syncing: '同步中...', error: '同步失败' };
-        text.textContent = map[status] || status;
+        dot.className = 'sync-dot ' + (pending ? 'pending' : status);
+        const map = { offline: '未连接云端', online: '已同步', syncing: '同步中...', error: '同步失败', pending: '待同步' };
+        text.textContent = pending ? '待同步' : (map[status] || status);
     }
 
     // 顶部明显徽章
@@ -3733,21 +3936,25 @@ function updateSyncStatus(status) {
             syncing: { cls: 'syncing', label: '同步中...' },
             error: { cls: 'error', label: '同步失败 · 点此重试' }
         };
-        const cfg = map2[status] || map2.offline;
+        let cfg = map2[status] || map2.offline;
+        if (pending) cfg = { cls: 'pending', label: '待同步 · 点同步上传' };
         badgeDot.className = 'cloud-status-dot ' + cfg.cls;
         badgeText.textContent = cfg.label;
         if (badge) {
-            badge.className = 'cloud-status-badge ' + status;
+            badge.className = 'cloud-status-badge ' + (pending ? 'pending' : status);
             // 失败时在徽章上悬停展示具体原因，并支持点击重试（符合"少弹窗、可自操作"偏好）
             if (status === 'error') {
                 badge.title = '同步失败：' + (state.lastCloudError || '未知原因') + '\n点击可立即重试';
+                badge.style.cursor = 'pointer';
+            } else if (pending) {
+                badge.title = '本地有改动尚未上传到云端，点此立即同步';
                 badge.style.cursor = 'pointer';
             } else {
                 badge.removeAttribute('title');
                 badge.style.cursor = '';
             }
             // 同步完成时给徽章一个轻微高亮，让用户在无 toast 时也能感知
-            if (status === 'online' && time) {
+            if (status === 'online' && time && !pending) {
                 badge.classList.add('just-synced');
                 setTimeout(() => badge.classList.remove('just-synced'), 800);
             }
@@ -3845,7 +4052,7 @@ function importDataFile(file) {
 
 // 清除所有应用数据（保留云端/个人设置，避免重新配置 Supabase）
 async function clearAllData() {
-    const ok = await uiConfirm('确定要清除所有应用数据吗？\n\n所有打卡、积分、心愿、喝水记录、夸夸记录等都会被清空，但云端配置（Supabase URL/Key/同步空间ID）会保留。', { isDanger: true });
+    const ok = await uiConfirm('确定要清除所有应用数据吗？\n\n所有打卡、积分、心愿、喝水记录、夸夸记录等都会被清空，但云端配置（Supabase URL/Key/同步空间ID）会保留。\n\n清除后会立即同步到云端；若你还有另一台设备在线，请在那台设备上也点一次清除，否则它可能把旧数据再传回来。', { isDanger: true });
     if (!ok) return;
     const preservedSettings = { ...state.settings };
     // 重置为初始数据结构，保留设置
@@ -3872,7 +4079,11 @@ async function clearAllData() {
         lastSyncAt: null,
         lastVisit: null,
         categories: null,
-        categoryOrder: null
+        categoryOrder: null,
+        // 清空分界线：云端/另一台设备早于此刻的记录在合并时会被丢弃
+        clearedAllAt: now(),
+        // 英语打卡用 clearedAt / fsrsClearedAt 作为自己的分界线，否则背诵数据会整组复活
+        engcheck: { clearedAt: Date.now(), fsrsClearedAt: Date.now(), updatedAt: now(), books: [], lessons: [], tasks: {}, tombs: {}, fsrs: {} }
     };
     state.supabase = null;
     state.syncStatus = 'offline';
@@ -3881,7 +4092,16 @@ async function clearAllData() {
     recalcPoints();
     recalcCourage();
     updateSeasonPeak();
+    // 【关键修复】清空后必须把「空数据」上传到云端，否则 reload 后一拉取，
+    // 云端旧快照就把所有数据原样搬回来了（用户感知：清了等于没清）。
+    markUnsynced();
     saveStateLocal();
+    try {
+        const okInit = await initSupabase(false);
+        if (okInit) await syncToCloud(false);
+    } catch (e) {
+        console.error('清空后同步云端失败', e);
+    }
     location.reload();
 }
 
@@ -4933,6 +5153,8 @@ function renderSidebar() {
 
 function render() {
     if (normalizeModules()) saveState();
+    // 记录本次渲染所属日期，用于「页面挂机过夜后自动重绘」（见 visibilitychange / 轮询）
+    state._renderDate = today();
     // 任何显式重绘都视为已"消费"掉后台轮询推迟的待渲染标记
     state._deferredRender = false;
     // 当前模块若被隐藏/不存在，回退到第一个可见模块，避免空白页
@@ -6618,6 +6840,8 @@ function isBookRead(title) {
 function markBookRead(book) {
     if (!Array.isArray(state.data.bookRead)) state.data.bookRead = [];
     if (state.data.bookRead.some(b => b.title === book.title)) { render(); return; }
+    // 重新收藏时清掉删除墓碑，否则下一次合并会被墓碑再删一遍
+    if (state.data.bookReadTombs && state.data.bookReadTombs[book.title]) delete state.data.bookReadTombs[book.title];
     state.data.bookRead.unshift({
         title: book.title,
         author: book.author || '',
@@ -6636,6 +6860,9 @@ function unmarkBookRead(book) {
     const idx = state.data.bookRead.findIndex(b => b.title === book.title);
     if (idx < 0) { render(); return; }
     state.data.bookRead.splice(idx, 1);
+    // 删除墓碑：否则另一台设备的旧快照会在下次合并时把这本书加回来
+    state.data.bookReadTombs = state.data.bookReadTombs || {};
+    state.data.bookReadTombs[book.title] = Date.now();
     saveState(); render();
     toast('已移出收藏书屋');
 }
@@ -10704,15 +10931,20 @@ function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
         return { tasks: out, tombs };
     };
     const mergeFsrs = (win, lose, cut) => {
+        // 同一课两端都有 FSRS 记录时，按「最近一次复习时间 last」取较新者。
+        // 此前是无条件用权威端覆盖：若权威端恰好是另一台设备的旧进度，
+        // 手机上刚复习完的课文会被退回成上次的状态（用户感知：背了等于没背）。
         const out = {};
-        Object.keys(win.fsrs || {}).forEach(k => {
-            if (!cut || (Number(win.fsrs[k] && win.fsrs[k].last) || 0) >= cut) out[k] = win.fsrs[k];
-        });
-        Object.keys(lose.fsrs || {}).forEach(k => {
-            if (out[k] !== undefined) return;
-            const r = lose.fsrs[k];
-            if (cut && (Number(r && r.last) || 0) < cut) return;
-            out[k] = r;
+        const A = win.fsrs || {}, B = lose.fsrs || {};
+        const keys = new Set([...Object.keys(A), ...Object.keys(B)]);
+        keys.forEach(k => {
+            const a = A[k], b = B[k];
+            let pick = a;
+            if (!pick) pick = b;
+            else if (b && (Number(b.last) || 0) > (Number(pick.last) || 0)) pick = b;
+            if (!pick) return;
+            if (cut && (Number(pick.last) || 0) < cut) return;
+            out[k] = pick;
         });
         return out;
     };
@@ -14244,9 +14476,10 @@ function init() {
         if (!state.supabase) { toast('未连接云端，请先在设置中配置同步'); return; }
         const btn = document.getElementById('saveNowBtn');
         btn.classList.add('spinning');
-        syncToCloud(true).finally(() => {
+        // 按上传真实结果提示：此前无论是成功还是失败都弹「已上传」，用户会以为数据已存云
+        syncToCloud(true).then(r => {
             btn.classList.remove('spinning');
-            toast('已保存并上传到云端');
+            toast(r === false ? '⚠️ 上传失败，请检查网络后重试（本地数据已保存）' : '已保存并上传到云端');
         });
     });
 
@@ -14257,9 +14490,12 @@ function init() {
         }
         const btn = document.getElementById('refreshBtn');
         btn.classList.add('spinning');
-        syncFromCloud(true).finally(() => {
-            btn.classList.remove('spinning');
-            toast('已向云端检查最新数据');
+        // 双向同步：先上传本地改动，再拉取云端最新。避免「点了同步却只下载、手机进度没传上去」。
+        syncToCloud(true).then(r => {
+            syncFromCloud(true).finally(() => {
+                btn.classList.remove('spinning');
+                toast(r === false ? '⚠️ 上传失败，已尝试拉取云端（本地数据不会丢）' : '已双向同步（上传 + 下载）');
+            });
         });
     });
 
@@ -14282,13 +14518,55 @@ function init() {
 
     // 定时轮询云端，确保手机端修改后电脑端能在数秒内自动同步
     // （改为 15s 并复用同步串行锁，避免轮询与上传并发导致「同步回弹」）
+    // 本地有未上传改动时先推再拉，否则只拉——既保证手机进度能自动上传，也避免无谓上传。
     setInterval(() => {
-        if (state.supabase && !document.hidden) syncFromCloud();
+        if (document.hidden) return;
+        // 跨天自动重绘：页面挂机过夜后，昨天的「已完成/今日推荐」会一直停在屏幕上，
+        // 用户第二天打开会以为今天的打卡被算掉了。日期一变就强制重绘一次。
+        if (state._renderDate && state._renderDate !== today()) {
+            state._renderDate = today();
+            try { render(); } catch (e) { /* ignore */ }
+        }
+        if (!state.supabase) return;
+        if (state._unsynced) syncToCloud(false);
+        else syncFromCloud();
     }, 15000);
 
+    // 可见性变化：
+    // - 切回页面（从别的 App / 锁屏回来）：先推本地改动，再拉云端，确保刚做的背诵立刻同步到电脑端。
+    // - 切走页面（去聊天 / 锁屏）：立刻触发上传，不等 2 秒定时器——移动端后台会掐掉定时器，
+    //   这是「手机背完电脑收不到」最主要的根因。
     document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && state.supabase) syncFromCloud();
+        // 跨天回来同样要先重绘（离线时也要执行，所以放在 supabase 判断之前）
+        if (!document.hidden && state._renderDate && state._renderDate !== today()) {
+            state._renderDate = today();
+            try { render(); } catch (e) { /* ignore */ }
+        }
+        if (!state.supabase) return;
+        clearTimeout(state.saveTimer);
+        if (document.hidden) {
+            // 切走/锁屏：立刻上传。syncToCloud 内部走「本地优先」合并，
+            // 上传快也不会把刚打的卡冲回未完成。
+            syncToCloud(false);
+        } else {
+            // 切回：先把本地未同步的改动推上去，再拉取（有未传改动时拉取也走本地优先，不会回滚）
+            syncToCloud(false).then(() => syncFromCloud(false));
+        }
     });
+
+    // 多标签页/多窗口：另一个窗口写入本地数据时提示冲突，避免两边各自整包上传互相覆盖。
+    window.addEventListener('storage', (e) => {
+        if (e.key !== 'growtree_state' || !e.newValue) return;
+        if (!state._unsynced) return; // 本机没有未上传改动，无需打扰（轮询会自动合并云端）
+        try { toast('检测到其他窗口也在修改数据，建议只保留一个窗口，避免互相覆盖'); } catch (err) { /* ignore */ }
+    });
+
+    // 页面卸载 / 关掉时再兜底传一次（iOS Safari 走 pagehide），尽力把本地进度传上云端。
+    const _flushOnLeave = () => {
+        if (state.supabase) { clearTimeout(state.saveTimer); syncToCloud(false); }
+    };
+    window.addEventListener('pagehide', _flushOnLeave);
+    window.addEventListener('beforeunload', _flushOnLeave);
 
     // 后台轮询因用户正在输入而推迟的重绘：在输入框失焦且焦点未转移到另一个输入框时补绘，
     // 既不打断打字，也能保证数据最终刷新到界面。

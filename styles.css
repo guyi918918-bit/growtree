@@ -199,6 +199,11 @@ html, body {
     animation: pulse 1s infinite;
 }
 
+.sync-dot.pending {
+    background: #f5a623;
+    box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.25);
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
@@ -1975,6 +1980,11 @@ select.input {
     box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.2);
 }
 
+.cloud-status-dot.pending {
+    background: #f5a623;
+    box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.25);
+}
+
 .sync-dot.error {
     background: #e53935;
     box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.2);
@@ -1997,6 +2007,12 @@ select.input {
     background: #fdecea;
     color: #c62828;
     border-color: #f5c6c6;
+}
+
+.cloud-status-badge.pending {
+    background: #fff4e0;
+    color: #b26a00;
+    border-color: #f5d28a;
 }
 
 /* 设置面板状态点配色 */

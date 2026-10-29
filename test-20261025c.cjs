@@ -67,7 +67,7 @@ ok('CSS 有 yjxs-host（iframe 高度修复）', /\.yjxs-host \{/.test(CSS) && /
 ok('CSS 有 ec-due-info（复习行布局修复）', /\.ec-due-info \{/.test(CSS));
 // ③ engcheck 同步覆盖修复（点击打卡 2 秒后被云端旧快照冲掉）
 ok('ecMergeEngcheck 合并函数存在', /function ecMergeEngcheck/.test(APP));
-ok('_syncFromCloudCore 调用 engcheck 合并', /ecMergeEngcheck\(localEc, state\.data\.engcheck, localEcAt, cloudEcAt\)/.test(APP));
+ok('_syncFromCloudCore 调用 engcheck 合并', /ecMergeEngcheck\(localEc, (state\.data\.engcheck|cloudPayload\.engcheck), localEcAt, cloudEcAt\)/.test(APP));
 ok('ecAfterAction 标记本地修改时间', /ecData\(\)\.updatedAt = now\(\)/.test(APP));
 // ④ 提前复习反馈
 ok('CSS 有评价反馈条', /\.ec-review-feedback/.test(CSS));
@@ -1741,6 +1741,124 @@ ok('复习中心渲染含面包屑与子导航', /英语打卡 › 复习中心/
     ok('7 天合计统计出现', /7 天共 4 课/.test(html));
     ok('较长的课名截断显示', html.includes('…'));
 }
+// ============ v20261026r：同步可靠性修复（手机端进度传不上云端的根因） ============
+console.log('—— v20261026r 同步可靠性 ——');
+ok('版本号升到 20261026r 起（后续已升到 s）', /const APP_BUILD = '20261026[rs]'/.test(APP));
+ok('新增 markUnsynced / clearUnsynced', /function markUnsynced\(/.test(APP) && /function clearUnsynced\(/.test(APP));
+ok('queueSync 标记待同步', APP.includes('markUnsynced();'));
+ok('上传成功清除待同步', /if \(error\) throw error;[\s\S]{0,200}clearUnsynced\(\);/.test(APP));
+ok('待同步状态显示（徽章+小字）', APP.includes("label: '待同步 · 点同步上传'") && APP.includes("text.textContent = pending ? '待同步'"));
+ok('切回页面先推本地再拉云端', /syncToCloud\(false\)\.then\(\(\) => syncFromCloud\(false\)\)/.test(APP));
+ok('切走/锁屏立即上传（不依赖 2 秒定时器）', APP.includes('if (document.hidden) {') && APP.includes('syncToCloud(false);') && APP.includes('} else {'));
+ok('离开页面兜底上传 pagehide/beforeunload', APP.includes("window.addEventListener('pagehide'") && APP.includes("window.addEventListener('beforeunload'"));
+ok('刷新按钮改为双向同步（上传+下载）', /syncToCloud\(true\)\.then\([\s\S]{0,120}syncFromCloud\(true\)/.test(APP));
+ok('轮询在有待同步时主动上传', APP.includes('if (state._unsynced) syncToCloud(false)'));
+ok('loadState 恢复待同步标记', /state\._unsynced = localStorage\.getItem\('gt_unsynced'\) === '1'/.test(APP));
+ok('CSS 待同步琥珀色状态点', CSS.includes('.sync-dot.pending') && CSS.includes('.cloud-status-dot.pending') && CSS.includes('.cloud-status-badge.pending'));
+
+// ============ v20261026s：防「打完卡又被拖回未完成」回弹 ============
+console.log('—— v20261026s 防回弹 ——');
+ok('版本号升到 20261026s', APP.includes("const APP_BUILD = '20261026s'"));
+ok('新增 mergeLocalFirst（本地优先合并）', /function mergeLocalFirst\(local, cloud\)/.test(APP));
+ok('新增 isPlainObj 判断', /function isPlainObj\(v\)/.test(APP));
+ok('上传前合并方向由待同步决定', APP.includes('const localWins = localShouldWin();') && /await _syncFromCloudCore\(forcePull, localWins\)/.test(APP));
+ok('_syncFromCloudCore 支持 localWins 参数', /async function _syncFromCloudCore\(force = false, localWins = false\)/.test(APP));
+ok('localWins 时走 mergeLocalFirst 而非云端整包覆盖', APP.includes('? mergeLocalFirst(state.data, cloudPayload)'));
+ok('本机有未上传改动时拉取走本地优先（防回滚）', /const localWins = !ignoreUnsynced && localShouldWin\(\);/.test(APP) && /withSyncLock\(\(\) => _syncFromCloudCore\(force, localWins\)\)/.test(APP));
+ok('syncFromCloud 支持 ignoreUnsynced', /async function syncFromCloud\(force = false, ignoreUnsynced = false\)/.test(APP));
+ok('有未上传改动时不做二次合并拉取', /if \(!localWins\) \{[\s\S]{0,400}await _syncFromCloudCore\(false, false\)/.test(APP));
+ok('上传完成后延迟拉取（已上云不回滚）', /function schedulePullAfterPush\(\)/.test(APP) && APP.includes('schedulePullAfterPush();'));
+ok('同步锁占用时记待上传并补传', APP.includes('state._pendingUpload = true') && /if \(state\._pendingUpload\) \{/.test(APP));
+ok('启动时若待同步则优先上传', /if \(state\._unsynced\) \{\s*await syncToCloud\(false\)/.test(APP));
+ok('英语打卡合并用原始云端对象', APP.includes('ecMergeEngcheck(localEc, cloudPayload.engcheck, localEcAt, cloudEcAt)'));
+ok('悦己享瘦用原始云端值判定', APP.includes('state.data.yjxs = cloudYjxs;'));
+
+// 行为测试：mergeLocalFirst 语义（本地值优先 / 云端补键 / 嵌套逐键）
+try {
+    const srcPlain = APP.match(/function isPlainObj\(v\) \{[\s\S]*?\n\}/)[0];
+    const srcMerge = APP.match(/function mergeLocalFirst\(local, cloud\) \{[\s\S]*?\n\}/)[0];
+    const mlf = new Function(`${srcPlain}\n${srcMerge}\nreturn mergeLocalFirst;`)();
+    const r1 = mlf({ a: 1 }, { a: 2 });
+    ok('本地优先：同键保留本地值', r1.a === 1);
+    const r2 = mlf({ a: 1 }, { b: 2 });
+    ok('本地优先：云端独有键被补齐', r2.a === 1 && r2.b === 2);
+    const r3 = mlf({ s: { x: 1 }, arr: [1] }, { s: { x: 9, y: 2 }, arr: [9, 9] });
+    ok('本地优先：嵌套对象逐键合并', r3.s.x === 1 && r3.s.y === 2);
+    ok('本地优先：数组不被远端覆盖', Array.isArray(r3.arr) && r3.arr.length === 1 && r3.arr[0] === 1);
+    const ec = { tasks: { k: { at: 5 } }, updatedAt: '2026-10-29T10:00:00Z' };
+    const r4 = mlf(ec, { tasks: { k: { at: 1 } }, updatedAt: '2026-10-29T11:00:00Z', extra: 1 });
+    ok('本地优先：刚打的卡不会被云端旧快照覆盖', r4.tasks.k.at === 5 && r4.extra === 1);
+} catch (e) {
+    ok('mergeLocalFirst 行为测试可执行', false);
+}
+
+// ============ v20261026s 第二轮：使用者易踩缺陷集中修复 ============
+console.log('—— v20261026s 使用者缺陷修复 ——');
+// ① 删掉的默认打卡项不再自动复活
+ok('ensureDefaults 增加 defaultsSeeded 标记', APP.includes('state.data.defaultsSeeded = true;'));
+ok('已初始化过就不再灌注默认项', /if \(seeded\) return;/.test(APP));
+ok('已有数据视为已初始化', /const seeded = state\.data\.defaultsSeeded === true \|\| hasExisting;/.test(APP));
+// ② 阅读收藏跨设备合并 + 删除墓碑
+ok('新增 mergeBookRead（按 title 并集）', /function mergeBookRead\(localArr, cloudArr, tombs\)/.test(APP));
+ok('新增 dropBeforeCut（清空分界线过滤）', /function dropBeforeCut\(arr, cutMs\)/.test(APP));
+ok('新增 mergeTsMap（墓碑时间戳合并）', /function mergeTsMap\(a, b\)/.test(APP));
+ok('同步时合并 bookRead 并应用墓碑', APP.includes('mergeBookRead(localById.bookRead, cloud.bookRead, state.data.bookReadTombs)'));
+ok('localById 快照包含 bookRead', APP.includes('bookRead: Array.isArray(state.data.bookRead) ? state.data.bookRead : []'));
+ok('取消看过写入删除墓碑', APP.includes('state.data.bookReadTombs[book.title] = Date.now();'));
+ok('重新收藏清除墓碑', APP.includes('delete state.data.bookReadTombs[book.title];'));
+// ③ 本地存储配额失败不再静默
+ok('saveStateLocal 配额降级重试', /function saveStateLocal\(\)[\s\S]{0,700}state\.data\.hotCache = \{\};/.test(APP));
+// ④ 待同步陈旧降级，避免长期压着云端
+ok('待同步记录时间戳', APP.includes("localStorage.setItem('gt_unsynced_at'"));
+ok('unsyncedIsStale / localShouldWin 存在', /function unsyncedIsStale\(\)/.test(APP) && /function localShouldWin\(\)/.test(APP));
+ok('loadState 恢复待同步时间', APP.includes("state._unsyncedAt = Number(localStorage.getItem('gt_unsynced_at')) || 0;"));
+// ⑤ 存档/刷新提示按真实结果
+ok('存档失败提示失败（不再谎报已上传）', APP.includes("r === false ? '⚠️ 上传失败，请检查网络后重试（本地数据已保存）'"));
+ok('syncToCloud 返回真实结果', /reportSyncSuccess\(\);\s*return true;/.test(APP));
+// ⑥ 「清除所有数据」真正清得掉
+ok('清空写入 clearedAllAt 分界线', APP.includes('clearedAllAt: now(),'));
+ok('清空重置英语打卡分界线', APP.includes('clearedAt: Date.now(), fsrsClearedAt: Date.now()'));
+ok('合并时按清空分界线丢弃云端旧记录', APP.includes('cloud[k] = dropBeforeCut(cloud[k], cutAllMs);'));
+ok('清空后上传空数据到云端', /markUnsynced\(\);[\s\S]{0,400}await syncToCloud\(false\)/.test(APP));
+// ⑦ 跨天与多窗口
+ok('render 记录渲染日期', APP.includes('state._renderDate = today();'));
+ok('轮询检测跨天并重绘', /if \(state\._renderDate && state\._renderDate !== today\(\)\)/.test(APP));
+ok('多窗口冲突提示', APP.includes("e.key !== 'growtree_state'"));
+// ⑧ FSRS 背诵进度不再被权威端旧数据盖回
+ok('FSRS 同课按最近复习时间取新', /if \(b && \(Number\(b\.last\) \|\| 0\) > \(Number\(pick\.last\) \|\| 0\)\) pick = b;/.test(APP));
+ok('FSRS 合并遍历两端所有课', /const keys = new Set\(\[\.\.\.Object\.keys\(A\), \.\.\.Object\.keys\(B\)\]\);/.test(APP));
+
+// 行为测试：mergeBookRead 并集 / 新者胜 / 墓碑
+try {
+    const srcMr = APP.match(/function mergeBookRead\(localArr, cloudArr, tombs\) \{[\s\S]*?\n\}/)[0];
+    const mbr = new Function(`${srcMr}\nreturn mergeBookRead;`)();
+    const a = mbr([{ title: 'A', markedAt: '2026-10-01T00:00:00Z' }], [{ title: 'B', markedAt: '2026-10-02T00:00:00Z' }], {});
+    ok('阅读收藏：两端并集不丢书', a.length === 2 && a.some(b => b.title === 'A') && a.some(b => b.title === 'B'));
+    const b = mbr([{ title: 'A', markedAt: '2026-10-01T00:00:00Z' }], [{ title: 'A', markedAt: '2026-10-05T00:00:00Z' }], {});
+    ok('阅读收藏：同书取较新标记', b.length === 1 && b[0].markedAt === '2026-10-05T00:00:00Z');
+    const c = mbr([{ title: 'A', markedAt: '2026-10-01T00:00:00Z' }], [{ title: 'A', markedAt: '2026-10-05T00:00:00Z' }], { A: 1 });
+    ok('阅读收藏：删除过的书不复活', c.length === 0);
+} catch (e) {
+    ok('mergeBookRead 行为测试可执行', false);
+}
+
+// 行为测试：dropBeforeCut 按清空分界线丢弃旧记录
+try {
+    const srcDrop = APP.match(/function dropBeforeCut\(arr, cutMs\) \{[\s\S]*?\n\}/)[0];
+    const drop = new Function(`${srcDrop}\nreturn dropBeforeCut;`)();
+    const cut = Date.parse('2026-10-29T00:00:00Z');
+    const arr = [
+        { id: 'old', updatedAt: '2026-10-01T00:00:00Z' },
+        { id: 'new', updatedAt: '2026-10-30T00:00:00Z' }
+    ];
+    const r = drop(arr, cut);
+    ok('清空分界线：早于清空时刻的记录被丢弃', r.length === 1 && r[0].id === 'new');
+    ok('清空分界线：空数组安全', drop([], cut).length === 0 && drop(null, cut).length === 0);
+    ok('清空分界线：未清空时不过滤', drop(arr, 0).length === 2);
+} catch (e) {
+    ok('dropBeforeCut 行为测试可执行', false);
+}
+
 // 等待异步断言后汇总
 setTimeout(() => {
     console.log(`\n========== 结果：${pass} 通过 / ${fail} 失败 ==========`);
