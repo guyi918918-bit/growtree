@@ -14,47 +14,40 @@ if (!TOKEN) { console.error('缺少 GH_PAT 环境变量'); process.exit(1); }
 // 不必每次重传（否则几十个 600~800KB blob 会拖慢推送并提高失败率）。
 const FILES = [
     'app.js', 'styles.css', 'index.html', 'sw.js', 'version.json',
-    'app.20261106y.js', 'styles.20261106y.css',
+    'app.20261106z.js', 'styles.20261106z.css',
     'vendor/lunar.1.7.8.js', 'vendor/supabase.2.119.0.js',
     'test-20261025c.cjs', 'push-via-api.cjs'
 ];
+// 历史哈希文件清理：只保留当前 z 与上一版 y（离线回退用），其余从远程 tree 删除。
+// Git 历史仍完整保留，任何旧版本都能从旧 commit 找回；体积从约 96MB 降到约 2MB。
+const KEEP_HASHED = new Set([
+    'app.20261106z.js', 'styles.20261106z.css',
+    'app.20261106y.js', 'styles.20261106y.css'
+]);
 
-const MESSAGE = `feat: 修复子标签跳首页 + 驾驶舱独立成页 + 加载链路加固 v20261106y
+const MESSAGE = `feat: 鼓励式学习看板 + 清理 94MB 历史版本文件 v20261106z
 
-【用户反馈的三个问题】
-1. 顶部「今日学习·四个板块一眼看清」驾驶舱占位置太多，希望单独给一页。
-2. 关掉网页后点不进去。
-3. 点「错题本 / 全部错题 / 已掌握」等按钮，直接跳回「欢迎首页」。
+【用户反馈的七点】
+1. 记忆巩固 / 查漏补缺 界面不再显示「板块联动」卡；联动改为使用上互通（ec-go 跳转全保留）。
+2. 学习看板删掉「225 待学任务」这类待办格子，不再制造压力。
+3. 紧凑条「今天还有 N 项待办」、Tab 上的 99+/18 数字徽标、联动条「还有 N 项」、
+   今日建议「还有 18 道错题等着复习」全部撤掉；四格改成长收成，文案全部鼓励式。
+4. 成就墙从 8 枚扩到 22 枚，分启程 / 积累 / 坚持 / 精进 / 惊喜五大类；
+   未点亮显示温柔进度与「去看看」，已点亮显示收下时间；最近 3 枚徽章搬进学习看板。
+5. 五个主 Tab 改名：总览→学习看板、书单课目→主线任务、复习中心→记忆巩固、
+   错题复习→查漏补缺、成就榜→荣誉战绩（tabCfg 只存 id，老数据自动套用新名字）。
+6. 更好玩：每日一句鼓励（按日期确定性）、成长能量条、收获时刻、随手翻一课、
+   今日探险地图、徽章弹跳动画，暗色主题 / 手机 / 减少动效均适配。
+7. 清理仓库里累积的 254 个历史 app.*.js / styles.*.css（约 94MB），
+   只保留当前 z 与上一版 y 作离线回退；Git 历史完整，随时可取回。
 
-【根因与修复】
-- data-action=tab 的通用处理把 ec-wrong-sub / ec-review-sub 这类「三级目录命名空间」
-  也写进 state.currentModule；render() 找不到该模块就回退到导航第一项（欢迎首页）。
-  现在只有 getModuleById() 认定的真实模块才能改 currentModule，虚拟命名空间只切子标签。
-  真实浏览器复现：修复前点「全部错题」→ module=home；修复后稳定保持 engcheck。
-- 顺带修：切主 Tab 时清掉错题复习会话 _wbSession，避免换板块仍卡在复习卡里。
-- 顺带修：window.onerror / unhandledrejection 不再因一次后台请求失败就把整页换成错误堆栈；
-  页面已就绪时只给轻量提示。
+【不变的部分】所有数据、同步合并、FSRS、错题导入导出、三级目录、跨模块跳转、
+成就判定原 8 枚 id 与口径全部保留；仅改呈现层文案与 UI。
 
-【学习驾驶舱独立成页】
-- 主 Tab 固定新增「📊 总览」（不参与隐藏/排序设置），完整头卡 + 四格今日待办 + 今日建议
-  + 四板块联动只在这一页显示。
-- 书单课目 / 复习中心 / 错题复习 / 成就榜 顶部换成一行紧凑状态条
-  （等级 / 积分 / 连续 / 今日待办 / 看总览），首屏不再被大卡片挤掉。
-- 四个板块原有功能、联动条、ecGo 跳转、成就墙、Tab 徽标全部保留，数据结构与同步逻辑不动。
-
-【加载链路加固（关掉重开更稳）】
-- 第三方库本地托管：vendor/supabase.2.119.0.js、vendor/lunar.1.7.8.js；
-  删掉从未使用的 compromise / chart.js 与境外 Google Fonts 请求。
-- 脚本改 defer 不阻塞解析；启动完成置 window.__GT_READY__，6 秒未就绪显示「重新加载」，
-  不再出现看得见却点不动的页面。
-- Service Worker：带构建号 JS/CSS 与 vendor 改缓存优先，第二次打开直接读本地，
-  不再每次重下近 800KB；index.html / version.json 仍网络优先，保证部署即时生效。
-- 推送脚本精简 FILES：基于远程 base_tree 只上传变更文件，不再重传几十个历史哈希大文件。
-
-【验证】test-20261025c.cjs 791 项全过（新增 y 章节 37 项：tab 分支动态执行断言、
-总览分页、紧凑条、加载兜底、SW 缓存策略、CDN 清理）。函数差集：消失 0 / 新增 2。
-真实无头浏览器点击路径回归：本地库加载、总览/四页切换、错题三级页、复习中心三级页、
-侧栏进出全部正常，无 JS 错误。`;
+【验证】test-20261025c.cjs 829 项全过（新增 z 章节 38 项）。
+函数差集：消失 0 / 新增 8（含 y 的 2 个）。真实无头 Chrome 点击路径：
+五个 Tab 改名生效、看板有鼓励/收获/地图、记忆巩固与查漏补缺无联动卡、
+三级子标签切换后 currentModule 始终 engcheck、荣誉墙 22 枚与五大类齐全、无 JS 错误。`;
 
 
 async function api(method, endpoint, body, attempt = 0) {
@@ -105,8 +98,16 @@ async function api(method, endpoint, body, attempt = 0) {
     const baseTree = headCommit.tree.sha;
     console.log('base tree:', baseTree.slice(0, 10));
 
-    // 2. 为每个变更文件创建 blob
-    const tree = [];
+    // 1.5 找出远程里所有过期的 app.*.js / styles.*.css，用 sha:null 标记删除
+    const full = await api('GET', `/repos/${REPO}/git/trees/${baseTree}?recursive=1`);
+    if (full.truncated) { console.error('远程 tree 被截断，停止以免漏删'); process.exit(1); }
+    const stale = (full.tree || []).filter(x => x.type === 'blob' &&
+        /^(app|styles)\.[^/]+\.(js|css)$/.test(x.path) && !KEEP_HASHED.has(x.path));
+    const staleBytes = stale.reduce((n, x) => n + (x.size || 0), 0);
+    console.log('待清理历史版本文件:', stale.length, '个 /', (staleBytes / 1048576).toFixed(1), 'MB');
+
+    // 2. 为每个变更文件创建 blob；删除项直接以 sha:null 进 tree
+    const tree = stale.map(x => ({ path: x.path, mode: '100644', type: 'blob', sha: null }));
     for (const f of FILES) {
         const content = fs.readFileSync(path.join(ROOT, f));
         const b64 = content.toString('base64');

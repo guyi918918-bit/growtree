@@ -119,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecBatchZhImport, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecOpenRecite, ecTxtBlockHTML, ecTabCfgGet, ecTabCfgAll, ecTabCfgVisible, ecTabCfgToggleShow, ecTabCfgMove, ecTabCfgHTML, ecMergeTabCfg, ecReviewCalendarHTML, EC_SUBTABS, ecOpenTabCfg, ecTabCfgRefreshIfModal, EC_REVIEW_SUBTABS, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, state, EC_WRONG_SUBTABS, EC_WB_GRADES, ecWbData, ecWbStatusOf, ecWbFingerprint, ecWbStats, ecWbDueItems, ecWbParse, ecWbAddItems, ecWbStart, ecWbGrade, ecWbExit, ecWbReset, ecRenderWrong, ecWbOverviewHTML, ecWbCalendarHTML, ecWbDueHTML, ecWbAllHTML, ecWbMasteredHTML, ecWbSessionHTML, ecMergeWrong, EC_WB_UNASSIGNED, ecWbById, ecWbMatchLesson, ecWbLocationText, ecWbItemsOfBook, ecWbItemsOfLesson, ecWbCounts, ecWbDueIn, ecWbFilteredDueItems, ecWbAutoTaskOn, ecWbScopeHTML, ecWbScopeOfValue, ecWbAssign, ecWbRemoveIds, ecWbSelIds, ecWbSelMode, ecWbSelToggle, ecWbSelAll, ecWbMoveIds, ecWbMoveItem, ecWbToggleAutoTask, ecWbAutoDrill, ecWbStartBook, ecWbStartLesson, ecWbGoLesson, ecWbBooksHTML, ecWbBookListHTML, ecWbBookDetailHTML, ecWbLessonDetailHTML, ecWbItemHTML, ecWbLessonCounts, ecWbBadgeHTML, ecWbLessonCardHTML, ecWbBookDueCount, ecTodayRecommendWrongHTML, ecGlobalStats, ecWbTokenize, ecWbTokKey, ecWbMergeSegs, ecWbDiffSides, ecWbSegsHTML, ecWbDiffWords, ecWbCompareHTML, ecWbReEsc, ecWbWhyHTML, EC_WB_TEMPLATE, ecWbTemplateCSV, ecWbFillTemplate, ecWbCopyTemplate, ecWbDownloadTemplate, ecWbHasMark, ecWbMarkHTML, ecWbMarkWords, ecWbFormHTML, ecWbFormValue, ecWbApplyForm, ecHeaderHTML, ecPendingTasks, ecHubCounts, ecHubAdvice, ecGo, ecMainTabsHTML, ecHubGridHTML, ecLinkCardHTML, ecAchieveGo, renderEngCheckPage, ecMiniBarHTML, ecHubPageHTML };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecBatchZhImport, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecOpenRecite, ecTxtBlockHTML, ecTabCfgGet, ecTabCfgAll, ecTabCfgVisible, ecTabCfgToggleShow, ecTabCfgMove, ecTabCfgHTML, ecMergeTabCfg, ecReviewCalendarHTML, EC_SUBTABS, ecOpenTabCfg, ecTabCfgRefreshIfModal, EC_REVIEW_SUBTABS, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, state, EC_WRONG_SUBTABS, EC_WB_GRADES, ecWbData, ecWbStatusOf, ecWbFingerprint, ecWbStats, ecWbDueItems, ecWbParse, ecWbAddItems, ecWbStart, ecWbGrade, ecWbExit, ecWbReset, ecRenderWrong, ecWbOverviewHTML, ecWbCalendarHTML, ecWbDueHTML, ecWbAllHTML, ecWbMasteredHTML, ecWbSessionHTML, ecMergeWrong, EC_WB_UNASSIGNED, ecWbById, ecWbMatchLesson, ecWbLocationText, ecWbItemsOfBook, ecWbItemsOfLesson, ecWbCounts, ecWbDueIn, ecWbFilteredDueItems, ecWbAutoTaskOn, ecWbScopeHTML, ecWbScopeOfValue, ecWbAssign, ecWbRemoveIds, ecWbSelIds, ecWbSelMode, ecWbSelToggle, ecWbSelAll, ecWbMoveIds, ecWbMoveItem, ecWbToggleAutoTask, ecWbAutoDrill, ecWbStartBook, ecWbStartLesson, ecWbGoLesson, ecWbBooksHTML, ecWbBookListHTML, ecWbBookDetailHTML, ecWbLessonDetailHTML, ecWbItemHTML, ecWbLessonCounts, ecWbBadgeHTML, ecWbLessonCardHTML, ecWbBookDueCount, ecTodayRecommendWrongHTML, ecGlobalStats, ecWbTokenize, ecWbTokKey, ecWbMergeSegs, ecWbDiffSides, ecWbSegsHTML, ecWbDiffWords, ecWbCompareHTML, ecWbReEsc, ecWbWhyHTML, EC_WB_TEMPLATE, ecWbTemplateCSV, ecWbFillTemplate, ecWbCopyTemplate, ecWbDownloadTemplate, ecWbHasMark, ecWbMarkHTML, ecWbMarkWords, ecWbFormHTML, ecWbFormValue, ecWbApplyForm, ecHeaderHTML, ecPendingTasks, ecHubCounts, ecHubAdvice, ecGo, ecMainTabsHTML, ecHubGridHTML, ecLinkCardHTML, ecAchieveGo, renderEngCheckPage, ecMiniBarHTML, ecHubPageHTML, EC_ACHIEVEMENTS, EC_ACH_CATS, EC_CHEERS, ecDailyCheer, ecHarvestLine, ecCheerCardHTML, ecRecentBadgesHTML, ecAchTime, ecAchProgress, ecCheckAchievements };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, getElementsByName: (name) => { const k = '__byname_' + name; if (!elCache[k]) elCache[k] = []; return elCache[k]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
@@ -425,7 +425,7 @@ console.log('—— 渲染冒烟 ——');
     // 成就榜
     EC.state._ecBookId = 'b1';
     h = EC.ecRenderAchieve();
-    ok('成就榜渲染', h.includes('成就墙') && h.includes('七日不断'));
+    ok('荣誉战绩渲染', h.includes('荣誉墙') && h.includes('七日不断'));
 }
 
 // ============ 八、导航排序（回归） ============
@@ -570,7 +570,7 @@ console.log('—— v20261025e 课程列表 ——');
     reco = EC.ecTodayRecommend('b1');
     ok('全部完成→无推荐', reco === null);
     html = EC.ecTodayRecommendHTML('b1');
-    ok('全部完成显示庆祝卡', html.includes('今日推荐') && html.includes('都完成啦'));
+    ok('全部完成显示庆祝卡', html.includes('今日推荐') && html.includes('收获满满'));
     // 渲染：卡片状态与按钮位置
     EC.state._ecBookId = 'b1';
     html = EC.ecRenderLessons();
@@ -748,7 +748,7 @@ ok('刷题 CSS 已删除', !/\.ec-quiz-/.test(CSS));
 ok('旧 quiz 数据有清理逻辑', /if \(d\.quiz\) delete d\.quiz;/.test(APP));
 ok('旧 tab 排序迁移到错题复习', /c\.order\.includes\('ec-quiz'\)/.test(APP));
 ok('旧停留页迁移到错题复习', /currentSubTab\.engcheck === 'ec-quiz'/.test(APP));
-ok('新子标签定义', /\{ id: 'ec-wrong', name: '错题复习', icon: '📕' \}/.test(APP));
+ok('新子标签定义', /\{ id: 'ec-wrong', name: '查漏补缺', icon: '📕' \}/.test(APP));
 ok('路由接入错题复习', /tab === 'ec-wrong'\) return ecRenderWrong\(\)/.test(APP));
 ok('四个三级子导航', /EC_WRONG_SUBTABS = \[/.test(APP) && ['overview', 'due', 'all', 'mastered'].every(k => APP.includes(`id: '${k}'`)));
 ok('分发器覆盖全部错题动作', ['ec-wb-import', 'ec-wb-import-json', 'ec-wb-export', 'ec-wb-add', 'ec-wb-edit', 'ec-wb-del', 'ec-wb-clear', 'ec-wb-start', 'ec-wb-start-one', 'ec-wb-reveal', 'ec-wb-grade', 'ec-wb-exit', 'ec-wb-reset'].every(a => APP.includes(`action === '${a}'`)));
@@ -849,12 +849,12 @@ ok('新题（fsrs 缺失）也计入待复习', /s === 'due' \|\| s === 'new'/.t
     EC.ecWbAddItems([{ lesson: 'L1', point: '考点A', mine: 'mA', right: 'rA', why: '因A' }]);
     EC.state.currentSubTab = {};
     const h0 = EC.ecRenderWrong();
-    ok('概览：面包屑 + 统计卡 + 7 天预览', h0.includes('英语打卡 › 错题复习') && h0.includes('错题复习 · 概览') && h0.includes('接下来 7 天复习预览'));
-    ok('概览：四个子导航按钮', ['📊 概览', '⏰ 待复习', '📚 全部错题', '🏆 已掌握'].every(t => h0.includes(t)));
+    ok('概览：面包屑 + 统计卡 + 7 天预览', h0.includes('英语打卡 › 查漏补缺') && h0.includes('查漏补缺 · 概览') && h0.includes('接下来 7 天复习预览'));
+    ok('概览：四个子导航按钮', ['📊 概览', '⏰ 可以回顾', '📚 全部错题', '🏆 已掌握'].every(t => h0.includes(t)));
     ok('概览：含批量导入与开始复习入口', h0.includes('ec-wb-import') && h0.includes('ec-wb-start'));
     EC.state.currentSubTab['ec-wrong-sub'] = 'due';
     const h1 = EC.ecRenderWrong();
-    ok('待复习页列出到期题', h1.includes('待复习（') && h1.includes('考点A') && h1.includes('ec-wb-start-one'));
+    ok('待复习页列出到期题', h1.includes('可以回顾（') && h1.includes('考点A') && h1.includes('ec-wb-start-one'));
     EC.state.currentSubTab['ec-wrong-sub'] = 'all';
     const h2 = EC.ecRenderWrong();
     ok('全部错题页按课时分组 + 编辑/删除/备份', h2.includes('全部错题（1）') && h2.includes('L1（1）') && h2.includes('ec-wb-edit') && h2.includes('ec-wb-export'));
@@ -864,7 +864,7 @@ ok('新题（fsrs 缺失）也计入待复习', /s === 'due' \|\| s === 'new'/.t
     EC.ecWbData().fsrs[EC.ecWbData().items[0].id].s = 60;
     ok('已掌握页列出达标题 + 移回复习池', EC.ecRenderWrong().includes('ec-wb-reset'));
     EC.state.currentSubTab['ec-wrong-sub'] = 'not-exist';
-    ok('非法子标签回退概览', EC.ecRenderWrong().includes('错题复习 · 概览'));
+    ok('非法子标签回退概览', EC.ecRenderWrong().includes('查漏补缺 · 概览'));
 }
 
 // 6. 跨设备合并：并集 / 新者胜 / 墓碑 / 清零分界线 / FSRS 取新
@@ -902,9 +902,9 @@ ok('新题（fsrs 缺失）也计入待复习', /s === 'due' \|\| s === 'new'/.t
     ok('背诵入库仍可用', !!(EC.ecData().fsrs.les1 && EC.ecData().fsrs.les1.last));
     EC.ecReciteAction('les1', 3);
     ok('背诵四档自评仍可用', EC.ecData().fsrs.les1.n === 1);
-    ok('复习中心仍在子标签内', /id: 'ec-review', name: '复习中心'/.test(APP));
-    ok('书单课目仍在子标签内', /id: 'ec-books', name: '书单课目'/.test(APP));
-    ok('成就榜仍在子标签内', /id: 'ec-achieve', name: '成就榜'/.test(APP));
+    ok('复习中心仍在子标签内', /id: 'ec-review', name: '记忆巩固'/.test(APP));
+    ok('书单课目仍在子标签内', /id: 'ec-books', name: '主线任务'/.test(APP));
+    ok('成就榜仍在子标签内', /id: 'ec-achieve', name: '荣誉战绩'/.test(APP));
 }
 
 // ============ v20261026f/n：背诵板块 · 课文对照（中/英双语，默认隐藏） ============
@@ -1258,7 +1258,7 @@ ok('清空课文同时清中文和英文', /if \(l\.zh\) \{ l\.zh = ''; l\.zhAt 
 
 // ============ v20261026p：复习日历预览 + 子标签显示设置 ============
 console.log('—— 复习日历预览 / 子标签设置（v20261026p）——');
-ok('EC_SUBTABS 四个子标签齐全', /const EC_SUBTABS = \[/.test(APP) && /id: 'ec-books', name: '书单课目'/.test(APP) && /id: 'ec-achieve', name: '成就榜'/.test(APP));
+ok('EC_SUBTABS 四个子标签齐全', /const EC_SUBTABS = \[/.test(APP) && /id: 'ec-books', name: '主线任务'/.test(APP) && /id: 'ec-achieve', name: '荣誉战绩'/.test(APP));
 ok('子标签配置存 engcheck.tabCfg（order/hidden/at）', /d\.tabCfg = \{ order: \[\], hidden: \[\], at: 0 \}/.test(APP) && /function ecTabCfgGet/.test(APP));
 ok('渲染改用配置：ecTabCfgVisible + ⚙️ 弹窗按钮', /const tabs = ecTabCfgVisible\(\);/.test(APP) && /class="ec-tabcfg-btn/.test(APP) && /data-action="ec-tabcfg-open"/.test(APP));
 ok('⚙️ 改为弹窗：打开函数与刷新函数存在', /function ecOpenTabCfg/.test(APP) && /function ecTabCfgRefreshIfModal/.test(APP) && /uiModal\(\{ title: '⚙️ 子标签显示设置'/.test(APP));
@@ -1271,7 +1271,7 @@ ok('复习中心接入日历预览', /ecReviewCalendarHTML\(7\)/.test(APP) && /�
 ok('子标签配置跨设备按 at 取新', /function ecMergeTabCfg/.test(APP) && /merged\.tabCfg = ecMergeTabCfg\(win\.tabCfg, lose\.tabCfg\)/.test(APP));
 ok('复习中心新增三级子目录', /const EC_REVIEW_SUBTABS = \[/.test(APP) && /id: 'overview'/.test(APP) && /id: 'due'/.test(APP) && /id: 'waiting'/.test(APP) && /id: 'mastered'/.test(APP));
 ok('三级子目录用独立 namespace（ec-review-sub）', /data-module="ec-review-sub"/.test(APP) && /data-action="tab"/.test(APP) && /id: 'overview'/.test(APP));
-ok('复习中心渲染含面包屑与子导航', /英语打卡 › 复习中心/.test(APP) && /class="card ec-review-subnav"/.test(APP) && /ec-crumb/.test(APP));
+ok('复习中心渲染含面包屑与子导航', /英语打卡 › 记忆巩固/.test(APP) && /class="card ec-review-subnav"/.test(APP) && /ec-crumb/.test(APP));
 {
     const EC = makeEC();
     EC.state.currentSubTab = { 'ec-review-sub': 'due' };
@@ -1279,7 +1279,7 @@ ok('复习中心渲染含面包屑与子导航', /英语打卡 › 复习中心/
     ok('切到「待背诵」只渲染待背诵卡片（不含学习中/已掌握内容标题）', /card-title">⏰ 待背诵清单/.test(html) && !/card-title">📖 学习中/.test(html) && !/card-title">🏆 已掌握/.test(html));
     EC.state.currentSubTab = { 'ec-review-sub': 'overview' };
     const ov = EC.ecRenderReview();
-    ok('概览同时含统计卡与日历预览与 FSRS 说明', /复习中心 · 概览/.test(ov) && /接下来 7 天复习预览/.test(ov) && /背诵复习 · FSRS 算法/.test(ov));
+    ok('概览同时含统计卡与日历预览与 FSRS 说明', /记忆巩固 · 概览/.test(ov) && /接下来 7 天复习预览/.test(ov) && /背诵复习 · FSRS 算法/.test(ov));
     EC.state.currentSubTab = { 'ec-review-sub': 'mastered' };
     const ms = EC.ecRenderReview();
     ok('「已掌握」空态有兜底文案', /还没有已掌握的课文/.test(ms));
@@ -1344,7 +1344,7 @@ ok('复习中心渲染含面包屑与子导航', /英语打卡 › 复习中心/
     d.lessons.push({ id: 'l5', bookId: 'b1', name: 'L60、L61 A bad cold', order: 5, createdAt: '' });
     d.fsrs['l5'] = { s: 1, d: 5, n: 1, last: Date.now() - 86400000 * 10, due: new Date().setHours(0, 0, 0, 0) - 86400000 * 2 };
     const html = EC.ecReviewCalendarHTML(7);
-    ok('日历含逾期分组', html.includes('已逾期') && html.includes('A bad cold ·') === false && html.includes('L60、L61 A bad cold'));
+    ok('日历含逾期分组', html.includes('慢慢补') && html.includes('A bad cold ·') === false && html.includes('L60、L61 A bad cold'));
     ok('日历含今天/明天标签', html.includes('今天') && html.includes('明天'));
     ok('日历课程可点进背诵页', /data-action="ec-open-recite" data-lesson="l1"/.test(html));
     ok('同一天多课显示课数 2（明天）', /<div class="ec-cal-count">2<span class="ec-cal-unit">课<\/span><\/div>/.test(html));
@@ -1645,7 +1645,7 @@ function seedCatalog(EC) {
     ok('全局统计含错题', EC.ecGlobalStats().wrongDue === 2);
     EC.state._ecLessonId = 'l1';
     ok('课时详情页渲染错题卡', EC.ecRenderLesson().includes('本课错题'));
-    ok('成就榜显示错题统计', EC.ecRenderAchieve().includes('错题集'));
+    ok('成就榜显示错题统计', EC.ecRenderAchieve().includes('错题小宝藏'));
     EC.state._ecBookId = 'b1'; EC.state._ecLessonId = null;
     ok('课时列表页渲染错题徽标', EC.ecRenderLessons().includes('ec-wb-badge'));
 }
@@ -1893,7 +1893,7 @@ console.log('—— x：四模块联动 ——');
     ok('x：页内旧头卡调用已全部移除', !APP.includes('${ecHeaderHTML()}'));
     ok('x：Tab 栏换成带徽标版本', /ecMainTabsHTML\(tabs, tab, extra\)/.test(APP) && /data-action="tab" data-module="engcheck"/.test(APP));
     ok('x：ec-go 统一跳转动作分发', /action === 'ec-go'/.test(APP) && /ecGo\(el\.dataset\.to/.test(APP));
-    ok('y：联动条插在复习中心 / 错题概览 / 总览页', (APP.match(/ecLinkCardHTML\('/g) || []).length === 3);
+    ok('z：联动卡只在看板出现（两页已移除）', (APP.match(/ecLinkCardHTML\('/g) || []).length === 1);
     ok('x：刷题残留仍为 0', !/EC_QUIZ_BUILTIN|ecQuizStart|ecRenderQuiz/.test(APP));
     ok('x：背诵打分函数未丢', /function ecReciteAction/.test(APP));
 
@@ -1922,17 +1922,17 @@ console.log('—— x：四模块联动 ——');
     // 5. 头卡 / Tab 栏 / 联动条渲染
     const hh = EC.ecHeaderHTML();
     ok('x：头卡保留等级与积分', hh.includes('Lv.') && hh.includes('⭐') && hh.includes('连续'));
-    ok('x：头卡四格待办齐全', ['待学任务', '待背诵', '待复习错题', '今日已学'].every(t => hh.includes(t)) && (hh.match(/ec-hub-cell /g) || []).length === 4);
+    ok('z：头卡四格全是正向收获', ['学到的本领', '记牢的课文', '收集的宝藏', '今日收获'].every(t => hh.includes(t)) && !hh.includes('待学任务') && !hh.includes('待办') && (hh.match(/ec-hub-cell /g) || []).length === 4);
     ok('x：四格 + 引导按钮都能跳', (hh.match(/data-action="ec-go"/g) || []).length === 5);
     ok('x：头卡显示成就进度', hh.includes('成就') && hh.includes('ec-hub-advice'));
     const tabs = EC.ecMainTabsHTML(EC.EC_SUBTABS, 'ec-books', '');
     ok('x：Tab 栏保留原生切换语义', tabs.includes('data-action="tab"') && tabs.includes('data-module="engcheck"') && tabs.includes('data-tab="ec-wrong"') && tabs.includes('data-ec-main="1"'));
     ok('x：主 Tab 切换后平滑回顶（不影响其他模块）', /if \(el\.dataset\.ecMain\)[\s\S]{0,160}window\.scrollTo/.test(APP));
-    ok('x：Tab 栏显示待办徽标', tabs.includes('ec-tab-badge'));
+    ok('z：Tab 数字待办徽标已移除', !tabs.includes('ec-tab-badge') && !/99\+|待办/.test(tabs));
     ok('x：⚙️ 额外入口仍可拼接', EC.ecMainTabsHTML(EC.EC_SUBTABS, 'ec-review', '<i id="gear"></i>').includes('id="gear"'));
     const lk = EC.ecLinkCardHTML('ec-review');
     ok('x：联动条排除当前板块', !lk.includes('data-to="ec-review"') && ['ec-books', 'ec-wrong', 'ec-achieve'].every(t => lk.includes('data-to="' + t + '"')));
-    ok('x：联动条高亮有待办板块', lk.includes('ec-link-item has'));
+    ok('z：探险地图不带待办高亮', lk.includes('今日探险地图') && !lk.includes('ec-link-item has'));
 
     // 6. 统一跳转
     EC.state._wbSession = { id: 'tmp' };
@@ -1949,19 +1949,19 @@ console.log('—— x：四模块联动 ——');
 
     // 7. 成就榜升级（原数据全保留）
     const ah = EC.ecRenderAchieve();
-    ok('x：成就榜保留原学习数据', ah.includes('学习数据') && ah.includes('总积分') && ah.includes('错题集') && ah.includes('学习天数'));
-    ok('x：新增四大板块数据卡', ah.includes('四大板块数据') && (ah.match(/ec-mod-stat"/g) || []).length === 4);
+    ok('x：成就榜保留原学习数据', ah.includes('学习数据') && ah.includes('总积分') && ah.includes('错题小宝藏') && ah.includes('学习天数'));
+    ok('x：新增四大板块数据卡', ah.includes('四个板块的收获') && (ah.match(/ec-mod-stat"/g) || []).length === 4);
     ok('x：四大板块卡都能跳', (ah.match(/data-action="ec-go"/g) || []).length >= 4);
-    ok('x：成就墙进度 + 去完成', ah.includes('待解锁') && ah.includes('ec-ach-progress') && ah.includes('去完成'));
+    ok('z：荣誉墙温柔文案 + 分类', ah.includes('即将点亮') && ah.includes('ec-ach-progress') && ah.includes('去看看') && !ah.includes('去完成') && ah.includes('ec-ach-cat-label'));
     d.achievements['first-book'] = Date.now();
     const ah2 = EC.ecRenderAchieve();
-    ok('x：解锁后分组显示已达成', ah2.includes('已达成（1）') && ah2.includes('ec-ach-on') && ah2.includes('待解锁（' + (EC.ecHubCounts().achievementTotal - 1) + '）'));
+    ok('x：解锁后分组显示已达成', ah2.includes('已点亮（1）') && ah2.includes('ec-ach-on') && ah2.includes('即将点亮（' + (EC.ecHubCounts().achievementTotal - 1) + '）'));
     ok('x：7 天热力按强度分级', ah.includes('ec-day lv'));
 
     // 8. 两个概览页确实带联动条
     EC.state.currentSubTab['ec-review-sub'] = 'overview';
-    ok('x：复习中心概览带联动条', EC.ecRenderReview().includes('ec-link-card'));
-    ok('x：错题概览带联动条', EC.ecWbOverviewHTML(EC.ecWbStats()).includes('ec-link-card'));
+    ok('z：记忆巩固不再有联动卡', !EC.ecRenderReview().includes('ec-link-card'));
+    ok('z：查漏补缺不再有联动卡', !EC.ecWbOverviewHTML(EC.ecWbStats()).includes('ec-link-card'));
 
     // 9. 逾期口径：新题 / FSRS 缺失的旧题不算逾期，只有复习过且过期的才算
     const w2 = EC.ecWbData();
@@ -1982,9 +1982,9 @@ console.log('—— y：导航修复 / 总览分页 / 加载加固 ——');
     const EC = makeEC();
 
     // 1. 版本链一致
-    ok('y：APP_BUILD 升到 20261106y', /const APP_BUILD = '20261106y';/.test(APP));
-    ok('y：index.html 引用 y 哈希文件', HTML.includes('app.20261106y.js') && HTML.includes('styles.20261106y.css'));
-    ok('y：version.json / SW / SHELL 同步升版', VER.includes('20261106y') && /growtree-shell-v151/.test(SW) && SW.includes("'./app.20261106y.js'") && SW.includes("'./styles.20261106y.css'"));
+    ok('z：APP_BUILD 升到 20261106z', /const APP_BUILD = '20261106z';/.test(APP));
+    ok('z：index.html 引用 z 哈希文件', HTML.includes('app.20261106z.js') && HTML.includes('styles.20261106z.css'));
+    ok('y：version.json / SW / SHELL 同步升版', VER.includes('20261106z') && /growtree-shell-v152/.test(SW) && SW.includes("'./app.20261106z.js'") && SW.includes("'./styles.20261106z.css'"));
 
     // 2. 核心缺陷：真实浏览器复现「点全部错题 → currentModule 变 home → 整页跳欢迎首页」。
     //    直接抽出 tab 分支执行，验证虚拟命名空间不再污染 currentModule。
@@ -2025,15 +2025,15 @@ console.log('—— y：导航修复 / 总览分页 / 加载加固 ——');
     ok('y：总览页 / 紧凑条函数齐全', ['ecMiniBarHTML', 'ecHubPageHTML'].every(f => new RegExp('function ' + f + '\\(').test(APP)));
     ok('y：engcheck 按 isHub 分流', /const isHub = state\.currentSubTab\.engcheck === 'ec-hub';/.test(APP) && /const tab = isHub \? 'ec-hub' : validSubTab/.test(APP));
     const tabsY = EC.ecMainTabsHTML(EC.EC_SUBTABS, 'ec-books', '');
-    ok('y：主 Tab 栏有固定总览入口', tabsY.includes('data-tab="ec-hub"') && tabsY.includes('总览') && tabsY.includes('class="tab-btn ec-hub-tab'));
+    ok('y：主 Tab 栏有固定总览入口', tabsY.includes('data-tab="ec-hub"') && tabsY.includes('学习看板') && tabsY.includes('class="tab-btn ec-hub-tab'));
     ok('y：总览入口是真实模块切换语义', tabsY.includes('data-module="engcheck" data-tab="ec-hub"'));
     ok('y：总览不参与隐藏/排序配置', EC.EC_SUBTABS.every(t => t.id !== 'ec-hub'));
     const mini = EC.ecMiniBarHTML();
     ok('y：紧凑条一行显示等级/积分/连续/待办', mini.includes('ec-mini-bar') && mini.includes('Lv.') && mini.includes('⭐') && mini.includes('连续') && mini.includes('ec-mini-todo'));
-    ok('y：紧凑条可一键回总览', mini.includes('data-tab="ec-hub"') && mini.includes('看总览'));
+    ok('y：紧凑条可一键回总览', mini.includes('data-tab="ec-hub"') && mini.includes('学习看板'));
     ok('y：紧凑条不含大四格（不重复占位）', !mini.includes('ec-hub-cell') && !mini.includes('ec-hub-grid'));
     const hubPage = EC.ecHubPageHTML();
-    ok('y：总览页带说明与四板块联动', hubPage.includes('学习总览') && hubPage.includes('ec-link-card') && hubPage.includes('ec-hub-note'));
+    ok('y：总览页带说明与四板块联动', hubPage.includes('学习看板') && hubPage.includes('ec-link-card') && hubPage.includes('ec-hub-note'));
     ok('y：原四格与引导按钮全部保留', (EC.ecHeaderHTML().match(/data-action="ec-go"/g) || []).length === 5);
 
     // 4. 样式
@@ -2044,7 +2044,7 @@ console.log('—— y：导航修复 / 总览分页 / 加载加固 ——');
     // 5. 加载链路加固：关掉网页重开不再「看得见但点不动」
     ok('y：境外 CDN 依赖清零', !/unpkg|jsdelivr|fonts\.googleapis/.test(HTML));
     ok('y：无用库已移除', !/<script[^>]*(compromise|chart)/.test(HTML));
-    ok('y：必需库本地托管 + defer 不阻塞', HTML.includes('defer src="vendor/lunar.1.7.8.js"') && HTML.includes('defer src="vendor/supabase.2.119.0.js"') && HTML.includes('defer src="app.20261106y.js"'));
+    ok('y：必需库本地托管 + defer 不阻塞', HTML.includes('defer src="vendor/lunar.1.7.8.js"') && HTML.includes('defer src="vendor/supabase.2.119.0.js"') && HTML.includes('defer src="app.20261106z.js"'));
     ok('y：本地库文件存在且含关键符号', fs.existsSync(__dirname + '/vendor/lunar.1.7.8.js') && fs.existsSync(__dirname + '/vendor/supabase.2.119.0.js') && fs.readFileSync(__dirname + '/vendor/supabase.2.119.0.js', 'utf8').includes('createClient'));
     ok('y：启动就绪标记', /window\.__GT_READY__ = true;/.test(APP));
     ok('y：加载失败有重新加载入口', /if \(window\.__GT_READY__\) return;/.test(HTML) && /重新加载/.test(HTML));
@@ -2055,6 +2055,89 @@ console.log('—— y：导航修复 / 总览分页 / 加载加固 ——');
     ok('y：SW 页面请求仍网络优先（部署即时生效）', /fetch\(networkReq\)/.test(SW) && /cache: 'reload'/.test(SW));
 }
 
+
+
+// ============ v20261106z：轻松鼓励式学习看板 ============
+console.log('—— z：去压力 / 改名 / 成就多元化 / 氛围升级 ——');
+{
+    const EC = makeEC();
+    const d = EC.ecData();
+    EC.state.currentSubTab = EC.state.currentSubTab || {};
+
+    // 1. 五个主 Tab 改名，且 tabCfg 老数据（只存 id）自动用新名字
+    const tabs = EC.ecMainTabsHTML(EC.EC_SUBTABS, 'ec-books', '');
+    ok('z：学习看板固定入口改名', tabs.includes('学习看板') && tabs.includes('data-tab="ec-hub"') && tabs.includes('ec-hub-tab'));
+    ok('z：四个板块全部改名', ['主线任务', '记忆巩固', '查漏补缺', '荣誉战绩'].every(t => tabs.includes(t)));
+    ok('z：旧名称一个不剩', !['书单课目', '复习中心', '错题复习', '成就榜', '>总览<'].some(t => tabs.includes(t)));
+    ok('z：看板不参与隐藏排序', EC.EC_SUBTABS.every(t => t.id !== 'ec-hub'));
+    d.tabCfg = { order: ['ec-wrong', 'ec-books'], hidden: [], at: Date.now() };
+    ok('z：旧 tabCfg 自动套用新名字', EC.ecTabCfgVisible().slice(0, 2).map(t => t.name).join('/') === '查漏补缺/主线任务');
+    delete d.tabCfg;
+
+    // 2. 需求 1：记忆巩固 / 查漏补缺不再显示板块联动卡，联动功能仍在
+    EC.state.currentSubTab['ec-review-sub'] = 'overview';
+    const rv = EC.ecRenderReview();
+    const wo = EC.ecWbOverviewHTML(EC.ecWbStats());
+    ok('z：记忆巩固无联动卡', !rv.includes('ec-link-card') && !rv.includes('板块联动'));
+    ok('z：查漏补缺无联动卡', !wo.includes('ec-link-card') && !wo.includes('板块联动'));
+    const hp = EC.ecHubPageHTML();
+    ok('z：联动只在看板以探险地图出现', hp.includes('ec-link-card') && hp.includes('今日探险地图'));
+    ok('z：全站只剩 1 处联动卡调用', (APP.match(/ecLinkCardHTML\('/g) || []).length === 1);
+    ok('z：ec-go 跳转仍完整可用', /action === 'ec-go'/.test(APP) && /function ecGo\(/.test(APP) && /function ecAchieveGo\(/.test(APP));
+
+    // 3. 需求 2/3：首屏不再出现任何待办数字、徽标、催办文案
+    const hh = EC.ecHeaderHTML();
+    const mini = EC.ecMiniBarHTML();
+    const lk = EC.ecLinkCardHTML('');
+    ok('z：四格全是收获口径', ['学到的本领', '记牢的课文', '收集的宝藏', '今日收获'].every(t => hh.includes(t)) && (hh.match(/ec-hub-cell /g) || []).length === 4);
+    ok('z：头卡无待办 / 待学 / 逾期', !/待办|待学|待复习错题|待背诵|逾期|还差/.test(hh));
+    ok('z：紧凑条无待办数字', mini.includes('今天从一页开始就很棒') && !mini.includes('待办') && mini.includes('学习看板'));
+    ok('z：Tab 不再有数字徽标', !tabs.includes('ec-tab-badge') && !/99\+/.test(tabs));
+    ok('z：探险地图不带数量高亮', !lk.includes('ec-link-item has') && !/还有 \d+/.test(lk));
+    ok('z：今日邀请是鼓励语气', /去看看|去逛逛|去玩玩|去寻宝|看荣誉/.test(EC.ecHubAdvice(EC.ecHubCounts()).btn));
+    ok('z：引导优先级口径未变', EC.ecHubAdvice({ wrongOverdue: 3, reciteDue: 5, wrongDue: 0, tasks: 2 }).to === 'ec-wrong' && EC.ecHubAdvice({ wrongOverdue: 0, reciteDue: 5, wrongDue: 0, tasks: 2 }).to === 'ec-review');
+    ok('z：统计口径原样保留', EC.ecPendingTasks().total === 0 && EC.ecHubCounts().achievementTotal === EC.EC_ACHIEVEMENTS.length);
+    ok('z：压力文案已从渲染层清除', !/待学任务|项待办|已逾期|尽快补|去完成|待解锁|🔗 板块联动/.test(APP));
+
+    // 4. 需求 4/6：成就多元化 + 鼓励进看板 + 好玩氛围
+    ok('z：成就扩到 20 枚以上', EC.EC_ACHIEVEMENTS.length >= 20);
+    ok('z：五大类齐全且每类至少 2 枚', EC.EC_ACH_CATS.length === 5 && EC.EC_ACH_CATS.every(c => EC.EC_ACHIEVEMENTS.filter(a => a.cat === c.id).length >= 2));
+    ok('z：原有 8 枚成就 id 全部保留', ['first-book','first-task','first-recite','streak7','points100','lesson-all','recite-master','points500'].every(id => EC.EC_ACHIEVEMENTS.some(a => a.id === id)));
+    ok('z：每日鼓励语池与确定性', EC.EC_CHEERS.length >= 12 && EC.EC_CHEERS.includes(EC.ecDailyCheer()) && EC.ecDailyCheer() === EC.ecDailyCheer());
+    const cheer = EC.ecCheerCardHTML();
+    ok('z：今日份鼓励卡', cheer.includes('今日份鼓励') && cheer.includes(EC.ecDailyCheer()));
+    ok('z：成长能量条与收获时刻', hh.includes('成长能量') && hp.includes('收获时刻') && hp.includes('随手翻一课'));
+    ok('z：无徽章时给温柔兜底', EC.ecRecentBadgesHTML(3).includes('第一枚徽章正在路上'));
+    d.achievements['first-book'] = new Date().toISOString();
+    d.achievements['first-task'] = Date.now();
+    ok('z：最近徽章搬到看板', EC.ecRecentBadgesHTML(3).includes('书单启程') && EC.ecRecentBadgesHTML(3).includes('第一步'));
+    ok('z：成就时间兼容 ISO 与毫秒', EC.ecAchTime(new Date().toISOString()) > 0 && EC.ecAchTime(123456789) === 123456789 && EC.ecAchTime('bad') === 0);
+    ok('z：成长小结只讲收获', EC.ecHarvestLine({ todayDone: 3, tasksDone: 10 }).includes('收获'));
+    const ach = EC.ecRenderAchieve();
+    ok('z：荣誉墙按五大类分组', ach.includes('启程时刻') && ach.includes('点滴积累') && ach.includes('惊喜彩蛋'));
+    ok('z：荣誉墙温柔文案', ach.includes('即将点亮') && ach.includes('去看看') && !ach.includes('去完成') && !ach.includes('待解锁'));
+    ok('z：未点亮成就有进度条', EC.ecAchProgress(EC.EC_ACHIEVEMENTS.find(a => a.id === 'streak7')).includes('已经走到'));
+
+    // 5. 新成就真的能解锁（原有功能不 regressions）
+    const EC2 = makeEC();
+    const d2 = EC2.ecData();
+    d2.books.push({ id: 'b1', name: '书A', order: 1, tasks: null });
+    d2.lessons.push({ id: 'l1', bookId: 'b1', name: 'L1', order: 1 });
+    for (let i = 0; i < 12; i++) d2.tasks['k' + i] = { at: Date.now() };
+    d2.days['2026-11-01'] = 5;
+    d2.streak = 4; d2.score = 150;
+    d2.wrongbk = { items: [{ id: 'w1', point: 'p', mine: 'a', right: 'b', why: '', order: 1, createdAt: Date.now() }], fsrs: {}, tombs: {}, clearedAt: 0, updatedAt: Date.now() };
+    EC2.ecCheckAchievements();
+    ok('z：新成就按条件点亮', d2.achievements['task10'] && d2.achievements['streak3'] && d2.achievements['wrong-first'] && d2.achievements['day4']);
+    ok('z：原成就仍按原口径点亮', d2.achievements['first-task'] && d2.achievements['points100'] && d2.achievements['first-book']);
+
+    // 6. 视觉与版本链
+    ok('z：鼓励氛围 CSS 齐全', ['.ec-cheer-card', '.ec-energy-label', '.ec-harvest-card', '.ec-badge-chip', '.ec-ach-cat-label', '.ec-ach-prog-bar'].every(c => CSS.includes(c)));
+    ok('z：暗色 / 手机 / 减少动效适配', /\[data-theme="dark"\] \.ec-cheer-card/.test(CSS) && /@media \(max-width: 600px\)/.test(CSS) && /prefers-reduced-motion/.test(CSS));
+    ok('z：CSS 花括号仍平衡', (CSS.match(/{/g) || []).length === (CSS.match(/}/g) || []).length);
+    const SWZ = fs.readFileSync(__dirname + '/sw.js', 'utf8');
+    ok('z：SW 只预缓存当前版本', /'\.\/app\.20261106z\.js'/.test(SWZ) && !/'\.\/app\.20261106y\.js'/.test(SWZ));
+}
 
 // 等待异步断言后汇总
 setTimeout(() => {

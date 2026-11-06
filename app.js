@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261106y';
+const APP_BUILD = '20261106z';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -5829,7 +5829,7 @@ const moduleRenderers = {
     },
 
     engcheck() {
-        // v20261106t：旧「刷题」子标签升级后直接落在新「错题复习」页
+        // v20261106t：旧「刷题」子标签升级后直接落在新「查漏补缺」页
         if (state.currentSubTab.engcheck === 'ec-quiz') state.currentSubTab.engcheck = 'ec-wrong';
         // 子标签顺序与显隐由用户在「⚙️ 子标签显示设置」弹窗里自定义（state.data.engcheck.tabCfg）
         const tabs = ecTabCfgVisible();
@@ -5837,7 +5837,7 @@ const moduleRenderers = {
         const isHub = state.currentSubTab.engcheck === 'ec-hub';
         const tab = isHub ? 'ec-hub' : validSubTab('engcheck', tabs, tabs[0].id);
         const extra = `<button class="ec-tabcfg-btn" data-action="ec-tabcfg-open" title="子标签显示设置（隐藏 / 排序）">⚙️</button>`;
-        // 进入错题复习会话时整条状态栏都收起，保持沉浸
+        // 进入查漏补缺会话时整条状态栏都收起，保持沉浸
         const top = state._wbSession ? '' : (isHub ? ecHeaderHTML() : ecMiniBarHTML());
         const body = isHub ? ecHubPageHTML() : renderEngCheckPage(tab);
         return `<div class="card tab-card">${ecMainTabsHTML(tabs, tab, extra)}</div><div class="ec-page">${top}${body}</div>`;
@@ -8996,7 +8996,7 @@ function initEvents() {
                 } else if (isRealModule) {
                     state.currentModule = mod;
                 }
-                // 切主 Tab 就是明确离开当前页面：清掉错题复习会话，避免换板块后仍卡在复习卡里
+                // 切主 Tab 就是明确离开当前页面：清掉查漏补缺会话，避免换板块后仍卡在复习卡里
                 if (el.dataset.ecMain) state._wbSession = null;
                 render();
                 // 英语打卡主 Tab 切换后回到内容顶部，避免长页面停在半截（只作用于带标记的主 Tab）
@@ -10483,23 +10483,46 @@ const EC_GRADES = [
 const EC_FSRS = { target: 0.9, s0: 1.0, d0: 5.0, maxInterval: 120, masteredS: 60 };
 
 // 成就定义
+// v20261106z：成就更多元 —— 启程 / 积累 / 坚持 / 精进 / 惊喜 五大类，每类都有自己的小惊喜
+const EC_ACH_CATS = [
+    { id: 'start', name: '🌱 启程时刻' },
+    { id: 'grow', name: '📚 点滴积累' },
+    { id: 'keep', name: '🔥 常常回来' },
+    { id: 'skill', name: '🎯 慢慢变强' },
+    { id: 'fun', name: '🎉 惊喜彩蛋' }
+];
 const EC_ACHIEVEMENTS = [
-    { id: 'first-book', icon: '📚', name: '书单启程', desc: '添加第一本书' },
-    { id: 'first-task', icon: '🌱', name: '第一步', desc: '完成第一个学习任务' },
-    { id: 'first-recite', icon: '🎙️', name: '首背成功', desc: '完成第一次背书入库' },
-    { id: 'streak7', icon: '🔥', name: '七日不断', desc: '连续 7 天学习英语' },
-    { id: 'points100', icon: '💯', name: '百分学员', desc: '累计获得 100 积分' },
-    { id: 'lesson-all', icon: '✍️', name: '一课全攻', desc: '完成一节课的全部任务' },
-    { id: 'recite-master', icon: '🏆', name: '背诵大师', desc: '3 节课背诵达到已掌握' },
-    { id: 'points500', icon: '👑', name: '五百达人', desc: '累计获得 500 积分' }
+    { id: 'first-book', cat: 'start', icon: '📚', name: '书单启程', desc: '添加第一本书' },
+    { id: 'first-task', cat: 'start', icon: '🌱', name: '第一步', desc: '完成第一个学习任务' },
+    { id: 'first-recite', cat: 'start', icon: '🎙️', name: '首背成功', desc: '完成第一次背书入库' },
+    { id: 'wrong-first', cat: 'start', icon: '📕', name: '宝藏猎人', desc: '收录第一道错题' },
+    { id: 'points100', cat: 'grow', icon: '💯', name: '百分学员', desc: '累计获得 100 积分' },
+    { id: 'lesson-all', cat: 'grow', icon: '✍️', name: '一课全攻', desc: '完成一节课的全部任务' },
+    { id: 'task10', cat: 'grow', icon: '📖', name: '十步脚印', desc: '累计完成 10 项学习任务' },
+    { id: 'task50', cat: 'grow', icon: '🚀', name: '五十项达人', desc: '累计完成 50 项学习任务' },
+    { id: 'wrong10', cat: 'grow', icon: '🧩', name: '错题十连', desc: '整理 10 道错题' },
+    { id: 'points500', cat: 'grow', icon: '👑', name: '五百达人', desc: '累计获得 500 积分' },
+    { id: 'points1000', cat: 'grow', icon: '🏅', name: '千分传说', desc: '累计获得 1000 积分' },
+    { id: 'streak3', cat: 'keep', icon: '🌿', name: '三日发芽', desc: '连续 3 天来学习' },
+    { id: 'streak7', cat: 'keep', icon: '🔥', name: '七日不断', desc: '连续 7 天学习英语' },
+    { id: 'week7', cat: 'keep', icon: '🥰', name: '七日欢喜', desc: '累计学习满 7 天' },
+    { id: 'streak30', cat: 'keep', icon: '🌳', name: '小树成荫', desc: '连续 30 天学习' },
+    { id: 'recite-master', cat: 'skill', icon: '🏆', name: '背诵大师', desc: '3 节课背诵达到已掌握' },
+    { id: 'master10', cat: 'skill', icon: '🧠', name: '记忆收藏家', desc: '10 节课牢牢记住' },
+    { id: 'recite10', cat: 'skill', icon: '🎧', name: '十篇入池', desc: '10 节课加入记忆计划' },
+    { id: 'wrong-master', cat: 'skill', icon: '💡', name: '难题变朋友', desc: '3 道错题变成熟练题' },
+    { id: 'book-done', cat: 'skill', icon: '🎓', name: '通关一本书', desc: '一整本书的课都学完啦' },
+    { id: 'day4', cat: 'fun', icon: '🎈', name: '一日四连', desc: '一天里收获 4 项学习' },
+    { id: 'explorer', cat: 'fun', icon: '🧭', name: '四站探险家', desc: '四个板块都留下足迹' }
 ];
 
 // 英语打卡的 4 个子标签（顺序 / 显隐可自定义，配置存在 d.tabCfg）
+// v20261106z：换成更轻松好玩的名字；tabCfg 只存 id，老数据无需迁移就会自动用新名字
 const EC_SUBTABS = [
-    { id: 'ec-books', name: '书单课目', icon: '📚' },
-    { id: 'ec-review', name: '复习中心', icon: '⏰' },
-    { id: 'ec-wrong', name: '错题复习', icon: '📕' },
-    { id: 'ec-achieve', name: '成就榜', icon: '🏆' }
+    { id: 'ec-books', name: '主线任务', icon: '📚' },
+    { id: 'ec-review', name: '记忆巩固', icon: '⏰' },
+    { id: 'ec-wrong', name: '查漏补缺', icon: '📕' },
+    { id: 'ec-achieve', name: '荣誉战绩', icon: '🏆' }
 ];
 // 子标签配置：order=[id...]（未列出的按默认顺序追加）；hidden=[id...]；at=最后修改时间（跨设备取新）
 function ecTabCfgGet() {
@@ -10509,7 +10532,7 @@ function ecTabCfgGet() {
     if (!Array.isArray(c.order)) c.order = [];
     if (!Array.isArray(c.hidden)) c.hidden = [];
     if (typeof c.at !== 'number') c.at = 0;
-    // v20261106t：刷题子标签由「错题复习」取代——沿用原排序位置，隐藏状态不迁移（新模块默认可见）
+    // v20261106t：刷题子标签由「查漏补缺」取代——沿用原排序位置，隐藏状态不迁移（新模块默认可见）
     if (c.order.includes('ec-quiz')) c.order = c.order.map(id => id === 'ec-quiz' ? 'ec-wrong' : id);
     if (c.hidden.includes('ec-quiz')) c.hidden = c.hidden.filter(id => id !== 'ec-quiz');
     // 只保留仍然存在的标签 id（后期增删标签不会残留脏数据）
@@ -10527,7 +10550,7 @@ function ecTabCfgAll() {
     EC_SUBTABS.forEach(t => { if (map.has(t.id)) out.push(t); });
     return out;
 }
-// 实际渲染用：排好序 + 剔除隐藏项；保底至少留一个（全隐藏则回退到书单课目）
+// 实际渲染用：排好序 + 剔除隐藏项；保底至少留一个（全隐藏则回退到主线任务）
 function ecTabCfgVisible() {
     const c = ecTabCfgGet();
     const vis = ecTabCfgAll().filter(t => !c.hidden.includes(t.id));
@@ -10639,7 +10662,7 @@ function ecData() {
     if (typeof d.streak !== 'number') d.streak = 0;
     if (typeof d.bestStreak !== 'number') d.bestStreak = 0;
     if (typeof d.lastStudyDate !== 'string') d.lastStudyDate = '';
-    // 刷题模块已下线（v20261106t 起由「错题复习」取代）：清理旧 quiz 数据，避免云端旧快照再把它带回来
+    // 刷题模块已下线（v20261106t 起由「查漏补缺」取代）：清理旧 quiz 数据，避免云端旧快照再把它带回来
     if (d.quiz) delete d.quiz;
     return d;
 }
@@ -10723,18 +10746,48 @@ function ecReciteMasteredCount() {
 function ecCheckAchievements() {
     const d = ecData();
     const newly = [];
+    const w = ecWbData();
+    const taskCnt = Object.keys(d.tasks).length;
+    const recCnt = Object.keys(d.fsrs).length;
+    const masteredRec = ecReciteMasteredCount();
+    const masteredWrong = ecWbStats().mastered;
+    const studyDays = Object.keys(d.days).length;
+    const bestDay = Math.max(0, ...Object.values(d.days).map(Number).filter(n => !isNaN(n)));
+    const bookDone = d.books.some(b => {
+        const ls = ecLessonsOf(b.id);
+        if (!ls.length) return false;
+        const defs = ecBookTasks(b.id);
+        return defs.length > 0 && ls.every(l => defs.every(t => d.tasks[ecTaskKey(l.id, t.id)]));
+    });
     const tryUnlock = (id, cond) => { if (cond && ecUnlock(id)) newly.push(id); };
+    // 原有 8 枚：id 与口径全部保留，老用户已点亮的不会丢
     tryUnlock('first-book', d.books.length > 0);
-    tryUnlock('first-task', Object.keys(d.tasks).length > 0);
-    tryUnlock('first-recite', Object.keys(d.fsrs).length > 0);
+    tryUnlock('first-task', taskCnt > 0);
+    tryUnlock('first-recite', recCnt > 0);
     tryUnlock('streak7', (d.streak || 0) >= 7);
     tryUnlock('points100', (d.score || 0) >= 100);
     tryUnlock('points500', (d.score || 0) >= 500);
     tryUnlock('lesson-all', ecLessonsFullyDone() >= 1);
-    tryUnlock('recite-master', ecReciteMasteredCount() >= 3);
+    tryUnlock('recite-master', masteredRec >= 3);
+    // 新增 14 枚：更多元的鼓励维度
+    tryUnlock('wrong-first', w.items.length > 0);
+    tryUnlock('task10', taskCnt >= 10);
+    tryUnlock('task50', taskCnt >= 50);
+    tryUnlock('wrong10', w.items.length >= 10);
+    tryUnlock('points1000', (d.score || 0) >= 1000);
+    tryUnlock('streak3', (d.streak || 0) >= 3);
+    tryUnlock('streak30', (d.streak || 0) >= 30);
+    tryUnlock('week7', studyDays >= 7);
+    tryUnlock('master10', masteredRec >= 10);
+    tryUnlock('recite10', recCnt >= 10);
+    tryUnlock('wrong-master', masteredWrong >= 3);
+    tryUnlock('book-done', bookDone);
+    tryUnlock('day4', bestDay >= 4);
+    tryUnlock('explorer', d.books.length > 0 && recCnt > 0 && w.items.length > 0 && Object.keys(d.achievements).length >= 3);
     if (newly.length) {
         const names = newly.map(id => (EC_ACHIEVEMENTS.find(a => a.id === id) || {}).name).filter(Boolean);
-        toast('🏆 解锁成就：' + names.join('、'));
+        const shown = names.slice(0, 3).join('、');
+        toast('🎉 点亮新徽章：' + shown + (names.length > 3 ? ` 等 ${names.length} 枚` : '') + '，好棒呀！');
     }
 }
 // 完成一次学习动作后的统一收尾：积分/连续/成就/保存/同步/重绘
@@ -10972,7 +11025,7 @@ function ecRelText(ts) {
     if (abs < 3600000) s = Math.max(1, Math.floor(abs / 60000)) + '分钟';
     else if (abs < 86400000) s = Math.floor(abs / 3600000) + '小时';
     else s = Math.floor(abs / 86400000) + '天';
-    return diff < 0 ? ('已逾期' + s) : (s + '后');
+    return diff < 0 ? ('随时可以温习 · ' + s + '前到点') : (s + '后');
 }
 // 完成时间/复习时间展示：10-25 14:32 周六（精确到分钟 + 星期几）
 function ecFmtWeek(ts) {
@@ -11683,13 +11736,13 @@ async function ecClearRecords() {
     ecAfterAction('🧹 学习记录已清零，书单目录保留');
 }
 
-// ==================== 错题复习：分书本 / 分课时 + FSRS 间隔复习 + 与书本学习联动 ====================
+// ==================== 查漏补缺：分书本 / 分课时 + FSRS 间隔复习 + 与书本学习联动 ====================
 // 数据结构（state.data.engcheck.wrongbk，随 engcheck 云同步）：
 //   items: [{ id, bookId, lessonId, lesson, point, mine, right, why, order, createdAt, updatedAt }]
 //     bookId/lessonId 直接引用书单目录（books / lessons）；lesson 保留原文本，未归类时作为兜底显示
 //     point=核心知识点 mine=你当时的答案 right=正确答案 why=大白话原因 order=课时内排序
 //   fsrs / tombs / clearedAt / updatedAt：FSRS 记录、删除墓碑、清零分界线、最近修改时间
-//   autoTask / autoTaskAt：错题复习自评后是否自动完成该课「练题」任务（默认开，可关，跨设备按 at 取新）
+//   autoTask / autoTaskAt：查漏补缺自评后是否自动完成该课「练题」任务（默认开，可关，跨设备按 at 取新）
 const EC_WB_GRADES = [
     { id: 1, name: 'Again', label: '又错了', desc: '还是想错 / 完全没印象', cls: 'g-again' },
     { id: 2, name: 'Hard', label: '很勉强', desc: '想起来了，但磕磕绊绊', cls: 'g-hard' },
@@ -11698,7 +11751,7 @@ const EC_WB_GRADES = [
 ];
 const EC_WRONG_SUBTABS = [
     { id: 'overview', name: '📊 概览' },
-    { id: 'due', name: '⏰ 待复习' },
+    { id: 'due', name: '⏰ 可以回顾' },
     { id: 'books', name: '🗂️ 错题本' },
     { id: 'all', name: '📚 全部错题' },
     { id: 'mastered', name: '🏆 已掌握' }
@@ -11987,7 +12040,7 @@ function ecWbStats() {
     w.items.forEach(it => {
         const s = ecWbStatusOf(it.id, Date.now());
         const rec = w.fsrs[it.id];
-        // 只有真正复习过（有 last）且已过期的才算逾期；新收录 / FSRS 记录缺失的旧题只算待复习
+        // 只有真正复习过（有 last）且已过期的才算逾期；新收录 / FSRS 记录缺失的旧题只算可以回顾
         if (rec && rec.last && s !== 'mastered' && s !== 'waiting' && (Number(rec.due) || 0) < today0) st.overdue++;
     });
     return st;
@@ -12000,7 +12053,7 @@ function ecWbDueItems() {
         return s === 'due' || s === 'new';
     }).sort((a, b) => (Number((w.fsrs[a.id] || {}).due) || 0) - (Number((w.fsrs[b.id] || {}).due) || 0));
 }
-// 按 scope（bookId / lessonId / 未归类）或顶部筛选条件过滤待复习队列
+// 按 scope（bookId / lessonId / 未归类）或顶部筛选条件过滤可以回顾队列
 function ecWbDueIn(scope) {
     const s = scope || {};
     return ecWbDueItems().filter(it => {
@@ -12363,7 +12416,7 @@ function ecWbStart(id, scope) {
         const at = due.indexOf(id);
         queue = at >= 0 ? due.slice(at) : [id];
     } else queue = ecWbFilteredDueItems().map(it => it.id);
-    if (!queue.length) { toast('这个范围现在没有待复习的错题'); render(); return; }
+    if (!queue.length) { toast('这个范围暂时没有要回顾的题，换个地方逛逛吧 🌿'); render(); return; }
     state._wbSession = { queue, idx: 0, revealed: false, graded: 0, autoTasks: [] };
     render();
 }
@@ -12405,7 +12458,7 @@ function ecWbGrade(g) {
     const gain = g === 1 ? 0 : g === 2 ? 1 : g === 3 ? 2 : 3;
     if (gain) ecAddScore(gain);
     ecLogStudy();
-    // 联动：错题复习算学习 → 自动完成该课「练题」任务（可在课时页取消完成，或在概览关掉开关）
+    // 联动：查漏补缺算学习 → 自动完成该课「练题」任务（可在课时页取消完成，或在概览关掉开关）
     if (ecWbAutoTaskOn() && item.lessonId) {
         const name = ecWbAutoDrill(item.lessonId, nowTs);
         if (name && s.autoTasks.indexOf(name) < 0) s.autoTasks.push(name);
@@ -12448,7 +12501,7 @@ function ecRenderWrong() {
     else if (rtab === 'all') body = ecWbAllHTML();
     else if (rtab === 'mastered') body = ecWbMasteredHTML();
     else body = ecWbOverviewHTML(stats);
-    return `<div class="ec-crumb">英语打卡 › 错题复习</div>${nav}${body}`;
+    return `<div class="ec-crumb">英语打卡 › 查漏补缺</div>${nav}${body}`;
 }
 
 function ecWbOverviewHTML(stats) {
@@ -12458,24 +12511,23 @@ function ecWbOverviewHTML(stats) {
         const c = ecWbCounts(ecWbItemsOfBook(b.id));
         if (!c.total) return '';
         return `<div class="ec-wb-bookrow">
-            <div class="ec-wb-bookrow-name">📚 ${escapeHtml(b.name)} <span class="ec-wb-mini">共 ${c.total} 题 · 已掌握 ${c.mastered}</span></div>
-            <div class="ec-wb-bookrow-ops">${c.due ? `<button class="btn btn-sm btn-primary" data-action="ec-wb-start-book" data-id="${b.id}">▶️ 复习本书（${c.due}）</button>` : '<span class="ec-wb-mini">暂无待复习</span>'}<button class="btn btn-sm btn-secondary" data-action="ec-wb-open-book" data-id="${b.id}">查看 ›</button></div>
+            <div class="ec-wb-bookrow-name">📚 ${escapeHtml(b.name)} <span class="ec-wb-mini">共 ${c.total} 题小宝藏 · 已掌握 ${c.mastered}</span></div>
+            <div class="ec-wb-bookrow-ops">${c.due ? `<button class="btn btn-sm btn-primary" data-action="ec-wb-start-book" data-id="${b.id}">▶️ 复习本书（${c.due}）</button>` : '<span class="ec-wb-mini">随时可以逛逛</span>'}<button class="btn btn-sm btn-secondary" data-action="ec-wb-open-book" data-id="${b.id}">查看 ›</button></div>
         </div>`;
     }).join('');
     const un = ecWbCounts(ecWbItemsOfBook(EC_WB_UNASSIGNED));
-    const unRow = un.total ? `<div class="ec-wb-bookrow"><div class="ec-wb-bookrow-name">📥 未归类 <span class="ec-wb-mini">共 ${un.total} 题 · 待复习 ${un.due}</span></div>
+    const unRow = un.total ? `<div class="ec-wb-bookrow"><div class="ec-wb-bookrow-name">📥 未归类 <span class="ec-wb-mini">共 ${un.total} 题小宝藏 · 可以回顾 ${un.due}</span></div>
         <div class="ec-wb-bookrow-ops"><button class="btn btn-sm btn-secondary" data-action="ec-wb-open-book" data-id="${EC_WB_UNASSIGNED}">去整理 ›</button></div></div>` : '';
     return `
-    ${ecLinkCardHTML('ec-wrong')}
     <div class="card">
-        <div class="card-header"><div class="card-title">📕 错题复习 · 概览</div></div>
+        <div class="card-header"><div class="card-title">📕 查漏补缺 · 概览</div></div>
         <div class="ec-stats">
-            <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">待复习</div></div>
-            <div class="ec-stat"><div class="ec-stat-num ec-stat-late">${stats.overdue}</div><div class="ec-stat-label">已逾期</div></div>
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">可以回顾</div></div>
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.overdue}</div><div class="ec-stat-label">慢慢补</div></div>
             <div class="ec-stat"><div class="ec-stat-num">${stats.waiting}</div><div class="ec-stat-label">学习中</div></div>
             <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.mastered}</div><div class="ec-stat-label">已掌握</div></div>
         </div>
-        <div class="ec-hint">共收录 ${stats.total} 道错题：做错的题按书本 / 课时整理导入，按记忆曲线间隔复习（Again / Hard / Good / Easy 四档自评），稳定性 ≥ 60 天判为已掌握。错题复习会计入积分、每日学习与连续天数。</div>
+        <div class="ec-hint">共收录 ${stats.total} 道错题：做错的题按书本 / 课时整理导入，按记忆曲线间隔复习（Again / Hard / Good / Easy 四档自评），稳定性 ≥ 60 天判为已掌握。查漏补缺会计入积分、每日学习与连续天数。</div>
         <div class="ec-wb-actions">
             <button class="btn btn-primary" data-action="ec-wb-start" ${due.length ? '' : 'disabled'}>▶️ 开始复习${due.length ? `（${due.length} 题）` : ''}</button>
             <button class="btn btn-secondary" data-action="ec-wb-import">📥 批量导入</button>
@@ -12483,7 +12535,7 @@ function ecWbOverviewHTML(stats) {
             <button class="btn btn-secondary" data-action="ec-wb-add">➕ 记一道</button>
         </div>
         <div class="ec-wb-setting">
-            <div><b>⚙️ 错题复习算学习</b><div class="ec-wb-mini">复习自评后，自动完成该课「✍️ 练题」任务并加对应积分；到课时页点「↩️ 取消完成」可撤销。</div></div>
+            <div><b>⚙️ 查漏补缺算学习</b><div class="ec-wb-mini">复习自评后，自动完成该课「✍️ 练题」任务并加对应积分；到课时页点「↩️ 取消完成」可撤销。</div></div>
             <button class="btn btn-sm ${ecWbAutoTaskOn() ? 'btn-primary' : 'btn-secondary'}" data-action="ec-wb-autotask">${ecWbAutoTaskOn() ? '已开启' : '已关闭'}</button>
         </div>
     </div>
@@ -12517,7 +12569,7 @@ function ecWbCalendarHTML() {
         </div>`;
     };
     const rows = [];
-    if (overdue.length) rows.push(rowHTML('⚠️ 已逾期', '尽快补', overdue, 'ec-cal-late'));
+    if (overdue.length) rows.push(rowHTML('🌿 慢慢补', '随时都行', overdue, 'ec-cal-late'));
     groups.forEach(g => {
         const label = g.i === 0 ? '今天' : g.i === 1 ? '明天' : g.i === 2 ? '后天' : `${g.i} 天后`;
         const dt = new Date(g.from);
@@ -12532,7 +12584,7 @@ function ecWbCalendarHTML() {
     </div>`;
 }
 
-// 待复习：可按整本书 / 某一课筛选
+// 可以回顾：可按整本书 / 某一课筛选
 function ecWbFilterHTML() {
     const d = ecData();
     const fb = state._wbFilterBookId || '', fl = state._wbFilterLessonId || '';
@@ -12566,10 +12618,10 @@ function ecWbDueHTML() {
         </div>`;
     }).join('');
     return `<div class="card">
-        <div class="card-header"><div class="card-title">⏰ 待复习（${due.length}）</div>
+        <div class="card-header"><div class="card-title">⏰ 可以回顾（${due.length}）</div>
             ${due.length ? '<button class="btn btn-sm btn-primary" data-action="ec-wb-start">▶️ 全部开始</button>' : ''}</div>
         ${ecWbFilterHTML()}
-        ${rows || '<div class="ec-hint">这个范围没有到期的错题 🎉 换个书本筛选，或新导入的错题会立即可复习</div>'}
+        ${rows || '<div class="ec-hint">这个范围暂时没有到点的题 🎉 换个书本筛选，新导入的宝藏随时能回顾</div>'}
     </div>`;
 }
 
@@ -12603,7 +12655,7 @@ function ecWbBookListHTML() {
         return `<div class="card ec-wb-dir-card" data-action="ec-wb-open-book" data-id="${b.id}">
             <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📚</span>
                 <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">${escapeHtml(b.name)}</div>
-                <div class="ec-wb-mini">${c.total ? `共 ${c.total} 题 · 待复习 ${c.due} · 已掌握 ${c.mastered}` : '还没有错题，点进去按课时导入'}</div></div>
+                <div class="ec-wb-mini">${c.total ? `共 ${c.total} 题小宝藏 · 可以回顾 ${c.due} · 已掌握 ${c.mastered}` : '还没有错题，点进去按课时导入'}</div></div>
                 <span class="ec-book-go">›</span></div>
             ${c.due ? `<div class="ec-wb-dir-ops"><button class="btn btn-sm btn-primary" data-action="ec-wb-start-book" data-id="${b.id}">▶️ 只复习这本书（${c.due}）</button></div>` : ''}
         </div>`;
@@ -12612,15 +12664,15 @@ function ecWbBookListHTML() {
     const unCard = un.total ? `<div class="card ec-wb-dir-card" data-action="ec-wb-open-book" data-id="${EC_WB_UNASSIGNED}">
         <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📥</span>
             <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">未归类</div>
-            <div class="ec-wb-mini">共 ${un.total} 题 · 待复习 ${un.due} · 可批量调整到书本 / 课时</div></div>
+            <div class="ec-wb-mini">共 ${un.total} 题小宝藏 · 可以回顾 ${un.due} · 可批量调整到书本 / 课时</div></div>
             <span class="ec-book-go">›</span></div></div>` : '';
     return `<div class="card">
         <div class="card-header"><div class="card-title">📚 错题本 · 按书本整理（${d.books.length} 本）</div></div>
         ${ecWbCrumb([{ name: '全部书本' }])}
-        <div class="ec-hint">书本和课时直接沿用「书单课目」目录：进书 → 进课 → 看这一课的错题。能批量删除、批量调整归属、课时内排序；导入时选好书和课就自动归位。</div>
+        <div class="ec-hint">书本和课时直接沿用「主线任务」目录：进书 → 进课 → 看这一课的错题。能批量删除、批量调整归属、课时内排序；导入时选好书和课就自动归位。</div>
         ${ecWbToolbar({ clear: true })}
     </div>
-    ${rows}${unCard}${!d.books.length ? '<div class="card ec-empty"><div class="ec-empty-icon">📚</div><div>书单里还没有书</div><div class="ec-hint">先去「书单课目」建书加课，错题就能分书分课整理了</div></div>' : ''}`;
+    ${rows}${unCard}${!d.books.length ? '<div class="card ec-empty"><div class="ec-empty-icon">📚</div><div>书单里还没有书</div><div class="ec-hint">先去「主线任务」建书加课，错题就能分书分课整理了</div></div>' : ''}`;
 }
 function ecWbBookDetailHTML(bookId) {
     const isUn = bookId === EC_WB_UNASSIGNED;
@@ -12636,7 +12688,7 @@ function ecWbBookDetailHTML(bookId) {
         return `<div class="card ec-wb-dir-card" data-action="ec-wb-open-lesson" data-id="${lid}">
             <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📖</span>
                 <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">${escapeHtml(l ? l.name : '已删除的课时')}</div>
-                <div class="ec-wb-mini">共 ${lc.total} 题 · 待复习 ${lc.due} · 已掌握 ${lc.mastered}</div></div>
+                <div class="ec-wb-mini">共 ${lc.total} 题小宝藏 · 可以回顾 ${lc.due} · 已掌握 ${lc.mastered}</div></div>
                 <span class="ec-book-go">›</span></div>
             ${lc.due ? `<div class="ec-wb-dir-ops"><button class="btn btn-sm btn-primary" data-action="ec-wb-start-lesson" data-id="${lid}">▶️ 只复习这一课（${lc.due}）</button></div>` : ''}
         </div>`;
@@ -12645,12 +12697,12 @@ function ecWbBookDetailHTML(bookId) {
     const noLessonCard = noLesson.length ? `<div class="card ec-wb-dir-card" data-action="ec-wb-open-lesson" data-id="${EC_WB_UNASSIGNED}">
         <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📥</span>
             <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">未标课时（${noLesson.length}）</div>
-            <div class="ec-wb-mini">${noLesson.filter(it => ecWbStatusOf(it.id, Date.now()) === 'due' || ecWbStatusOf(it.id, Date.now()) === 'new').length} 题待复习 · 可批量移动到具体课时</div></div>
+            <div class="ec-wb-mini">${noLesson.filter(it => ecWbStatusOf(it.id, Date.now()) === 'due' || ecWbStatusOf(it.id, Date.now()) === 'new').length} 题可以回顾 · 可批量移动到具体课时</div></div>
             <span class="ec-book-go">›</span></div></div>` : '';
     return `<div class="card">
         <div class="card-header"><div class="card-title">${isUn ? '📥 未归类' : '📚 ' + escapeHtml(book.name)} · 按课时整理</div></div>
         ${ecWbCrumb([{ name: '全部书本', id: '', action: 'ec-wb-back-books' }, { name: isUn ? '未归类' : book.name }])}
-        <div class="ec-hint">共 ${c.total} 道错题 · 待复习 ${c.due} · 已掌握 ${c.mastered}。课时来自书单目录，改名 / 增删请到「书单课目」。</div>
+        <div class="ec-hint">共 ${c.total} 道宝藏 · 可以回顾 ${c.due} · 已掌握 ${c.mastered}。课时来自书单目录，改名 / 增删请到「主线任务」。</div>
         ${ecWbToolbar({ back: { action: 'ec-wb-back-books', name: '返回书本' }, lessonId: (book && ecLessonsOf(book.id)[0]) ? ecLessonsOf(book.id)[0].id : '' })}
     </div>
     ${lessonRows}${noLessonCard}${!items.length ? '<div class="card ec-empty"><div class="ec-empty-icon">📕</div><div>这本书还没有错题</div><div class="ec-hint">点「📥 导入错题」，选好这本书和课时粘贴表格即可</div></div>' : ''}`;
@@ -12660,7 +12712,7 @@ function ecWbItemHTML(it, opts) {
     const w = ecWbData();
     const rec = w.fsrs[it.id];
     const st = ecWbStatusOf(it.id, Date.now());
-    const statusName = { new: '待复习', due: '待复习', waiting: '学习中', mastered: '已掌握' };
+    const statusName = { new: '可以回顾', due: '可以回顾', waiting: '学习中', mastered: '已掌握' };
     const selMode = !!state._wbSelMode;
     const checked = !!(state._wbSel || {})[it.id];
     const cmp = ecWbCompareHTML(it.mine, it.right);
@@ -12676,7 +12728,7 @@ function ecWbItemHTML(it, opts) {
         <div class="ec-wb-line"><span class="ec-wb-tag right">✓ 正确</span><span class="ec-wb-line-txt">${cmp.right}</span></div>
         ${it.why ? `<div class="ec-wb-line"><span class="ec-wb-tag">💡 原因</span><span class="ec-wb-line-txt">${ecWbWhyHTML(it.why, cmp.words)}</span></div>` : ''}
         <div class="ec-wb-item-foot">
-            <span class="ec-wb-meta">${rec && rec.last ? (st === 'mastered' ? `已掌握 · 复习 ${rec.n} 次` : `下次复习 ${ecFmtWeek(rec.due)} · 已复习 ${rec.n} 次`) : '待复习'}</span>
+            <span class="ec-wb-meta">${rec && rec.last ? (st === 'mastered' ? `已掌握 · 复习 ${rec.n} 次` : `下次复习 ${ecFmtWeek(rec.due)} · 已复习 ${rec.n} 次`) : '可以回顾'}</span>
             <span class="ec-wb-ops">
                 ${st === 'mastered' ? `<button class="ec-edit-btn" data-action="ec-wb-reset" data-id="${it.id}" title="移回复习池">🔁</button>` : `<button class="ec-edit-btn" data-action="ec-wb-start-one" data-id="${it.id}" title="复习这题">▶️</button>`}
                 ${o.sortable ? `<button class="ec-edit-btn" data-action="ec-wb-move-up" data-id="${it.id}" title="上移">▲</button><button class="ec-edit-btn" data-action="ec-wb-move-down" data-id="${it.id}" title="下移">▼</button>` : ''}
@@ -12716,7 +12768,7 @@ function ecWbLessonDetailHTML(lessonId) {
             { name: book ? book.name : '未归类', id: bookId, action: 'ec-wb-back-book' },
             { name }
         ])}
-        <div class="ec-hint">共 ${c.total} 题 · 待复习 ${c.due} · 已掌握 ${c.mastered}。用 ▲▼ 调整这一课里的题目顺序；批量勾选后可一次改到别的书 / 课，或删除。</div>
+        <div class="ec-hint">共 ${c.total} 题小宝藏 · 可以回顾 ${c.due} · 已掌握 ${c.mastered}。用 ▲▼ 调整这一课里的题目顺序；批量勾选后可一次改到别的书 / 课，或删除。</div>
         ${ecWbToolbar({ back: { action: 'ec-wb-back-book', name: '返回课时' }, lessonId: isUn ? '' : lessonId, items })}
         ${ecWbSelBar(items.map(it => it.id))}
         ${c.due ? `<div class="ec-wb-actions"><button class="btn btn-primary" data-action="${isUn ? 'ec-wb-start-unassigned' : 'ec-wb-start-lesson'}" ${isUn ? `data-id="${bookId || ''}"` : `data-id="${lessonId}"`}>▶️ 开始复习${isUn ? '这些未归类题' : '这一课'}（${c.due} 题）</button></div>` : ''}
@@ -12793,31 +12845,31 @@ function ecWbSessionHTML() {
         <button class="btn btn-primary ec-wb-reveal-btn" data-action="ec-wb-reveal">👀 看标准答案</button>`}
     </div>`;
 }
-// ---------- 与书单课目联动：课时徽标 / 课时详情卡 / 今日推荐 / 书本统计 ----------
+// ---------- 与主线任务联动：课时徽标 / 课时详情卡 / 今日推荐 / 书本统计 ----------
 function ecWbLessonCounts(lessonId) { return ecWbCounts(ecWbItemsOfLesson(lessonId)); }
 function ecWbBadgeHTML(lessonId) {
     const c = ecWbLessonCounts(lessonId);
     if (!c.total) return '';
-    return `<span class="ec-wb-badge" title="这一课的错题">📕 ${c.total}${c.due ? ` · 待复习 ${c.due}` : ''}</span>`;
+    return `<span class="ec-wb-badge" title="这一课的错题">📕 ${c.total}${c.due ? ` · 可以回顾 ${c.due}` : ''}</span>`;
 }
 function ecWbLessonCardHTML(lessonId) {
     const c = ecWbLessonCounts(lessonId);
     return `<div class="card ec-wb-linkcard">
         <div class="card-header"><div class="card-title">📕 本课错题 · 也算今天的学习</div></div>
-        <div class="ec-wb-linkstats">${c.total ? `共 <b>${c.total}</b> 题 · 待复习 <b>${c.due}</b> 题 · 已掌握 <b>${c.mastered}</b> 题` : '这一课还没有整理过错题'}</div>
+        <div class="ec-wb-linkstats">${c.total ? `共 <b>${c.total}</b> 题 · 可以回顾 <b>${c.due}</b> 题 · 已掌握 <b>${c.mastered}</b> 题` : '这一课还没有整理过错题'}</div>
         <div class="ec-wb-actions">
             ${c.due ? `<button class="btn btn-sm btn-primary" data-action="ec-wb-start-lesson" data-id="${lessonId}">▶️ 复习本课错题（${c.due}）</button>` : ''}
             <button class="btn btn-sm btn-secondary" data-action="ec-wb-open-wrong-lesson" data-id="${lessonId}">📚 查看 / 整理本课错题</button>
             <button class="btn btn-sm btn-secondary" data-action="ec-wb-import-lesson" data-id="${lessonId}">📥 导入本课错题</button>
         </div>
-        <div class="ec-hint">${ecWbAutoTaskOn() ? '复习自评后会自动完成本课的「✍️ 练题」任务并积分' : '当前未开启「复习自动算练题任务」，可在错题复习 › 概览里打开'}；任务可在下方点「↩️ 取消完成」撤销。</div>
+        <div class="ec-hint">${ecWbAutoTaskOn() ? '复习自评后会自动完成本课的「✍️ 练题」任务并积分' : '当前未开启「复习自动算练题任务」，可在查漏补缺 › 概览里打开'}；任务可在下方点「↩️ 取消完成」撤销。</div>
     </div>`;
 }
 function ecWbBookDueCount(bookId) { return ecWbCounts(ecWbItemsOfBook(bookId)).due; }
 function ecTodayRecommendWrongHTML(bookId) {
     const n = ecWbBookDueCount(bookId);
     if (!n) return '';
-    return `<div class="ec-reco-wrong" data-action="ec-wb-start-book" data-id="${bookId}">📕 这本书还有 <b>${n}</b> 道错题到期待复习 · 点这里开始 →</div>`;
+    return `<div class="ec-reco-wrong" data-action="ec-wb-start-book" data-id="${bookId}">📕 这本书藏着 <b>${n}</b> 道小宝藏，随手翻一题就很棒 →</div>`;
 }
 
 // ---------- 错题数据跨设备合并 ----------
@@ -12882,9 +12934,10 @@ function renderEngCheckPage(tab) {
     return ecRenderDrill();
 }
 
-// ==================== v20261106x：四模块联动「学习驾驶舱」 ====================
-// 四个子标签共用一套待办口径，头卡 / Tab 徽标 / 联动条 / 成就榜数字全部取自这里，
-// 避免同一状态在两处显示得不一样。
+// ==================== v20261106z：轻松学习看板（鼓励式，不制造待办压力） ====================
+// 计数口径全部保留（复习队列 / 错题队列仍按真实数据跑，功能一个不少），
+// 但界面只呈现「收获 / 鼓励 / 进步」，不再把「还差多少、还有多少没做」摆到首屏。
+// 四个板块之间的跳转联动由 ecGo + data-action="ec-go" 统一负责（使用上有联动即可，不占版面）。
 function ecPendingTasks() {
     const d = ecData();
     let pending = 0, total = 0;
@@ -12911,13 +12964,45 @@ function ecHubCounts() {
         streak: d.streak || 0, score: d.score || 0
     };
 }
-// 今天最该先做哪件事：按「逾期错题 → 到期背诵 → 待复习错题 → 打卡任务 → 全清」排优先级
+// 每日一句：按日期确定性抽取，刷新不会乱跳，每天都有新的一小句鼓励
+const EC_CHEERS = [
+    '今天来学一小会儿，就已经很了不起啦 🌱',
+    '不用赶进度，按自己的节奏慢慢长大 🌿',
+    '每一次翻开书，小树都悄悄长高一点 🌳',
+    '学一点是一点，累积起来会很惊人 ✨',
+    '今天也可以只做一件喜欢的小事 🥰',
+    '记住的不只是单词，还有认真生活的你 💛',
+    '慢慢来，比较快 🐢',
+    '允许自己轻松一点，学习本来就该开心 🍀',
+    '你已经在路上了，这比什么都棒 🎈',
+    '会休息的人，也会把知识记得更牢 ☕',
+    '每天一点点，回头看就是一大片森林 🌲',
+    '今天的好奇心，就是明天的小惊喜 🎁',
+    '不跟别人比，只和昨天的自己击个掌 ✋',
+    '哪怕只背了一句话，也值得为自己鼓掌 👏',
+    '错题是宝藏，捡到一颗就赚到一颗 💎',
+    '把学习当成探险，今天想去哪一站？🧭',
+    '你的节奏刚刚好，别急 ☀️',
+    '又见面啦，小树今天也想长高一点点 🌤️'
+];
+function ecDailyCheer() {
+    const t = new Date();
+    const seed = t.getFullYear() * 372 + (t.getMonth() + 1) * 31 + t.getDate();
+    return EC_CHEERS[Math.abs(seed) % EC_CHEERS.length];
+}
+// 一句成长小结：只讲收获，不讲欠账
+function ecHarvestLine(c) {
+    if (c.todayDone > 0) return `今天已经收获 <b>${c.todayDone}</b> 项啦，小树又长高一点点 🌱`;
+    if (c.tasksDone > 0) return `已经攒下 <b>${c.tasksDone}</b> 项学习足迹，随时接着玩 🌿`;
+    return '新的一天，从最想点的那一格开始就好 ✨';
+}
+// 今日邀请：优先级仍沿用原来的口径，但全部换成「想逛就去逛」的语气
 function ecHubAdvice(c) {
-    if (c.wrongOverdue > 0) return { text: `📕 有 ${c.wrongOverdue} 道错题逾期了，先花几分钟清掉最划算`, to: 'ec-wrong', sub: 'due', btn: '去清错题' };
-    if (c.reciteDue > 0) return { text: `⏰ ${c.reciteDue} 篇课文到点该背了，合上书试试独立背诵`, to: 'ec-review', sub: 'due', btn: '去背诵' };
-    if (c.wrongDue > 0) return { text: `📕 还有 ${c.wrongDue} 道错题等着复习，先回忆再看答案`, to: 'ec-wrong', sub: 'due', btn: '去复习' };
-    if (c.tasks > 0) return { text: `📚 今天还有 ${c.tasks} 项打卡任务，按顺序推进一课`, to: 'ec-books', sub: 'books', btn: '去学习' };
-    return { text: `🎉 四个板块今天都清空啦，去成就榜看看收获`, to: 'ec-achieve', sub: '', btn: '看成就' };
+    if (c.wrongOverdue > 0) return { text: '🌿 有几位老朋友想再见一面，去「查漏补缺」随手翻一题吧', to: 'ec-wrong', sub: 'due', btn: '去看看' };
+    if (c.reciteDue > 0) return { text: '🌤️ 有课文正适合温习，合上书试试能想起多少，很好玩', to: 'ec-review', sub: 'due', btn: '去玩玩' };
+    if (c.wrongDue > 0) return { text: '💎 错题本里藏着小宝藏，随手翻一题就有新收获', to: 'ec-wrong', sub: 'due', btn: '去寻宝' };
+    if (c.tasks > 0) return { text: '📚 想学就学一小会儿，翻开一课就很棒', to: 'ec-books', sub: 'books', btn: '去逛逛' };
+    return { text: '🎉 今天想怎么玩都行，去看看攒下的闪光时刻吧', to: 'ec-achieve', sub: '', btn: '看荣誉' };
 }
 // 统一跳转：切子标签 + 落到对应三级页 + 可选书本/课时定位 + 平滑回顶
 function ecGo(to, opts) {
@@ -12942,25 +13027,27 @@ function ecGo(to, opts) {
     render();
     try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { /* ignore */ }
 }
-// 主 Tab 栏：沿用 tab-bar / tab-btn 结构与 data-action=tab，只额外挂待办徽标
+// 主 Tab 栏：去掉数字待办徽标（99+ / 18 这类数字只会制造压力），保留好玩的悬停提示
 function ecMainTabsHTML(tabs, current, extraHTML) {
-    const c = ecHubCounts();
-    const badge = { 'ec-books': c.tasks, 'ec-review': c.reciteDue, 'ec-wrong': c.wrongDue, 'ec-achieve': 0 };
-    // 「📊 总览」是固定入口，不参与子标签的隐藏 / 排序设置，随时能回到驾驶舱
-    const hubBtn = `<button class="tab-btn ec-hub-tab ${current === 'ec-hub' ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1" title="今日学习总览">📊 <span class="ec-tab-label">总览</span></button>`;
+    const HINTS = {
+        'ec-books': '翻开新的一课，就是一次小冒险',
+        'ec-review': '和学过的课文打个招呼',
+        'ec-wrong': '把小坑变成小宝藏',
+        'ec-achieve': '看看攒下的闪光时刻'
+    };
+    // 「📊 学习看板」是固定入口，不参与子标签的隐藏 / 排序设置
+    const hubBtn = `<button class="tab-btn ec-hub-tab ${current === 'ec-hub' ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1" title="学习看板：只放收获和鼓励">📊 <span class="ec-tab-label">学习看板</span></button>`;
     return `<div class="tab-bar ec-main-tabs">${hubBtn}${tabs.map(t => {
-        const n = badge[t.id] || 0;
-        const hot = (t.id === 'ec-review' && c.reciteOverdue) || (t.id === 'ec-wrong' && c.wrongOverdue);
-        return `<button class="tab-btn ${current === t.id ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="${t.id}" data-ec-main="1">${t.icon || ''} <span class="ec-tab-label">${t.name}</span>${n > 0 ? `<span class="ec-tab-badge${hot ? ' overdue' : ''}">${n > 99 ? '99+' : n}</span>` : ''}</button>`;
+        return `<button class="tab-btn ${current === t.id ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="${t.id}" data-ec-main="1" title="${HINTS[t.id] || '点一下就来逛逛'}">${t.icon || ''} <span class="ec-tab-label">${t.name}</span></button>`;
     }).join('')}${extraHTML || ''}</div>`;
 }
-// 四格今日待办：每格一键直达对应模块
+// 四格「成长收成」：全部是正向数字，点任意一格照旧直达对应板块
 function ecHubGridHTML(c) {
     const cells = [
-        { to: 'ec-books', sub: 'books', icon: '📚', label: '待学任务', num: c.tasks, tone: c.tasks ? 'amber' : 'ok', hint: `已完成 ${c.tasksDone}/${c.tasksTotal}` },
-        { to: 'ec-review', sub: 'due', icon: '⏰', label: '待背诵', num: c.reciteDue, tone: c.reciteDue ? 'orange' : 'ok', hint: c.reciteOverdue ? `逾期 ${c.reciteOverdue} 篇` : '按时复习' },
-        { to: 'ec-wrong', sub: 'due', icon: '📕', label: '待复习错题', num: c.wrongDue, tone: c.wrongDue ? 'red' : 'ok', hint: c.wrongOverdue ? `逾期 ${c.wrongOverdue} 题` : `共 ${c.wrongTotal} 题` },
-        { to: 'ec-achieve', sub: '', icon: '🏆', label: '今日已学', num: c.todayDone, tone: 'green', hint: `连续 ${c.streak} 天` }
+        { to: 'ec-books', sub: 'books', icon: '📚', label: '学到的本领', num: c.tasksDone, tone: 'green', hint: `累计 ${c.tasksTotal} 项练习` },
+        { to: 'ec-review', sub: 'due', icon: '⏰', label: '记牢的课文', num: c.reciteMastered, tone: 'ok', hint: '每温习一次都更牢' },
+        { to: 'ec-wrong', sub: 'due', icon: '📕', label: '收集的宝藏', num: c.wrongTotal, tone: 'ok', hint: `${c.wrongMastered} 题变成好朋友` },
+        { to: 'ec-achieve', sub: '', icon: '🏆', label: '今日收获', num: c.todayDone, tone: 'green', hint: `${c.achievements} 枚徽章 · 连续 ${c.streak} 天` }
     ];
     return `<div class="ec-hub-grid">${cells.map(x => `
         <button class="ec-hub-cell ${x.tone}" data-action="ec-go" data-to="${x.to}" data-sub="${x.sub}" title="点击进入「${x.label}」所在板块">
@@ -12970,7 +13057,33 @@ function ecHubGridHTML(c) {
             <span class="ec-hub-hint">${x.hint}</span>
         </button>`).join('')}</div>`;
 }
-// 模块头部：等级 / 积分 / 连续 + 四模块今日待办（四个子标签统一常驻）
+// 今日份鼓励卡
+function ecCheerCardHTML() {
+    return `<div class="ec-cheer-card">
+        <span class="ec-cheer-emoji">🌈</span>
+        <div class="ec-cheer-body">
+            <div class="ec-cheer-title">今日份鼓励 · ${['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期天'][(new Date().getDay() + 6) % 7]}</div>
+            <div class="ec-cheer-text">${ecDailyCheer()}</div>
+        </div>
+        <span class="ec-cheer-spark">✨</span>
+    </div>`;
+}
+// 成就时间戳兼容：老数据是 now() 的 ISO 字符串，新数据可能是毫秒数
+function ecAchTime(v) {
+    if (typeof v === 'number') return v;
+    const t = Date.parse(String(v || ''));
+    return isNaN(t) ? 0 : t;
+}
+// 最近点亮的徽章：把鼓励从「荣誉战绩」搬一部分到学习看板
+function ecRecentBadgesHTML(limit) {
+    const d = ecData();
+    const list = EC_ACHIEVEMENTS.filter(a => d.achievements[a.id])
+        .sort((a, b) => ecAchTime(d.achievements[b.id]) - ecAchTime(d.achievements[a.id]))
+        .slice(0, limit || 3);
+    if (!list.length) return `<div class="ec-badge-empty">第一枚徽章正在路上，慢慢来 🌱</div>`;
+    return `<div class="ec-badge-row">${list.map(a => `<span class="ec-badge-chip" title="${a.name}：${a.desc}"><b>${a.icon}</b>${a.name}</span>`).join('')}</div>`;
+}
+// 学习看板头部：等级 / 积分 / 连续 + 成长能量 + 今日鼓励 + 四格收成 + 今日邀请
 function ecHeaderHTML() {
     const d = ecData();
     const lv = ecGetLevel(d.score);
@@ -12986,11 +13099,13 @@ function ecHeaderHTML() {
         </div>
         <div class="ec-head-sub">
             <span>🔥 连续 ${d.streak || 0} 天</span>
-            <span>距 Lv.${lv + 1} 还差 ${Math.max(0, nextLvScore - (d.score || 0))} 分</span>
-            <span>🏆 ${c.achievements}/${c.achievementTotal} 成就</span>
+            <span>✨ 再得 ${Math.max(0, nextLvScore - (d.score || 0))} 分升到 Lv.${lv + 1}</span>
+            <span>🏅 ${c.achievements}/${c.achievementTotal} 枚成就徽章</span>
         </div>
+        <div class="ec-energy-label"><span>🌱 成长能量</span><em>${pct}%</em></div>
         <div class="ec-bar"><div class="ec-bar-fill" style="width:${pct}%"></div></div>
-        <div class="ec-hub-title"><span>📍 今日学习 · 四个板块一眼看清</span><em>点数字直达</em></div>
+        ${ecCheerCardHTML()}
+        <div class="ec-hub-title"><span>🌈 我的成长收成</span><em>点卡片去逛逛</em></div>
         ${ecHubGridHTML(c)}
         <div class="ec-hub-advice">
             <span class="ec-hub-advice-text">${adv.text}</span>
@@ -12998,45 +13113,75 @@ function ecHeaderHTML() {
         </div>
     </div>`;
 }
-// 紧凑状态条（v20261106y）：四个学习页共用，只有一行，不再让大驾驶舱占掉首屏
+// 紧凑状态条：四个学习页共用，一行放「已经收获」，不再显示待办数字
 function ecMiniBarHTML() {
     const d = ecData();
     const c = ecHubCounts();
     const lv = ecGetLevel(d.score);
-    const left = c.tasks + c.reciteDue + c.wrongDue;
     return `<div class="card ec-mini-bar">
         <span class="ec-mini-lv">Lv.${lv}</span>
         <span class="ec-mini-item">⭐ ${(d.score || 0).toLocaleString()} 分</span>
         <span class="ec-mini-item">🔥 连续 ${c.streak} 天</span>
-        <span class="ec-mini-todo${left ? ' has' : ' ok'}">${left ? `今天还有 ${left} 项待办` : '今天已清空 🎉'}</span>
-        <button class="ec-mini-go" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1">📊 看总览 ›</button>
+        <span class="ec-mini-todo ok">${c.todayDone ? `今天已收获 ${c.todayDone} 项 ✨` : '今天从一页开始就很棒 🌱'}</span>
+        <button class="ec-mini-go" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1">📊 学习看板 ›</button>
     </div>`;
 }
-// 总览页本体：头卡（等级 / 进度 / 四格 / 今日建议）已由 ecHeaderHTML 渲染，这里补说明与板块联动
+// 学习看板正文：收获时刻 + 随手一课 + 探险地图（都不带待办数字）
 function ecHubPageHTML() {
-    return `<div class="ec-crumb">英语打卡 › 学习总览</div>
-    <div class="card ec-hub-note">四个板块的数字在这里统一汇总：点任意一格直接跳到对应板块，做完回来数字会自动更新；每个板块顶部的「📊 看总览」也能随时回到这一页。</div>
+    const c = ecHubCounts();
+    return `<div class="ec-crumb">英语打卡 › 学习看板</div>
+    <div class="card ec-hub-note">这里只放收获和鼓励：想学哪一格就点哪一格，四个板块的功能互相打通，学完回来数字会自己长大 🌱</div>
+    <div class="card ec-harvest-card">
+        <div class="card-header"><div class="card-title">🏅 收获时刻</div><span class="ec-card-note">已点亮 ${c.achievements}/${c.achievementTotal} 枚</span></div>
+        ${ecRecentBadgesHTML(3)}
+        <div class="ec-harvest-line">${ecHarvestLine(c)}</div>
+        <div class="ec-harvest-btns">
+            <button class="btn btn-sm btn-primary" data-action="ec-go" data-to="ec-achieve" data-sub="">看看我的荣誉墙 ›</button>
+            <button class="btn btn-sm btn-secondary" data-action="ec-go" data-to="ec-books" data-sub="books">🎲 随手翻一课</button>
+        </div>
+    </div>
     ${ecLinkCardHTML('')}`;
 }
-// 模块联动条：在复习中心 / 错题概览 / 总览里互相提示另外几个板块今天的待办
+// 探险地图：只在学习看板出现，纯导航不带数字；记忆巩固 / 查漏补缺不再显示联动卡
 function ecLinkCardHTML(current) {
-    const c = ecHubCounts();
     const items = [
-        { to: 'ec-books', sub: 'books', icon: '📚', text: c.tasks ? `还有 ${c.tasks} 项打卡任务` : '打卡任务已清空', num: c.tasks },
-        { to: 'ec-review', sub: 'due', icon: '⏰', text: c.reciteDue ? `${c.reciteDue} 篇课文到期待背诵` : '课文复习暂无到期', num: c.reciteDue },
-        { to: 'ec-wrong', sub: 'due', icon: '📕', text: c.wrongDue ? `${c.wrongDue} 道错题待复习` : '错题暂无待复习', num: c.wrongDue },
-        { to: 'ec-achieve', sub: '', icon: '🏆', text: `今日已学 ${c.todayDone} 项 · ${c.achievements} 个成就`, num: 0 }
+        { to: 'ec-books', sub: 'books', icon: '📚', text: '主线任务 · 翻开新的一课' },
+        { to: 'ec-review', sub: 'due', icon: '⏰', text: '记忆巩固 · 和课文打个招呼' },
+        { to: 'ec-wrong', sub: 'due', icon: '📕', text: '查漏补缺 · 把小坑变成宝藏' },
+        { to: 'ec-achieve', sub: '', icon: '🏆', text: '荣誉战绩 · 看看闪光时刻' }
     ].filter(x => x.to !== current);
     return `<div class="card ec-link-card">
-        <div class="ec-link-head"><span>🔗 板块联动</span><em>今天该往哪儿走，点一下就过去</em></div>
-        <div class="ec-link-grid">${items.map(x => `<button class="ec-link-item${x.num ? ' has' : ''}" data-action="ec-go" data-to="${x.to}" data-sub="${x.sub}"><span class="ec-link-ico">${x.icon}</span><span class="ec-link-text">${x.text}</span><span class="ec-link-go">›</span></button>`).join('')}</div>
+        <div class="ec-link-head"><span>🧭 今日探险地图</span><em>想去哪站，点一下就过去</em></div>
+        <div class="ec-link-grid">${items.map(x => `<button class="ec-link-item" data-action="ec-go" data-to="${x.to}" data-sub="${x.sub}"><span class="ec-link-ico">${x.icon}</span><span class="ec-link-text">${x.text}</span><span class="ec-link-go">›</span></button>`).join('')}</div>
     </div>`;
 }
-// 成就对应的「去完成」落点，让成就墙也能反哺另外三个板块
+// 成就对应的温柔落点，让荣誉墙也能反哺另外几个板块
 function ecAchieveGo(id) {
-    if (id === 'first-book' || id === 'first-task' || id === 'lesson-all' || id === 'points100' || id === 'points500' || id === 'streak7') return { to: 'ec-books', sub: 'books' };
-    if (id === 'first-recite' || id === 'recite-master') return { to: 'ec-review', sub: 'due' };
+    if (id === 'first-recite' || id === 'recite-master' || id === 'recite10' || id === 'master10') return { to: 'ec-review', sub: 'due' };
+    if (id.indexOf('wrong') === 0 || id === 'explorer') return { to: id === 'explorer' ? 'ec-hub' : 'ec-wrong', sub: 'due' };
     return { to: 'ec-books', sub: 'books' };
+}
+// 未点亮成就的温柔进度：只显示「已经走到哪里」，不催
+function ecAchProgress(a) {
+    const d = ecData();
+    const w = ecWbData();
+    const taskCnt = Object.keys(d.tasks).length;
+    const recCnt = Object.keys(d.fsrs).length;
+    const wrongCnt = w.items.length;
+    const masteredRec = ecReciteMasteredCount();
+    const masteredWrong = ecWbStats().mastered;
+    const table = {
+        streak3: [d.streak || 0, 3, '天'], streak7: [d.streak || 0, 7, '天'], streak30: [d.streak || 0, 30, '天'],
+        task10: [taskCnt, 10, '项'], task50: [taskCnt, 50, '项'],
+        points100: [d.score || 0, 100, '分'], points500: [d.score || 0, 500, '分'], points1000: [d.score || 0, 1000, '分'],
+        recite10: [recCnt, 10, '篇'], 'recite-master': [masteredRec, 3, '篇'], master10: [masteredRec, 10, '篇'],
+        'wrong-first': [wrongCnt, 1, '题'], wrong10: [wrongCnt, 10, '题'], 'wrong-master': [masteredWrong, 3, '题'],
+        week7: [Object.keys(d.days).length, 7, '天'], day4: [Math.max(0, ...Object.values(d.days).map(Number).filter(n => !isNaN(n)), 0), 4, '项']
+    };
+    const p = table[a.id];
+    if (!p) return '<div class="ec-ach-prog-hint">缘分到了自然会遇见 ✨</div>';
+    const cur = Math.min(Number(p[0]) || 0, p[1]);
+    return `<div class="ec-ach-prog"><span>已经走到 ${cur}/${p[1]} ${p[2]}</span><div class="ec-ach-prog-bar"><i style="width:${Math.round(cur / p[1] * 100)}%"></i></div></div>`;
 }
 
 // FSRS 说明卡（替代原艾宾浩斯曲线卡）
@@ -13291,8 +13436,8 @@ function ecTodayRecommendHTML(bookId) {
         return `
     <div class="card ec-reco ec-reco-done">
         <div class="ec-reco-head">🎉 今日推荐</div>
-        <div class="ec-reco-name">这本书今天的任务都完成啦！</div>
-        <div class="ec-reco-meta">休息一下，或者去「复习中心」提前背下一课</div>
+        <div class="ec-reco-name">这本书今天收获满满，真棒！</div>
+        <div class="ec-reco-meta">休息一下也很好，或者去「记忆巩固」逛逛下一课</div>
         ${ecTodayRecommendWrongHTML(bookId)}
     </div>`;
     }
@@ -13301,7 +13446,7 @@ function ecTodayRecommendHTML(bookId) {
     <div class="card ec-reco" data-action="ec-open-lesson" data-id="${reco.lesson.id}">
         <div class="ec-reco-head">🎯 今日推荐</div>
         <div class="ec-reco-name">${escapeHtml(reco.lesson.name)} <span class="ec-reco-tag">任务 ${reco.pg.done}/${reco.pg.total}</span></div>
-        <div class="ec-reco-meta">按顺序继续打卡，完成这一课就追平进度啦 →</div>
+        <div class="ec-reco-meta">想从这一课开始？点一下就出发 →</div>
         ${ecTodayRecommendWrongHTML(bookId)}
     </div>`;
     }
@@ -13338,7 +13483,7 @@ function ecTaskRow(lessonId, taskDef) {
     </div>`;
 }
 
-// 从复习中心 / 待背诵清单点课程 → 直接进该课的背诵页面（并滚动定位到背诵板块）
+// 从记忆巩固 / 待背诵清单点课程 → 直接进该课的背诵页面（并滚动定位到背诵板块）
 function ecOpenRecite(lessonId) {
     const lesson = ecLessonById(lessonId);
     if (!lesson) return;
@@ -13474,7 +13619,7 @@ function ecRecitePanel(lessonId) {
         const late = rec.due < new Date().setHours(0, 0, 0, 0);
         body = `
             <div class="ec-recite-meta">
-                <span class="ec-badge ${late ? 'ec-badge-late' : 'ec-badge-due'}">${late ? '待背诵 · 已逾期' : '待背诵'}</span>
+                <span class="ec-badge ${late ? 'ec-badge-late' : 'ec-badge-due'}">${late ? '可以温习 · 慢慢来' : '可以温习'}</span>
                 <span>应复习：${ecFmtDT(rec.due)}（${ecRelText(rec.due)}） · 稳定性 ${ecSDays(rec.s)} · 难度 D=${rec.d.toFixed(1)} · 已成功 ${rec.n} 次</span>
             </div>
             <div class="ec-recite-tip">合上书，尝试独立背诵整篇课文，然后按流畅度打分：</div>
@@ -13581,7 +13726,7 @@ function ecReviewCalendarHTML(days) {
         </div>`;
     };
     const rows = [];
-    if (overdue.length) rows.push(rowHTML('⚠️ 已逾期', '尽快补', overdue, 'ec-cal-late'));
+    if (overdue.length) rows.push(rowHTML('🌿 慢慢补', '随时都行', overdue, 'ec-cal-late'));
     groups.forEach(g => {
         const label = g.i === 0 ? '今天' : (g.i === 1 ? '明天' : (g.i === 2 ? '后天' : `${g.i} 天后`));
         const dt = new Date(g.from);
@@ -13598,7 +13743,7 @@ function ecReviewCalendarHTML(days) {
         <div class="ec-hint">只做预览：点课名可直接进入该课背诵页；「提前复习」请到下方清单里操作。想调整节奏就按实际背诵情况重新自评，间隔会自动重排。</div>
     </div>`;
 }
-// 复习中心内部分层（三级目录）：概览 / 待背诵 / 学习中 / 已掌握
+// 记忆巩固内部分层（三级目录）：概览 / 待背诵 / 学习中 / 已掌握
 const EC_REVIEW_SUBTABS = [
     { id: 'overview', name: '📊 概览', icon: '' },
     { id: 'due', name: '⏰ 待背诵', icon: '' },
@@ -13672,23 +13817,22 @@ function ecRenderReview() {
     if (rtab === 'overview') {
         body = `
         <div class="card">
-            <div class="card-header"><div class="card-title">⏰ 复习中心 · 概览</div></div>
+            <div class="card-header"><div class="card-title">⏰ 记忆巩固 · 概览</div></div>
             <div class="ec-stats">
-                <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">待背诵</div></div>
-                <div class="ec-stat"><div class="ec-stat-num ec-stat-late">${stats.overdue}</div><div class="ec-stat-label">已逾期</div></div>
+                <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">可以温习</div></div>
+                <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.overdue}</div><div class="ec-stat-label">慢慢补</div></div>
                 <div class="ec-stat"><div class="ec-stat-num">${waiting.length}</div><div class="ec-stat-label">学习中</div></div>
                 <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.mastered}</div><div class="ec-stat-label">已掌握</div></div>
             </div>
             <div class="ec-hint">在池课程共 ${dueList.length + waiting.length + mastered.length} 节：初学四选一入池后，到这里看每节课的下次复习时间；觉得遗忘了可以提前复习。</div>
         </div>
-        ${ecLinkCardHTML('ec-review')}
         ${ecReviewCalendarHTML(7)}
         ${ecFsrsCard()}`;
     } else if (rtab === 'due') {
         body = `
         <div class="card">
             <div class="card-header"><div class="card-title">⏰ 待背诵清单</div><span style="font-size:12px;color:var(--text-secondary)">点课程名 → 直接进背诵页</span></div>
-            ${dueList.length ? dueRows : `<div class="ec-empty"><div class="ec-empty-icon">🎉</div><div>当前没有到点的课文</div><div class="ec-hint">去「书单课目」学新课，或看看「学习中」</div></div>`}
+            ${dueList.length ? dueRows : `<div class="ec-empty"><div class="ec-empty-icon">🎉</div><div>当前没有到点的课文</div><div class="ec-hint">去「主线任务」学新课，或看看「学习中」</div></div>`}
         </div>`;
     } else if (rtab === 'waiting') {
         body = `
@@ -13705,12 +13849,13 @@ function ecRenderReview() {
         <div class="ec-empty"><div class="ec-empty-icon">🌟</div><div>还没有已掌握的课文</div><div class="ec-hint">稳定性达到 60 天后会出现在这里</div></div>`;
     }
     return `
-    <div class="ec-crumb">英语打卡 › 复习中心</div>
+    <div class="ec-crumb">英语打卡 › 记忆巩固</div>
     ${nav}
     ${body}`;
 }
 
-// 成就榜 Tab
+// 荣誉战绩 Tab
+// 荣誉战绩 Tab：只讲收获，不讲欠账；成就按五大类分组，未点亮也带温柔进度
 function ecRenderAchieve() {
     const d = ecData();
     const c = ecHubCounts();
@@ -13718,16 +13863,23 @@ function ecRenderAchieve() {
     const locked = EC_ACHIEVEMENTS.filter(a => !d.achievements[a.id]);
     const achCard = (a, on) => {
         const g = ecAchieveGo(a.id);
+        const cat = EC_ACH_CATS.find(x => x.id === a.cat);
         return `
-        <div class="ec-ach-item${on ? ' ec-ach-on' : ' ec-locked'}">
-            <span class="ec-ach-icon">${on ? a.icon : '🔒'}</span>
+        <div class="ec-ach-item${on ? ' ec-ach-on' : ' ec-ach-soon'} cat-${a.cat}">
+            <span class="ec-ach-icon">${on ? a.icon : '🌱'}</span>
             <div class="ec-ach-info">
-                <div class="ec-ach-name">${a.name}${on ? '<span class="ec-ach-tag">已达成</span>' : ''}</div>
+                <div class="ec-ach-name">${a.name}${on ? '<span class="ec-ach-tag">已点亮</span>' : `<span class="ec-ach-cat">${cat ? cat.name : ''}</span>`}</div>
                 <div class="ec-ach-desc">${a.desc}</div>
+                ${on ? `<div class="ec-ach-date">${ecFmtDT(ecAchTime(d.achievements[a.id]) || Date.now())} 收下 ✨</div>` : ecAchProgress(a)}
             </div>
-            ${on ? '' : `<button class="ec-ach-go" data-action="ec-go" data-to="${g.to}" data-sub="${g.sub}" title="去完成这个成就">去完成 ›</button>`}
+            ${on ? '<span class="ec-ach-star">⭐</span>' : `<button class="ec-ach-go" data-action="ec-go" data-to="${g.to}" data-sub="${g.sub}" title="去这个板块逛逛">去看看 ›</button>`}
         </div>`;
     };
+    const groupByCat = (list, on) => EC_ACH_CATS.map(cat => {
+        const arr = list.filter(a => a.cat === cat.id);
+        if (!arr.length) return '';
+        return `<div class="ec-ach-cat-label">${cat.name}<span>${arr.length} 枚</span></div><div class="ec-ach-grid">${arr.map(a => achCard(a, on)).join('')}</div>`;
+    }).join('');
     // 最近 7 天学习热力：按当天完成项数分深浅，不再只是「亮 / 不亮」
     const days = [];
     for (let i = 6; i >= 0; i--) {
@@ -13738,7 +13890,7 @@ function ecRenderAchieve() {
     }
     const weekTotal = days.reduce((s, x) => s + x.cnt, 0);
     const strip = days.map(x => `
-        <div class="ec-day lv${x.level}${x.cnt ? ' on' : ''}" title="${x.key}：完成 ${x.cnt} 项">
+        <div class="ec-day lv${x.level}${x.cnt ? ' on' : ''}" title="${x.key}：收获 ${x.cnt} 项">
             <span class="ec-day-dot">${x.cnt || ''}</span>
             <span class="ec-day-label">${x.label}</span>
         </div>`).join('');
@@ -13754,40 +13906,41 @@ function ecRenderAchieve() {
             <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${d.bestStreak || 0}</div><div class="ec-stat-label">最长连续</div></div>
             <div class="ec-stat"><div class="ec-stat-num">${studyDays}</div><div class="ec-stat-label">学习天数</div></div>
         </div>
-        <div class="ec-wb-achstats">📕 错题集：共 <b>${wc.total}</b> 题 · 待复习 <b>${wc.due}</b> · 已掌握 <b>${wc.mastered}</b>（复习错题也算今天的学习）</div>
+        <div class="ec-wb-achstats">📕 错题小宝藏：共 <b>${wc.total}</b> 题 · 可以回顾 <b>${wc.due}</b> · 已经记牢 <b>${wc.mastered}</b>（复习错题也算今天的学习）</div>
         <div class="ec-day-strip">${strip}</div>
-        <div class="ec-hint">最近 7 天共完成 <b>${weekTotal}</b> 项 · 颜色越深，当天学得越多；有打卡的日子会点亮</div>
+        <div class="ec-hint">最近 7 天共收获 <b>${weekTotal}</b> 项 · 颜色越深，那天越尽兴；来过的日子都会亮起来 ✨</div>
     </div>
     <div class="card">
-        <div class="card-header"><div class="card-title">🔗 四大板块数据</div><span class="ec-card-note">点卡片直达</span></div>
+        <div class="card-header"><div class="card-title">🎡 四个板块的收获</div><span class="ec-card-note">点卡片直达</span></div>
         <div class="ec-mod-stats">
             <button class="ec-mod-stat" data-action="ec-go" data-to="ec-books" data-sub="books">
-                <span class="ec-mod-ico">📚</span><span class="ec-mod-name">书单课目</span>
+                <span class="ec-mod-ico">📚</span><span class="ec-mod-name">主线任务</span>
                 <span class="ec-mod-num">${c.tasksDone}<i>/${c.tasksTotal}</i></span>
-                <span class="ec-mod-sub">任务已完成 · 待做 ${c.tasks}</span>
+                <span class="ec-mod-sub">学到的本领 · 每课都算数</span>
             </button>
             <button class="ec-mod-stat" data-action="ec-go" data-to="ec-review" data-sub="due">
-                <span class="ec-mod-ico">⏰</span><span class="ec-mod-name">复习中心</span>
-                <span class="ec-mod-num">${c.reciteDue}<i> 篇待背</i></span>
-                <span class="ec-mod-sub">已掌握 ${c.reciteMastered} 篇 · 逾期 ${c.reciteOverdue}</span>
+                <span class="ec-mod-ico">⏰</span><span class="ec-mod-name">记忆巩固</span>
+                <span class="ec-mod-num">${c.reciteMastered}<i> 篇记牢</i></span>
+                <span class="ec-mod-sub">已经牢牢记住啦 🌿</span>
             </button>
             <button class="ec-mod-stat" data-action="ec-go" data-to="ec-wrong" data-sub="due">
-                <span class="ec-mod-ico">📕</span><span class="ec-mod-name">错题复习</span>
-                <span class="ec-mod-num">${c.wrongTotal}<i> 题收录</i></span>
-                <span class="ec-mod-sub">待复习 ${c.wrongDue} · 已掌握 ${c.wrongMastered}</span>
+                <span class="ec-mod-ico">📕</span><span class="ec-mod-name">查漏补缺</span>
+                <span class="ec-mod-num">${c.wrongTotal}<i> 题小宝藏</i></span>
+                <span class="ec-mod-sub">${c.wrongMastered} 题变成好朋友 💎</span>
             </button>
             <button class="ec-mod-stat" data-action="ec-go" data-to="ec-achieve" data-sub="">
-                <span class="ec-mod-ico">🏆</span><span class="ec-mod-name">成就榜</span>
+                <span class="ec-mod-ico">🏆</span><span class="ec-mod-name">荣誉战绩</span>
                 <span class="ec-mod-num">${c.achievements}<i>/${c.achievementTotal}</i></span>
-                <span class="ec-mod-sub">已解锁 · 今日 ${c.todayDone} 项</span>
+                <span class="ec-mod-sub">已点亮 · 今日 ${c.todayDone} 项</span>
             </button>
         </div>
     </div>
     <div class="card">
-        <div class="card-header"><div class="card-title">🏆 成就墙</div><span class="ec-card-note">${c.achievements}/${c.achievementTotal} 已解锁</span></div>
+        <div class="card-header"><div class="card-title">🏆 荣誉墙</div><span class="ec-card-note">已点亮 ${c.achievements}/${c.achievementTotal} 枚</span></div>
         <div class="ec-ach-progress"><div class="ec-ach-progress-fill" style="width:${achPct}%"></div></div>
-        ${unlocked.length ? `<div class="ec-ach-group-title">✨ 已达成（${unlocked.length}）</div><div class="ec-ach-grid">${unlocked.map(a => achCard(a, true)).join('')}</div>` : ''}
-        ${locked.length ? `<div class="ec-ach-group-title">🔒 待解锁（${locked.length}）· 点「去完成」直达对应板块</div><div class="ec-ach-grid">${locked.map(a => achCard(a, false)).join('')}</div>` : '<div class="ec-hint">全部成就已解锁，太棒啦 🎉</div>'}
+        <div class="ec-harvest-line">${ecHarvestLine(c)}</div>
+        ${unlocked.length ? `<div class="ec-ach-group-title">✨ 已点亮（${unlocked.length}）· 每一枚都是认真走过的路</div>${groupByCat(unlocked, true)}` : '<div class="ec-hint">第一枚徽章正在路上，随便逛逛就会遇见 🌱</div>'}
+        ${locked.length ? `<div class="ec-ach-group-title">🌱 即将点亮（${locked.length}）· 不急，慢慢来就好</div>${groupByCat(locked, false)}` : '<div class="ec-hint">全部徽章都点亮啦，太厉害了 🎉</div>'}
     </div>`;
 }
 
@@ -13859,7 +14012,7 @@ document.addEventListener('click', async e => {
     if (action === 'ec-tabcfg-show') { ecTabCfgToggleShow(el.dataset.tab); ecTabCfgRefreshIfModal(); return; }
     if (action === 'ec-tabcfg-up') { ecTabCfgMove(el.dataset.tab, 'up'); ecTabCfgRefreshIfModal(); return; }
     if (action === 'ec-tabcfg-down') { ecTabCfgMove(el.dataset.tab, 'down'); ecTabCfgRefreshIfModal(); return; }
-    // ---------- 错题复习（分书本 / 分课时 + 学习联动） ----------
+    // ---------- 查漏补缺（分书本 / 分课时 + 学习联动） ----------
     if (action === 'ec-wb-import') { ecWbImportOpen(el.dataset.lesson || ''); return; }
     if (action === 'ec-wb-template') { ecWbImportOpen('', true); return; }
     if (action === 'ec-wb-import-lesson') { ecWbImportOpen(el.dataset.id || ''); return; }
@@ -13905,7 +14058,7 @@ document.addEventListener('click', async e => {
     if (action === 'ec-wb-move-down') { ecWbMoveItem(el.dataset.id, 'down'); return; }
 });
 
-// 待复习页「按书本 / 课时筛选」下拉（select 不走 click 委托）
+// 可以回顾页「按书本 / 课时筛选」下拉（select 不走 click 委托）
 document.addEventListener('change', e => {
     const el = e.target;
     if (!el || !el.dataset || !el.dataset.wbFilter) return;

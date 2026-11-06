@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20260824d';
+const APP_BUILD = '20261106z';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -18,7 +18,8 @@ const MODULES = [
     { id: 'beauty', name: '变美情报', icon: '💄' },
     { id: 'hot', name: '今日热点', icon: '🔥' },
     { id: 'study', name: '学习提升', icon: '📚' },
-    { id: 'english', name: '探索英语', icon: '🎮' },
+    { id: 'engcheck', name: '英语打卡', icon: '🗓️' },
+    { id: 'yjxs', name: '悦己享瘦', icon: '🌿' },
     { id: 'checkin', name: '认真打卡', icon: '✅' },
     { id: 'points', name: '积分系统', icon: '⭐' },
     { id: 'treehole', name: '与自己对话', icon: '💛' }
@@ -33,6 +34,7 @@ function getAllModules() {
     if (!Array.isArray(state.data.modules) || !state.data.modules.length) {
         state.data.modules = getDefaultModules();
     }
+    if (normalizeModules()) saveState();
     return state.data.modules;
 }
 function getModules() {
@@ -48,10 +50,29 @@ function getModuleName(id) {
     const m = getModuleById(id);
     return m ? m.name : (id || '');
 }
+function normalizeModules() {
+    let mods = state.data.modules;
+    if (!Array.isArray(mods)) { mods = getDefaultModules(); state.data.modules = mods; }
+    let changed = false;
+    const fi = mods.findIndex(m => m.id === 'fatloss');
+    if (fi >= 0) { mods.splice(fi, 1); changed = true; }
+    if (!mods.find(m => m.id === 'yjxs')) {
+        const def = MODULES.find(m => m.id === 'yjxs');
+        let at = fi >= 0 ? fi : mods.findIndex(m => m.id === 'checkin');
+        const entry = def ? { id: def.id, name: def.name, icon: def.icon, hidden: false } : { id: 'yjxs', name: '悦己享瘦', icon: '🌿', hidden: false };
+        if (at < 0) at = mods.length;
+        mods.splice(at, 0, entry);
+        changed = true;
+    }
+    return changed;
+}
+
 
 const API = {
     quote: 'https://v1.hitokoto.cn',
     history: 'https://api.wikimedia.org/feed/v1/wikipedia/zh/onthisday/all',
+    historyBackup: 'https://history.muffinlabs.com/date',
+    historyZh: 'https://api.suyanw.cn/api/lishi.php',
     hot: 'https://uapis.cn/api/v1/misc/hotboard',
     weather: 'https://api.open-meteo.com/v1'
 };
@@ -190,21 +211,19 @@ const HOT_TYPES = {
     'guangming-daily': '光明日报',
     'china-youth': '中国青年报',
     'bbc-world': 'BBC 国际',
-    'aljazeera': '半岛电视台',
-    'cnn-world': 'CNN 国际'
+    'aljazeera': '半岛电视台'
 };
 
 // 实际可用的热榜类型（uapis 接口对部分权威媒体不支持， politics 组使用可稳定返回数据的源）
 const HOT_GROUPS = {
     mixed: ['weibo', 'zhihu', 'bilibili', 'baidu', 'toutiao'],
     politics: ['toutiao', 'netease-news', 'sina-news', 'thepaper', 'huxiu', '36kr'],
-    international: ['bbc-world', 'aljazeera', 'cnn-world']
+    international: ['bbc-world', 'aljazeera']
 };
 // 国际热点：uapis 没有国际新闻类型，改用 RSS（经 rss2json 转 JSON，免 key 且带 CORS）聚合主流国际媒体
 const HOT_INTERNATIONAL_FEEDS = {
     'bbc-world': { name: 'BBC 国际', feed: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
-    'aljazeera': { name: '半岛电视台', feed: 'https://www.aljazeera.com/xml/rss/all.xml' },
-    'cnn-world': { name: 'CNN 国际', feed: 'https://rss.cnn.com/rss/edition_world.rss' }
+    'aljazeera': { name: '半岛电视台', feed: 'https://www.aljazeera.com/xml/rss/all.xml' }
 };
 
 // 常见纪念日（月-日）
@@ -2627,6 +2646,21 @@ const state = {
     _collapsedCategories: new Set(),
     _collapsedOther: new Set(),
     _checkInModule: 'basic',
+    _ecBookId: null,
+    _ecLessonId: null,
+    _ecEditBookId: null,
+    _ecEditLessonId: null,
+    _ecBookSelMode: false,
+    _ecBookSel: {},
+    _ecLessonSelMode: false,
+    _ecLessonSel: {},
+    _ecEarlyId: null,
+    _ecLastReview: null,
+    _ecTxt: {},
+    _ecAddOpen: false,
+    _ecHeadEdit: false,
+    _ecTabCfg: false,
+    _loadingHot: false,
     _waterMode: null,
     _waterSelected: new Set(),
     settings: {
@@ -2662,7 +2696,10 @@ const state = {
         categories: null,
         categoryOrder: null,
         beautyInspirations: [],
-        bookRead: [] // 阅读板块：看过的书（收藏书屋数据源），元素为 {title, author, tags, markedAt}
+        bookRead: [], // 阅读板块：看过的书（收藏书屋数据源），元素为 {title, author, tags, markedAt}
+        // 英语打卡（三级目录 + FSRS 背诵复习 + 积分成就）：
+        // books=一级(书)、lessons=二级(课)、tasks=三级(任务记录)、fsrs=背书复习记录
+        engcheck: { books: [], lessons: [], tasks: {}, fsrs: {}, tombs: {}, tombTasks: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' }
     },
     supabase: null,
     syncStatus: 'offline',
@@ -2868,8 +2905,17 @@ function loadState() {
         if (state.settings.exchangeRule === undefined) state.settings.exchangeRule = '';
         migrateData();
         ensureDefaults();
+        // 导航排序规则：打开工作台时的首页 = 导航里第一个可见板块（设置里可调序/隐藏）
+        const firstMod = getModules()[0];
+        if (firstMod) state.currentModule = firstMod.id;
+        repairZeroBasePoints();
         recalcPoints();
         recalcCourage();
+        // 恢复「待同步」标记：若上次关闭页面时本地还有没传上去的进度，重新显示「待同步」
+        try {
+            state._unsynced = localStorage.getItem('gt_unsynced') === '1';
+            state._unsyncedAt = Number(localStorage.getItem('gt_unsynced_at')) || 0;
+        } catch (e) { state._unsynced = false; state._unsyncedAt = 0; }
     } catch (e) {
         console.error('加载状态失败', e);
     }
@@ -2896,6 +2942,7 @@ function migrateData() {
     state.data.wishBin = state.data.wishBin || [];
     state.data.hotCache = state.data.hotCache || {};
     state.data.apiCache = state.data.apiCache || {};
+    state.data.yjxs = state.data.yjxs || {};
     // 兼容老版：把静态默认分类迁移到用户可管理的 categories
     if (!state.data.categories || !Object.keys(state.data.categories).length) {
         state.data.categories = { ...DEFAULT_CHECKIN_CATEGORIES };
@@ -2946,6 +2993,12 @@ function migrateData() {
     // 阅读板块：看过的书（收藏书屋数据源）
     if (!Array.isArray(state.data.bookRead)) state.data.bookRead = [];
     state.data.settings = state.data.settings || { theme: state.settings && state.settings.theme ? state.settings.theme : 'light' };
+    // 英语打卡数据兼容：老账号没有该字段时补空结构（新增模块自动追加逻辑会保证导航里出现）
+    if (!state.data.engcheck || typeof state.data.engcheck !== 'object') state.data.engcheck = { books: [], lessons: [], tasks: {}, fsrs: {}, tombs: {}, tombTasks: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' };
+    if (!Array.isArray(state.data.engcheck.books)) state.data.engcheck.books = [];
+    if (!Array.isArray(state.data.engcheck.lessons)) state.data.engcheck.lessons = [];
+    if (!state.data.engcheck.tasks || typeof state.data.engcheck.tasks !== 'object') state.data.engcheck.tasks = {};
+    if (!state.data.engcheck.fsrs || typeof state.data.engcheck.fsrs !== 'object') state.data.engcheck.fsrs = {};
     // manageFilterCategory / manageSortPoints 已迁出 settings（独立 localStorage，避免被云端覆盖），此处不再初始化
     // 同步默认模块：仅当检测到旧模块名（夸夸金句/夸夸自己）时，按 MODULES 重排并刷新名称，
     // 否则保留用户/云端已同步的自定义顺序与隐藏状态，避免每次启动都强制覆盖。
@@ -2964,7 +3017,8 @@ function migrateData() {
             modsForAppend.push({ id: m.id, name: m.name, icon: m.icon, hidden: false });
         }
     });
-    state.data.modules = modsForAppend;
+    // 已删除的模块（探索英语游乐场）从老用户导航里移除，避免残留入口
+    state.data.modules = modsForAppend.filter(m => m && m.id !== 'english');
     ensureGameDefaults();
 }
 
@@ -3006,11 +3060,76 @@ const saveStateDebounced = debounce(saveState, 600);
 
 // 仅写本地，不触发云端上传（用于从云端拉取合并后，避免回传造成同步风暴）
 function saveStateLocal() {
+    const build = () => JSON.stringify({ settings: state.settings, data: state.data });
     try {
-        localStorage.setItem('growtree_state', JSON.stringify({ settings: state.settings, data: state.data }));
+        localStorage.setItem('growtree_state', build());
     } catch (e) {
-        console.error('本地保存失败', e);
+        // 配额不足时先丢可重建的热榜/接口缓存再试一次。
+        // 此前这里只 console.error 静默失败：云端刚合并下来的数据没落盘，
+        // 下次刷新会看到「旧数据」，用户会以为同步把数据弄丢了。
+        try {
+            state.data.hotCache = {};
+            state.data.apiCache = {};
+            localStorage.setItem('growtree_state', build());
+            try { toast('本地空间不足，已清理热榜缓存，建议到设置导出备份'); } catch (e2) { /* ignore */ }
+        } catch (e3) {
+            console.error('本地保存失败(二次)', e3);
+            try { toast('⚠️ 本地存储已满，最新数据可能未写入本地，请到设置导出备份'); } catch (e4) { /* ignore */ }
+        }
     }
+}
+
+// 「待同步」标记：本地有改动但尚未成功上传云端时为 true。
+// 用独立 localStorage 键持久化，这样即使页面被关掉再打开（reload 后内存标记丢失），
+// 仍能知道「本地还有没传上去的进度」，顶部状态显示「待同步」提醒用户点同步。
+function markUnsynced() {
+    state._unsynced = true;
+    state._unsyncedAt = Date.now();
+    try {
+        localStorage.setItem('gt_unsynced', '1');
+        localStorage.setItem('gt_unsynced_at', String(state._unsyncedAt));
+    } catch (e) { /* ignore */ }
+}
+function clearUnsynced() {
+    if (state._unsynced) {
+        state._unsynced = false;
+        state._unsyncedAt = 0;
+        try {
+            localStorage.removeItem('gt_unsynced');
+            localStorage.removeItem('gt_unsynced_at');
+        } catch (e) { /* ignore */ }
+    }
+}
+// 「待同步」是否已陈旧：超过 30 分钟仍没传上去（Supabase 免费项目休眠 / 长时间断网），
+// 说明本地很可能不再是权威版本。此时不再坚持「本地优先」，改为正常的云端优先合并
+// （各记录仍按 id/时间戳并集，本地打卡不会丢），避免出现「一台设备永远压着云端」的死锁。
+const UNSYNCED_STALE_MS = 30 * 60 * 1000;
+function unsyncedIsStale() {
+    if (!state._unsynced) return false;
+    const at = Number(state._unsyncedAt) || 0;
+    return at > 0 && (Date.now() - at) > UNSYNCED_STALE_MS;
+}
+// 真正用于合并方向判断：本地有改动且改动还不算陈旧
+function localShouldWin() {
+    return !!state._unsynced && !unsyncedIsStale();
+}
+
+// 是否为「纯对象」（非数组、非 null）：用于判断能否逐键合并
+function isPlainObj(v) {
+    return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+// 【本地优先合并】云端只补「本地没有的键」，同键一律保留本地值。
+// 用途：本机有未上传改动时（刚打卡 / 刚写完 / 刚改配置）上传前的合并。
+// 此前上传前是「云端整包覆盖本地」——只要本地有刚做的改动，就会被云端旧快照冲掉，
+// 再把冲掉后的状态写回云端，表现为「明明已打卡，2 秒后又被拖回未打卡」。
+function mergeLocalFirst(local, cloud) {
+    const out = { ...(isPlainObj(cloud) ? cloud : {}) };
+    Object.keys(isPlainObj(local) ? local : {}).forEach(k => {
+        const lv = local[k], cv = out[k];
+        if (isPlainObj(lv) && isPlainObj(cv)) out[k] = mergeLocalFirst(lv, cv);
+        else out[k] = lv;
+    });
+    return out;
 }
 
 function ensureDefaults() {
@@ -3021,7 +3140,18 @@ function ensureDefaults() {
         // 自定义积分优先；否则按花朵定级兜底（避免覆盖用户在批量积分里的设置）
         c.points = (c.customPoints != null) ? c.customPoints : flowerScore(c.stars);
     });
-    // 保证默认分类存在（新用户或旧数据）
+    // 【不再「复活」用户删掉的默认项】
+    // 此前这两个「补默认分类 / 补默认打卡项」的兜底每次刷新、每次云端合并都会跑，
+    // 结果用户把某个默认板块（如「日常」）的打卡项删空后，一刷新或一同步又被自动塞回来，
+    // 表现为「删了又自己长出来」。现在只在「首次初始化」灌注一次，之后不再自动补。
+    const hasExisting = (Array.isArray(state.data.checkIns) && state.data.checkIns.length > 0)
+        || (Array.isArray(state.data.purgedCheckInIds) && state.data.purgedCheckInIds.length > 0)
+        || Object.keys(state.data.categories || {}).length > 0;
+    const seeded = state.data.defaultsSeeded === true || hasExisting;
+    state.data.defaultsSeeded = true;
+    if (seeded) return;
+
+    // 保证默认分类存在（仅首次初始化）
     if (!state.data.categories || !Object.keys(state.data.categories).length) {
         state.data.categories = { ...DEFAULT_CHECKIN_CATEGORIES };
         state.data.categoryOrder = [...DEFAULT_CATEGORY_ORDER];
@@ -3045,6 +3175,51 @@ function ensureDefaults() {
                 });
             });
         }
+    }
+}
+
+// 修复 x 版清零遗留：保留 base 记录但 points 被置 0，导致打卡显示完成却拿不到积分。
+// 启动时自动把「清零之后」且 points===0 的 base 记录恢复为对应打卡项默认分值，
+// 清零之前的旧记录保持 0 分，避免违背用户「历史积分从零开始」的意图。
+function repairZeroBasePoints() {
+    const pts = state.data.points;
+    if (!pts || !Array.isArray(pts.history)) return;
+    const clearedAt = state.data.game?._pointsClearedAt;
+    const clearedMs = clearedAt ? Date.parse(clearedAt) : 0;
+    let changed = false;
+    if (clearedMs) {
+        // 已清零（点过「全部清零」）：旧版清零时未真正清空 base 记录，残留一堆 0 分 base。
+        // 这些残留会干扰 doCheckIn 的「是否已打卡」判断，导致「打了卡却没积分、像归零」。
+        // 删除「清零时间戳之前」的残留；「清零之后」用户自己新产生的真实打卡保留，
+        // 若被旧同步误置 0 分则恢复默认分值。
+        const before = pts.history.length;
+        pts.history = pts.history.filter(h => {
+            const t = Date.parse(h.time || h.updatedAt || h.date || 0);
+            if (!isNaN(t) && t <= clearedMs) return false; // 清零前残留，删除
+            return true;
+        });
+        if (pts.history.length !== before) changed = true;
+        // 清零后仍遗留的 0 分 base（异常）：恢复默认分值
+        pts.history.forEach(h => {
+            if (h.type !== 'base' || h.points !== 0) return;
+            const item = state.data.checkIns.find(c => c.id === h.checkInId);
+            const mult = isDoubleDay(h.date) ? 2 : 1;
+            const basePts = (parseInt(item ? item.points : 0) || 10) * mult;
+            if (basePts > 0) { h.points = basePts; h.updatedAt = now(); changed = true; }
+        });
+    } else {
+        // 从未清零但存在 0 分 base（异常兜底）：恢复默认分值
+        pts.history.forEach(h => {
+            if (h.type !== 'base' || h.points !== 0) return;
+            const item = state.data.checkIns.find(c => c.id === h.checkInId);
+            const mult = isDoubleDay(h.date) ? 2 : 1;
+            const basePts = (parseInt(item ? item.points : 0) || 10) * mult;
+            if (basePts > 0) { h.points = basePts; h.updatedAt = now(); changed = true; }
+        });
+    }
+    if (changed) {
+        recalcPoints();
+        recalcCourage();
     }
 }
 
@@ -3092,9 +3267,15 @@ async function initSupabase(pull = true) {
         state.supabase = window.supabase.createClient(state.settings.supabaseUrl, state.settings.supabaseKey);
         updateSyncStatus('syncing');
         const ok = await verifySupabase();
-        if (ok && pull) {
-            // 连接成功后立刻从云端拉取一次，确保拿到其他设备的最新数据
-            await syncFromCloud();
+        if (ok) {
+            // 上次关页面/锁屏时还有没传上去的改动：优先把它推上云端（内部走本地优先合并，
+            // 不会把本地进度回滚），再考虑拉取。这样「手机背完就锁屏」的内容不会卡在本地。
+            if (state._unsynced) {
+                await syncToCloud(false);
+            } else if (pull) {
+                // 连接成功后立刻从云端拉取一次，确保拿到其他设备的最新数据
+                await syncFromCloud();
+            }
         }
         return ok;
     } catch (e) {
@@ -3157,15 +3338,101 @@ function reportSyncSuccess() {
     state._cloudErrorToastShown = false;
 }
 
-// 按 id 合并两条记录数组：保留本地独有的记录，同时补充云端独有的记录，避免同步覆盖本地新产生的数据
-// 若传入 purgedIds，则这些 id 会被永久过滤（解决跨设备删除后被复活的问题）
+// 按 id 合并两条记录数组：保留本地独有的记录，同时补充云端独有的记录，避免同步覆盖本地新产生的数据。
+// 无 id 的记录（如积分校准 base 记录）也会保留，并用「时间+内容摘要」生成稳定键，避免被云端有 id 的旧记录误覆盖。
+// 若传入 purgedIds，则这些 id 会被永久过滤（解决跨设备删除后被复活的问题）。
 function mergeById(localArr, cloudArr, purgedIds) {
     const local = Array.isArray(localArr) ? localArr : [];
     const cloud = Array.isArray(cloudArr) ? cloudArr : [];
     const purged = new Set(Array.isArray(purgedIds) ? purgedIds : []);
     const map = new Map();
-    local.forEach(x => { if (x && x.id && !purged.has(x.id)) map.set(x.id, x); });
-    cloud.forEach(x => { if (x && x.id && !purged.has(x.id) && !map.has(x.id)) map.set(x.id, x); });
+    // 关键修复：无 id 的记录使用「与来源无关的」内容指纹作为 key，
+    // 避免同一条无 id 记录因 local/cloud 前缀不同而被保留成两份（历史流水重复累加）。
+    const makeKey = (x) => {
+        if (x && x.id && !purged.has(x.id)) return 'id_' + String(x.id);
+        const body = JSON.stringify(x || {}).slice(0, 160);
+        return `noId_${x && x.time ? x.time : ''}_${x && x.date ? x.date : ''}_${body}`;
+    };
+    local.forEach(x => { if (x && !purged.has(x && x.id)) map.set(makeKey(x), x); });
+    cloud.forEach(x => { if (x && !purged.has(x && x.id)) { const k = makeKey(x); if (!map.has(k)) map.set(k, x); } });
+    return Array.from(map.values());
+}
+
+// 阅读收藏（bookRead）：元素无 id、以 title 为业务键，不能走 mergeById。
+// 此前 bookRead 完全不在合并名单里，同步时被整组替换 → 手机收藏的书在电脑上看不到，
+// 电脑收藏的书在手机上传时被冲掉。改为按 title 并集，markedAt 新者胜，删除用墓碑过滤。
+function mergeBookRead(localArr, cloudArr, tombs) {
+    const m = new Map();
+    const t = (b) => String((b && b.markedAt) || '');
+    const put = (b) => {
+        if (!b || !b.title) return;
+        if (tombs && tombs[b.title]) return; // 删除过的书不复活
+        const cur = m.get(b.title);
+        if (!cur || t(b) > t(cur)) m.set(b.title, b);
+    };
+    (Array.isArray(localArr) ? localArr : []).forEach(put);
+    (Array.isArray(cloudArr) ? cloudArr : []).forEach(put);
+    return Array.from(m.values());
+}
+// 时间戳字典合并（键 → 毫秒时间戳），同键取较晚者
+function mergeTsMap(a, b) {
+    const out = { ...(isPlainObj(a) ? a : {}) };
+    Object.keys(isPlainObj(b) ? b : {}).forEach(k => {
+        const v = Number(b[k]) || 0;
+        if (v > (Number(out[k]) || 0)) out[k] = v;
+    });
+    return out;
+}
+// 「清空所有数据」的时间分界线过滤：丢弃早于清空时刻的记录。
+// 否则用户点了「清除所有数据」后一同步，另一台设备/云端里的旧记录会被并集合并加回来，
+// 表现为「数据清不掉，自己又回来了」。
+function dropBeforeCut(arr, cutMs) {
+    if (!Array.isArray(arr) || !cutMs) return Array.isArray(arr) ? arr : [];
+    return arr.filter(x => {
+        if (!x || typeof x !== 'object') return true;
+        const t = Date.parse(x.updatedAt || x.createdAt || x.markedAt || x.time || '') || 0;
+        if (t) return t >= cutMs;
+        // 没有精确时间戳的老记录：用 date（YYYY-MM-DD）粗判，允许一天误差
+        const d = x.date ? Date.parse(x.date + 'T00:00:00') : 0;
+        return !d || d >= cutMs - 86400000;
+    });
+}
+
+// 积分流水合并：按业务语义去重，避免同一打卡/奖励在不同设备生成多条记录后重复计分。
+// mergeById 按 id/JSON 体去重，但 base 等无稳定 id 的记录在不同设备上 id/time 都不同，
+// 同步后会被保留成两条（如手机、电脑各打卡一次「运动」就 +20 而不是 +10），造成总积分不一致。
+function mergePointsHistory(localArr, cloudArr) {
+    const arr = [...(Array.isArray(localArr) ? localArr : []), ...(Array.isArray(cloudArr) ? cloudArr : [])];
+    const map = new Map();
+    const tsOf = (h) => {
+        const t = Date.parse(h && (h.updatedAt || h.time) ? (h.updatedAt || h.time) : 0);
+        return !isNaN(t) ? t : 0;
+    };
+    arr.forEach(h => {
+        if (!h || typeof h !== 'object') return;
+        let key;
+        if (h.type === 'base') {
+            key = `base:${h.checkInId || h.id || ''}:${h.date || ''}`;
+        } else if (h.type === 'streak') {
+            key = `streak:${h.checkInId || h.id || ''}:${h.date || ''}`;
+        } else if (h.type === 'dailyfull' || h.type === 'dailyhalf') {
+            key = `${h.type}:${h.date || ''}`;
+        } else if (h.type === 'content') {
+            key = `content:${h.date || ''}`;
+        } else if (h.type === 'achv') {
+            key = `achv:${h.reason || ''}`;
+        } else if (h.type === 'season') {
+            key = `season:${h.date || ''}:${h.reason || ''}`;
+        } else if (h.type === 'makeup') {
+            key = `makeup:${h.checkInId || h.id || ''}:${h.date || ''}`;
+        } else if (h.id) {
+            key = `id:${h.id}`;
+        } else {
+            key = `${h.type || 'misc'}:${h.date || ''}:${h.time || ''}:${JSON.stringify(h).slice(0, 80)}`;
+        }
+        const cur = map.get(key);
+        if (!cur || tsOf(h) > tsOf(cur)) map.set(key, h);
+    });
     return Array.from(map.values());
 }
 
@@ -3228,9 +3495,61 @@ function ensureSeason() {
     }
 }
 
-async function syncFromCloud(force = false) {
+// 积分校准冲突解决：应用校准侧（积分/段位/心愿/补打卡）的修正，
+// 但保留双方已合并的真实 base 打卡记录，只应用校准侧的 adjustment/calibration 流水。
+// 这样「清零一端」不会把另一端的打卡完成状态也清空（避免今日小树 0/9 的同步 bug）。
+// 积分/段位同步冲突解决：任一侧曾「积分/段位全部清零」，以「较新清零时间戳」为准，
+// 把积分/段位/赛季/成就统一归零；但保留两端已合并的真实 base 打卡完成记录（仅把每条积分置 0），
+// 避免「一端清零把另一端真实打卡也删掉」或「两端积分/段位不一致」这类同步 bug。
+function resolvePointsCalibOnSync(cloud, localClearedAt) {
+    if (!cloud) return;
+    const cloudClearedAt = cloud.game?._pointsClearedAt || 0;
+    const lc = localClearedAt || 0;
+    const cc = cloudClearedAt || 0;
+    if (!lc && !cc) return;
+    // _pointsClearedAt 是 ISO 字符串时间戳（now() 返回字符串），不能用 Math.max（会得到 NaN），
+    // 改用字符串比较（ISO 8601 字典序即时间序），取「较新清零」一侧。
+    const useLocal = String(lc) >= String(cc);
+    const clearedAt = useLocal ? lc : cc;
+    const clearedGame = useLocal ? state.data.game : (cloud.game || {});
+    // 清零侧获胜：两端统一「从零开始」语义。
+    // 删除「清零时间戳之前」的 base 残留（避免 0 分 base 干扰 doCheckIn 的「是否已打卡」判断，
+    // 造成「打卡不累积 / 像归零」）；保留「清零之后」用户自己新产生的真实打卡，
+    // 若其被旧同步误置 0 分则恢复默认分值。
+    const clearedMs = Date.parse(clearedAt) || 0;
+    // 删除「清零时间戳之前」的全部积分流水（base/adjustment/streak/makeup 等），彻底从零；
+    // 仅保留「清零之后」用户自己新产生的真实打卡，若其被旧同步误置 0 分则恢复默认分值。
+    state.data.points.history = (state.data.points.history || []).filter(h => {
+        const t = Date.parse(h.time || h.updatedAt || h.date || 0);
+        if (clearedMs && !isNaN(t) && t <= clearedMs) return false;
+        return true;
+    }).map(h => {
+        if (h.type === 'base' && h.points === 0) {
+            const item = state.data.checkIns.find(c => c.id === h.checkInId);
+            const mult = isDoubleDay(h.date) ? 2 : 1;
+            const basePts = (parseInt(item ? item.points : 0) || 10) * mult;
+            if (basePts > 0) return { ...h, points: basePts, updatedAt: now() };
+        }
+        return h;
+    });
+    state.data.points.earned = 0;
+    state.data.points.used = 0;
+    state.data.game = { ...state.data.game, ...clearedGame, _pointsClearedAt: clearedAt };
+    if (!useLocal) {
+        state.data.wishes = cloud.wishes;
+        state.data.makeupLog = cloud.makeupLog;
+    }
+    recalcPoints();
+    recalcCourage();
+}
+
+async function syncFromCloud(force = false, ignoreUnsynced = false) {
     if (_syncLock || !state.supabase) return;
-    return withSyncLock(() => _syncFromCloudCore(force));
+    // 【防回弹】本机还有没传上去的改动时，拉取走「本地优先合并」：
+    // 既能把对端新增的记录并进来（不会卡住不同步），又不会用云端旧快照
+    // 覆盖本机刚打的卡/刚背完的内容（这是「打卡又被拖回未完成」的根因）。
+    const localWins = !ignoreUnsynced && localShouldWin();
+    return withSyncLock(() => _syncFromCloudCore(force, localWins));
 }
 // 同步串行锁：避免「后台轮询」与「本地改动上传」并发执行同一段拉取/合并/上传逻辑，
 // 否则两次拉取会交错读写，导致一端刚打卡/删除的内容被另一端的上传覆盖回来（同步回弹 bug）。
@@ -3238,9 +3557,17 @@ let _syncLock = false;
 async function withSyncLock(fn) {
     if (_syncLock) return;
     _syncLock = true;
-    try { return await fn(); } finally { _syncLock = false; }
+    try { return await fn(); } finally {
+        _syncLock = false;
+        // 同步进行中又被要求上传（典型：切走/锁屏那一下正好撞上正在跑的同步）：
+        // 锁释放后补传一次，避免这次改动被静默丢掉。
+        if (state._pendingUpload) {
+            state._pendingUpload = false;
+            if (state.supabase && state._unsynced) setTimeout(() => syncToCloud(false), 0);
+        }
+    }
 }
-async function _syncFromCloudCore(force = false) {
+async function _syncFromCloudCore(force = false, localWins = false) {
     if (!state.supabase) return;
     updateSyncStatus('syncing');
     try {
@@ -3261,6 +3588,23 @@ async function _syncFromCloudCore(force = false) {
                 // updatedAt 是云端行元数据，不并入本地 state.data
                 const { updatedAt, ...cloudPayload } = cloud;
 
+                // 【清空分界线】用户点过「清除所有数据」时，云端早于该时刻的记录一律丢弃。
+                // 否则清空后一同步，另一台设备/云端的旧记录就会被并集合并加回来
+                //（用户看到的现象：「我清了所有数据，过一会儿它自己全回来了」）。
+                const cutAllMs = Math.max(
+                    Date.parse(state.data.clearedAllAt || '') || 0,
+                    Date.parse(cloud.clearedAllAt || '') || 0
+                );
+                if (cutAllMs) {
+                    ['waterLogs', 'praises', 'wishes', 'wishBin', 'userQuotes', 'praiseGroups',
+                        'quoteGroups', 'checkIns', 'checkInBin', 'bookRead'].forEach(k => {
+                        cloud[k] = dropBeforeCut(cloud[k], cutAllMs);
+                    });
+                    if (cloud.points && Array.isArray(cloud.points.history)) {
+                        cloud.points.history = dropBeforeCut(cloud.points.history, cutAllMs);
+                    }
+                }
+
                 // 【关键修复】拉取前先快照本地所有「按 id 的追加型数组」。
                 // 下方 state.data = {...state.data, ...cloudPayload} 会用云端整组替换嵌套数组，
                 // 若不在替换前保存本地引用，后续 mergeById 实际是在「云端 vs 云端」上合并，
@@ -3276,11 +3620,45 @@ async function _syncFromCloudCore(force = false) {
                     quoteGroups: Array.isArray(state.data.quoteGroups) ? state.data.quoteGroups : [],
                     checkIns: Array.isArray(state.data.checkIns) ? state.data.checkIns : [],
                     checkInBin: Array.isArray(state.data.checkInBin) ? state.data.checkInBin : [],
+                    bookRead: Array.isArray(state.data.bookRead) ? state.data.bookRead : [],
                     purgedCheckInIds: Array.isArray(state.data.purgedCheckInIds) ? state.data.purgedCheckInIds : [],
                     purgedIds: Array.isArray(state.data.purgedIds) ? state.data.purgedIds : []
                 };
 
-                state.data = { ...state.data, ...cloudPayload };
+                // 同步前先记录本地「清零时间戳」，用于下方积分/段位冲突解决
+                // （必须在 state.data 被云端整包覆盖前捕获，否则会读到云端值而误判）。
+                const localClearedAt = state.data.game?._pointsClearedAt || 0;
+                // 悦己享瘦数据：用 exportedAt 时间戳判断哪边更新，避免刚产生的本地改动
+                // 被云端旧快照覆盖回去（这是点击打卡后「自己刷新又取消」的根因）。
+                const localYjxs = state.data.yjxs || {};
+                const localYjxsAt = localYjxs.exportedAt || '';
+                const cloudYjxs = cloudPayload.yjxs || {};
+                const cloudYjxsAt = cloudYjxs.exportedAt || '';
+                // 英语打卡数据：同上，本地新做的打卡/书单/课程不能被云端旧快照整组替换。
+                // engcheck 是对象型数据，此前不在合并保护名单：每次 syncToCloud 上传前都会
+                // 先拉取合并，点击打卡 2 秒后拉到的旧快照会把新打卡/新书单整体冲掉
+                // （用户反馈「显示成功一秒后又变回未完成」的根因）。
+                const localEc = state.data.engcheck;
+                const localEcAt = (localEc && localEc.updatedAt) || '';
+                const cloudEcAt = (cloudPayload.engcheck && cloudPayload.engcheck.updatedAt) || '';
+
+                // 主题是设备本地 UI 偏好：先暂存，云端整组 settings 覆盖后立即还原，
+                // 否则云端旧快照（theme=light）会把本地夜间模式冲掉，
+                // 导致 iframe 重建时闪现夜间一秒后又被 yjxs-theme=light 推回日间。
+                const localTheme = state.data.settings && state.data.settings.theme;
+                // 【数据方向】localWins=true 表示本机有未上传改动（刚打卡/刚改配置），
+                // 此时必须「本地优先」：云端只补本地没有的键，绝不覆盖本地同键值。
+                // 否则云端旧快照会把刚打的卡冲掉，再被上传，等于把「已完成」写成「未完成」。
+                state.data = localWins
+                    ? mergeLocalFirst(state.data, cloudPayload)
+                    : { ...state.data, ...cloudPayload };
+                if (localTheme) state.data.settings.theme = localTheme;
+                // 「清空」是全局事件：取两端较晚的清空时刻，避免一端仍在用旧分界线导致旧记录复活
+                if (cloud.clearedAllAt && String(cloud.clearedAllAt) > String(state.data.clearedAllAt || '')) {
+                    state.data.clearedAllAt = cloud.clearedAllAt;
+                }
+                // 重新应用主题（父页面属性 + 推送给悦己享瘦 iframe），保持两端一致
+                try { if (typeof applyTheme === 'function') applyTheme(); } catch (themeErr) { /* ignore */ }
                 // 板块配置以「最后修改时间」为准：哪边更新就用哪边，实现跨设备同步
                 if (localModules && cloudModules) {
                     if (cloudModulesUpdatedAt > localModulesUpdatedAt) {
@@ -3306,12 +3684,15 @@ async function _syncFromCloudCore(force = false) {
                 state.data.purgedIds = Array.from(new Set([...(localById.purgedIds || []), ...(state.data.purgedIds || [])]));
                 trimPurgedIds();
                 const mergedPurgedIds = state.data.purgedIds;
-                state.data.points.history = mergeById(localById.history, cloud.points?.history);
+                state.data.points.history = mergePointsHistory(localById.history, cloud.points?.history);
                 state.data.waterLogs = mergeById(localById.waterLogs, cloud.waterLogs, mergedPurgedIds);
                 state.data.praises = mergeById(localById.praises, cloud.praises, mergedPurgedIds);
                 state.data.wishes = mergeById(localById.wishes, cloud.wishes, mergedPurgedIds);
                 state.data.wishBin = mergeById(localById.wishBin, cloud.wishBin, mergedPurgedIds);
                 state.data.userQuotes = mergeById(localById.userQuotes, cloud.userQuotes, mergedPurgedIds);
+                // 阅读收藏（无 id，按 title 合并 + 删除墓碑），避免跨设备整组互相覆盖
+                state.data.bookReadTombs = mergeTsMap(state.data.bookReadTombs, cloud.bookReadTombs);
+                state.data.bookRead = mergeBookRead(localById.bookRead, cloud.bookRead, state.data.bookReadTombs);
                 state.data.praiseGroups = mergeById(localById.praiseGroups, cloud.praiseGroups, mergedPurgedIds);
                 state.data.quoteGroups = mergeById(localById.quoteGroups, cloud.quoteGroups, mergedPurgedIds);
                 // 打卡项 / 回收站：墓碑合并，删除(含彻底删除)跨设备传播，不会复活
@@ -3330,9 +3711,35 @@ async function _syncFromCloudCore(force = false) {
                 ensureSeason();
                 recalcPoints();
                 recalcCourage();
+
+                // 积分/段位同步冲突解决：任一侧清零则两端统一归零（保留真实打卡记录）。
+                resolvePointsCalibOnSync(cloud, localClearedAt);
+
                 // 把同步时间戳推进到云端版本，避免后续轮询重复拉同一份数据
                 state.data.lastSyncAt = cloudUpdatedAt || state.data.lastSyncAt || now();
                 saveStateLocal();
+                // 悦己享瘦跨设备同步：只有云端数据确实比本地新，才接受并推回 iframe；
+                // 否则保留本地最新数据，避免把旧快照覆盖回 iframe 造成打卡被「取消」。
+                // 注意比较基准固定用「原始云端值 cloudYjxs」，不受整包合并方向影响。
+                let shouldPushYjxs = false;
+                if (cloudYjxsAt && (!localYjxsAt || cloudYjxsAt > localYjxsAt)) {
+                    state.data.yjxs = cloudYjxs;
+                    shouldPushYjxs = JSON.stringify(state.data.yjxs || {}) !== JSON.stringify(localYjxs);
+                } else if (localYjxsAt) {
+                    state.data.yjxs = localYjxs;
+                } else {
+                    // 双方都没有时间戳（首次同步或旧数据）：以云端为准，若不同则推回
+                    shouldPushYjxs = JSON.stringify(state.data.yjxs || {}) !== JSON.stringify(localYjxs);
+                }
+                if (shouldPushYjxs) {
+                    pushYjxsToIframe();
+                }
+                // 英语打卡合并保护（墓碑机制，见 ecMergeEngcheck 注释）：
+                // 取消完成→键级墓碑；清零→clearedAt/fsrsClearedAt 时间分界线；
+                // 对端新增的 tasks 键并入（手机打卡电脑端刷新也有），本地删过的键不并入。
+                // 第二个入参必须是「原始云端对象」，不能传整包合并后的 state.data.engcheck——
+                // 否则本机有未上传改动（本地优先合并）时云端的新背诵记录会被本地旧值屏蔽。
+                state.data.engcheck = ecMergeEngcheck(localEc, cloudPayload.engcheck, localEcAt, cloudEcAt);
                 const after = syncDataSnapshot(state.data);
                 if (before !== after) {
                     if (isUserTyping()) {
@@ -3415,38 +3822,64 @@ function pruneOldData() {
 }
 
 async function syncToCloud(forcePull = false) {
-    if (_syncLock || !state.supabase) return;
+    if (_syncLock || !state.supabase) {
+        // 正有同步在跑：记一笔「还需上传」，等锁释放后补传（否则切走瞬间可能什么都没传就结束）
+        if (state.supabase && state._unsynced) state._pendingUpload = true;
+        return;
+    }
     return withSyncLock(async () => {
         updateSyncStatus('syncing');
         try {
-            // 【关键修复】上传前先把云端最新数据拉下来合并，避免本机旧整包覆盖其他设备的新删除/新记录。
-            // forcePull=true 时无视 lastSyncAt 时间戳，强制拉取最新版。
-            await _syncFromCloudCore(forcePull);
-            // 乐观并发：合并期间若其它设备又写入了云端（updated_at 比本地更新），再合并一次，
-            // 避免把对方刚做的「删除 / 打卡」覆盖回去，导致「手机删了又被电脑同步回来」。
-            const { data: latest, error: le } = await state.supabase
-                .from('growtree_data').select('updated_at').eq('id', getSyncId()).single();
-            if (!le && latest && latest.updated_at) {
-                if (new Date(latest.updated_at).getTime() > (state.data.lastSyncAt || 0)) {
-                    await _syncFromCloudCore(false);
+            // 【关键修复 v20261026s】上传前合并的「数据方向」按本机是否有未上传改动决定：
+            // · 本机有未上传改动（刚打卡/刚写完/刚改配置）→ 本地优先：
+            //   云端只补本地没有的键，同键保留本地值。否则云端旧快照会把刚打的卡冲掉，
+            //   接着把冲掉后的状态上传，表现为「明明已完成，几秒后又变回未完成」。
+            // · 本机没有改动 → 维持云端优先，正常吸收其他设备的改动。
+            const localWins = localShouldWin();
+            await _syncFromCloudCore(forcePull, localWins);
+            // 乐观并发：合并期间若其它设备又写入云端，再合并一次，
+            // 避免把对方刚做的「删除 / 打卡」覆盖回去（手机删了又被电脑同步回来）。
+            // 本机有未上传改动时不走这一步——再拉一次只会有回滚风险。
+            if (!localWins) {
+                const { data: latest, error: le } = await state.supabase
+                    .from('growtree_data').select('updated_at').eq('id', getSyncId()).single();
+                if (!le && latest && latest.updated_at) {
+                    if (new Date(latest.updated_at).getTime() > (state.data.lastSyncAt || 0)) {
+                        await _syncFromCloudCore(false, false);
+                    }
                 }
             }
-            state.data.lastSyncAt = now();
-            // 将本次同步时间戳落盘，确保下次拉取时「云端是否更新」的判断准确，
-            // 避免因本地 lastSyncAt 永远为空而误把云端旧数据覆盖本地修改
-            saveStateLocal();
             // 云端主表只存必要数据：可重建缓存与已独立建表的灵感数据不写入，节省免费额度
             const { apiCache, hotCache, beautyInspirations, ...dataForCloud } = state.data;
             const payload = { ...dataForCloud, updatedAt: now() };
             const syncId = getSyncId();
             const { error } = await state.supabase.from('growtree_data').upsert({ id: syncId, payload, updated_at: now() });
             if (error) throw error;
+            // 【关键】上传成功后才推进 lastSyncAt 并落盘——避免「上传失败却误标已同步」
+            // 导致后续拉取跳过云端更新；同时清除「待同步」标记。
+            state.data.lastSyncAt = now();
+            saveStateLocal();
+            clearUnsynced();
             updateSyncStatus('online');
             reportSyncSuccess();
+            return true;
         } catch (e) {
             reportSyncError(e);
+            return false;
+        } finally {
+            // 上传结束后补一次拉取：此时本地数据已上云、待同步标记已清，
+            // 拉取走「云端优先 + 记录并集」，不会回滚，同时能把对端新增并进来。
+            schedulePullAfterPush();
         }
     });
+}
+
+// 上传完成后延迟拉取（不在锁内直接调用，避免自己等自己死锁）
+function schedulePullAfterPush() {
+    clearTimeout(state._pullTimer);
+    state._pullTimer = setTimeout(() => {
+        if (state.supabase && !state._unsynced && !_syncLock) syncFromCloud(false);
+    }, 1500);
 }
 
 function queueSync() {
@@ -3457,6 +3890,8 @@ function queueSync() {
         // 手动刷新按钮才用 forcePull=true。
         state.saveTimer = setTimeout(() => syncToCloud(false), 2000);
     }
+    // 标记本地有未上传改动（顶部状态显示「待同步」，直到本次改动成功传到云端）
+    markUnsynced();
 }
 
 function formatSyncTime() {
@@ -3478,13 +3913,15 @@ function isUserTyping() {
 
 function updateSyncStatus(status) {
     state.syncStatus = status;
+    // 本地有未上传改动时，即使上次同步成功也显示「待同步」，避免误导用户以为最新进度已存云端
+    const pending = !!(state._unsynced && status === 'online');
 
     const dot = document.getElementById('syncDot');
     const text = document.getElementById('syncText');
     if (dot && text) {
-        dot.className = 'sync-dot ' + status;
-        const map = { offline: '未连接云端', online: '已同步', syncing: '同步中...', error: '同步失败' };
-        text.textContent = map[status] || status;
+        dot.className = 'sync-dot ' + (pending ? 'pending' : status);
+        const map = { offline: '未连接云端', online: '已同步', syncing: '同步中...', error: '同步失败', pending: '待同步' };
+        text.textContent = pending ? '待同步' : (map[status] || status);
     }
 
     // 顶部明显徽章
@@ -3499,21 +3936,25 @@ function updateSyncStatus(status) {
             syncing: { cls: 'syncing', label: '同步中...' },
             error: { cls: 'error', label: '同步失败 · 点此重试' }
         };
-        const cfg = map2[status] || map2.offline;
+        let cfg = map2[status] || map2.offline;
+        if (pending) cfg = { cls: 'pending', label: '待同步 · 点同步上传' };
         badgeDot.className = 'cloud-status-dot ' + cfg.cls;
         badgeText.textContent = cfg.label;
         if (badge) {
-            badge.className = 'cloud-status-badge ' + status;
+            badge.className = 'cloud-status-badge ' + (pending ? 'pending' : status);
             // 失败时在徽章上悬停展示具体原因，并支持点击重试（符合"少弹窗、可自操作"偏好）
             if (status === 'error') {
                 badge.title = '同步失败：' + (state.lastCloudError || '未知原因') + '\n点击可立即重试';
+                badge.style.cursor = 'pointer';
+            } else if (pending) {
+                badge.title = '本地有改动尚未上传到云端，点此立即同步';
                 badge.style.cursor = 'pointer';
             } else {
                 badge.removeAttribute('title');
                 badge.style.cursor = '';
             }
             // 同步完成时给徽章一个轻微高亮，让用户在无 toast 时也能感知
-            if (status === 'online' && time) {
+            if (status === 'online' && time && !pending) {
                 badge.classList.add('just-synced');
                 setTimeout(() => badge.classList.remove('just-synced'), 800);
             }
@@ -3611,7 +4052,7 @@ function importDataFile(file) {
 
 // 清除所有应用数据（保留云端/个人设置，避免重新配置 Supabase）
 async function clearAllData() {
-    const ok = await uiConfirm('确定要清除所有应用数据吗？\n\n所有打卡、积分、心愿、喝水记录、夸夸记录等都会被清空，但云端配置（Supabase URL/Key/同步空间ID）会保留。', { isDanger: true });
+    const ok = await uiConfirm('确定要清除所有应用数据吗？\n\n所有打卡、积分、心愿、喝水记录、夸夸记录等都会被清空，但云端配置（Supabase URL/Key/同步空间ID）会保留。\n\n清除后会立即同步到云端；若你还有另一台设备在线，请在那台设备上也点一次清除，否则它可能把旧数据再传回来。', { isDanger: true });
     if (!ok) return;
     const preservedSettings = { ...state.settings };
     // 重置为初始数据结构，保留设置
@@ -3638,7 +4079,11 @@ async function clearAllData() {
         lastSyncAt: null,
         lastVisit: null,
         categories: null,
-        categoryOrder: null
+        categoryOrder: null,
+        // 清空分界线：云端/另一台设备早于此刻的记录在合并时会被丢弃
+        clearedAllAt: now(),
+        // 英语打卡用 clearedAt / fsrsClearedAt 作为自己的分界线，否则背诵数据会整组复活
+        engcheck: { clearedAt: Date.now(), fsrsClearedAt: Date.now(), updatedAt: now(), books: [], lessons: [], tasks: {}, tombs: {}, fsrs: {} }
     };
     state.supabase = null;
     state.syncStatus = 'offline';
@@ -3647,7 +4092,16 @@ async function clearAllData() {
     recalcPoints();
     recalcCourage();
     updateSeasonPeak();
+    // 【关键修复】清空后必须把「空数据」上传到云端，否则 reload 后一拉取，
+    // 云端旧快照就把所有数据原样搬回来了（用户感知：清了等于没清）。
+    markUnsynced();
     saveStateLocal();
+    try {
+        const okInit = await initSupabase(false);
+        if (okInit) await syncToCloud(false);
+    } catch (e) {
+        console.error('清空后同步云端失败', e);
+    }
     location.reload();
 }
 
@@ -3853,7 +4307,9 @@ function getRankStars() { return state.data.game ? (state.data.game.rankStars ||
 function getCourageCap() {
     const t = getTierInfo(getRankStars());
     const r = RANKS.find(x => x.key === t.rankKey);
-    return r ? r.cap : 60;
+    // 星能进度条至少以 100 为满格，确保任何段位都能攒满并自动 +1 星
+    // （修复低段位被钳在 cap<100 而"星能不更新"的问题）
+    return Math.max(COURAGE_STAR, r ? r.cap : 60);
 }
 
 // 游戏数据默认字段（幂等）
@@ -3861,11 +4317,23 @@ function ensureGameDefaults() {
     state.data.game = state.data.game || {};
     const g = state.data.game;
     g.rankStars = g.rankStars || 0;
-    g.accountedEarnedStars = (typeof g.accountedEarnedStars === 'number') ? g.accountedEarnedStars : Math.floor((state.data.points.earned || 0) / 100);
-    g.courage = g.courage || 0;
-    g.bonusStars = g.bonusStars || 0;
-    g.courageStars = g.courageStars || 0;
-    g.winStars = g.winStars || 0;
+    // 关键修复：accountedEarnedStars 只能由「当前实际段位」初始化，绝不能用历史 earned 追溯。
+    // 历史 earned 可能已被脏数据/重复成就奖励污染，若用它初始化会导致青铜直接飞升王者。
+    if (typeof g.accountedEarnedStars !== 'number') {
+        g.accountedEarnedStars = g.rankStars || 0;
+    }
+    // 兜底：accountedEarnedStars 必须始终等于 rankStars，任何偏差都会让 syncEarnedStars 重复加星。
+    if (g.accountedEarnedStars !== g.rankStars) {
+        g.accountedEarnedStars = g.rankStars || 0;
+    }
+    // 异常保险：若 accountedEarnedStars 被污染成远高于 rankStars，强制回退。
+    if (g.accountedEarnedStars > (g.rankStars || 0) + 200) {
+        g.accountedEarnedStars = g.rankStars || 0;
+    }
+    g.courage = parseFloat(g.courage) || 0;
+    g.bonusStars = parseInt(g.bonusStars) || 0;
+    g.courageStars = parseInt(g.courageStars) || 0;
+    g.winStars = parseInt(g.winStars) || 0;
     g.winAwarded = g.winAwarded || [];
     g.allFourDates = g.allFourDates || [];
     g.allFourCourageDates = g.allFourCourageDates || [];
@@ -3876,16 +4344,26 @@ function ensureGameDefaults() {
     g.seasonHistory = g.seasonHistory || [];
 }
 
-// 把「累计获得积分」的增量同步成星（1 星 = 100 积分），保持段位与积分挂钩但不因兑换下降
+// 把「本次新增积分」增量同步成星（1 星 = 100 积分）。
+// 关键修复：只处理"本次会话内新增的 earned"，绝不追补历史累计余额，
+// 避免被污染的超长历史流水（如 4w 分）一次性把段位拉到最强王者。
 function syncEarnedStars() {
     const g = state.data.game;
     if (!g) return;
+    const earned = state.data.points.earned || 0;
+    // 首次（或校准后）：以当前 earned 为基线，不追补历史，防止飞升
+    if (typeof g._lastSyncEarned !== 'number') g._lastSyncEarned = earned;
+    const delta = earned - g._lastSyncEarned;
+    if (delta <= 0) { g._lastSyncEarned = earned; return; }
+    const newStars = Math.floor(delta / 100);
+    if (newStars <= 0) { g._lastSyncEarned = earned; return; }
+    // 单次会话最多把 3 颗星从新增积分兑换成段位星，进一步防止异常流水飞升
+    const MAX_SYNC_STARS_PER_SESSION = 3;
+    const add = Math.min(newStars, MAX_SYNC_STARS_PER_SESSION);
     const beforeKey = getTierInfo(g.rankStars || 0).rankKey;
-    const es = Math.floor((state.data.points.earned || 0) / 100);
-    if (es > (g.accountedEarnedStars || 0)) {
-        g.rankStars = (g.rankStars || 0) + (es - g.accountedEarnedStars);
-        g.accountedEarnedStars = es;
-    }
+    g.rankStars = (g.rankStars || 0) + add;
+    g.accountedEarnedStars = (g.accountedEarnedStars || 0) + add;
+    g._lastSyncEarned = earned;
     const afterKey = getTierInfo(g.rankStars || 0).rankKey;
     if (beforeKey !== afterKey) {
         const rank = RANKS.find(r => r.key === afterKey) || {};
@@ -3913,7 +4391,7 @@ function addStars(n) {
     }
 }
 
-// 增加星能；满 100 自动加 1 颗星（受段位上限约束，低段位上限<100 不会触发）
+// 增加星能；满 100 自动加 1 颗星（进度条满格已统一为 100，任何段位都能攒满加星）
 function awardCourage(n) {
     const g = state.data.game;
     const cap = getCourageCap();
@@ -3970,17 +4448,18 @@ function recalcCourage() {
             activeAllFourDates.push(date);
         }
     });
-    // 已兑换成星的星能要从剩余值中扣除（星星不会回收）
-    total -= (g.courageStars || 0) * COURAGE_STAR;
-    // 若重算后剩余星能仍满 100，继续自动兑换成星（如赛季初/大量历史记录一次性结算）
-    while (total >= COURAGE_STAR) {
-        total -= COURAGE_STAR;
-        g.courageStars = (g.courageStars || 0) + 1;
-        g.bonusStars = (g.bonusStars || 0) + 1;
-        g.rankStars = (g.rankStars || 0) + 1;
+    // 本赛季星能 = 累计打卡换算；用「整除」得到已得星数，余数即当前进度。
+    // 不再用 lifetime courageStars 反减 total，修复「删除历史记录后星能恒为 0 / 不更新」的问题。
+    const earnedStars = Math.floor(total / COURAGE_STAR);
+    const remainder = total - earnedStars * COURAGE_STAR;
+    if (earnedStars > (g.courageStars || 0)) {
+        const add = earnedStars - (g.courageStars || 0);
+        g.courageStars = earnedStars;
+        g.bonusStars = (g.bonusStars || 0) + add;
+        g.rankStars = (g.rankStars || 0) + add;
         updateSeasonPeak();
     }
-    g.courage = Math.max(0, Math.min(cap, total));
+    g.courage = Math.max(0, Math.min(cap, remainder));
     g.allFourCourageDates = activeAllFourDates;
 }
 
@@ -4023,13 +4502,19 @@ function gameOnCheckIn(date) {
     if (date === todayD && !g.firstCheckInTime[todayD]) g.firstCheckInTime[todayD] = now();
 
     // 1) 每完成 1 项打卡 +5 星能
+    const cap = getCourageCap();
+    const beforeC = g.courage || 0;
     const gotStar = awardCourage(COURAGE_PER_ITEM);
+    if ((g.courage || 0) > beforeC && cap >= COURAGE_STAR) {
+        toast(`🌟 +${COURAGE_PER_ITEM} 星能 (${g.courage}/${cap})`);
+    }
 
     // 2) 全勤打卡：当天「基础打卡项」全部完成，额外 +10 星能（每天一次）
     if (isBasicModuleAllDone(todayD) && !g.allFourCourageDates.includes(todayD)) {
         g.allFourCourageDates.push(todayD);
         const s2 = awardCourage(COURAGE_ALL4_BONUS);
         if (s2) toast('🌟 星能满 100，白嫖 +1 星！');
+        else if ((g.courage || 0) < cap) toast(`🌟 +${COURAGE_ALL4_BONUS} 全勤星能`);
     }
     if (gotStar) toast('🌟 星能满 100，白嫖 +1 星！');
 
@@ -4092,9 +4577,29 @@ function buildAchvCtx() {
 
 function checkAchievements() {
     const g = state.data.game;
+    // 如果用户通过 repair.html 主动冻结成就（防止污染数据触发批量解锁），直接跳过。
+    if (g._achievementsFrozen) {
+        if (typeof log === 'function') log('checkAchievements: achievements frozen by repair tool, skip.');
+        return;
+    }
     const ctx = buildAchvCtx();
+    // 兼容旧数据：把布尔/字符串/数字等格式统一为对象 { unlocked: true }
+    for (const key of Object.keys(g.achievements || {})) {
+        const val = g.achievements[key];
+        if (val === true || val === 1 || val === 'unlocked' || (val && typeof val !== 'object')) {
+            g.achievements[key] = { unlocked: true, at: now() };
+        }
+    }
     for (const a of ACHIEVEMENTS) {
-        if (g.achievements[a.id] && g.achievements[a.id].unlocked) continue;
+        const achv = g.achievements[a.id];
+        // 已解锁标记即跳过
+        if (achv && (achv.unlocked === true || achv === true)) continue;
+        // 额外保险：若历史流水里已有该成就的奖励，强制标记为已解锁并跳过，防止重复发放
+        const alreadyRewarded = state.data.points.history.some(h => h.type === 'achv' && h.reason === `成就·${a.name}`);
+        if (alreadyRewarded) {
+            g.achievements[a.id] = { unlocked: true, at: now() };
+            continue;
+        }
         if (a.check(ctx)) {
             g.achievements[a.id] = { unlocked: true, at: now() };
             if (a.title && !g.titles.includes(a.title)) g.titles.push(a.title);
@@ -4102,6 +4607,7 @@ function checkAchievements() {
             toast(`🏆 解锁成就「${a.name}」+${a.reward} 积分`);
         }
     }
+    saveStateLocal();
 }
 
 // 赛季：依据当前月份得出赛季信息（冬季跨年）
@@ -4191,7 +4697,13 @@ function transitionSeason(cur) {
 function initGame() {
     ensureGameDefaults();
     recalcPoints();
-    syncEarnedStars();
+    // 段位基线：以当前 rankStars 为准，绝不用历史累计 earned 一次性重算段位星。
+    // 历史流水一旦被污染（如同步重复写入导致 4w 分），旧逻辑会把 rankStars 直接拉到最强王者。
+    // 现改为：段位只通过 syncEarnedStars 的"本次新增积分"增量温和增长，不再追补历史。
+    const g = state.data.game;
+    if (!g._pointsCalibrated) g._pointsCalibrated = APP_BUILD;
+    // 初始化同步基线，使首次加载不追补历史余额
+    if (typeof g._lastSyncEarned !== 'number') g._lastSyncEarned = state.data.points.earned || 0;
     const cur = getCurrentSeason();
     if (!state.data.game.season || state.data.game.season.id !== cur.id) {
         transitionSeason(cur);
@@ -4233,7 +4745,8 @@ function setCheckInState(item, date, done, double) {
             addPointsEntry({ checkInId: item.id, module: item.module, category: item.category, points: STREAK_BONUS[cycleStreak] * mult, type: 'streak', date, reason: `连续${streak}天` });
         }
     } else if (!done && existing) {
-        state.data.points.history = state.data.points.history.filter(h => !(h.checkInId === item.id && h.date === date && h.type !== 'makeup'));
+        // 只删除本次打卡产生的 base 与 streak 记录，保留每日完成度/成就/赛季等奖励
+        state.data.points.history = state.data.points.history.filter(h => !(h.checkInId === item.id && h.date === date && (h.type === 'base' || h.type === 'streak')));
     }
 }
 
@@ -4639,6 +5152,9 @@ function renderSidebar() {
 }
 
 function render() {
+    if (normalizeModules()) saveState();
+    // 记录本次渲染所属日期，用于「页面挂机过夜后自动重绘」（见 visibilitychange / 轮询）
+    state._renderDate = today();
     // 任何显式重绘都视为已"消费"掉后台轮询推迟的待渲染标记
     state._deferredRender = false;
     // 当前模块若被隐藏/不存在，回退到第一个可见模块，避免空白页
@@ -4656,14 +5172,51 @@ function render() {
     if (state.currentModule === 'home') loadHomeData();
     if (state.currentModule === 'hot') loadHotData();
     if (state.currentModule === 'beauty') loadBeautyData();
+    attachCheckinCalendarSwipe();
 }
 
-function subTabs(tabs, current, module) {
+function attachCheckinCalendarSwipe() {
+    // 为认真打卡日历绑定左右滑动手势（月份切换）
+    const grids = document.querySelectorAll('[data-cal-swipe]');
+    grids.forEach(grid => {
+        if (grid.dataset.swipeBound) return;
+        grid.dataset.swipeBound = '1';
+        let sx = null, sy = null, tracking = false;
+        grid.addEventListener('touchstart', e => {
+            const t = e.touches && e.touches[0];
+            if (!t) return;
+            sx = t.clientX; sy = t.clientY; tracking = true;
+        }, { passive: true });
+        grid.addEventListener('touchmove', e => {
+            if (!tracking || sx == null || sy == null) return;
+            const t = e.touches && e.touches[0];
+            if (!t) return;
+            const dx = t.clientX - sx, dy = t.clientY - sy;
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+                try { e.preventDefault(); } catch (err) {}
+            }
+        }, { passive: false });
+        grid.addEventListener('touchend', e => {
+            if (!tracking || sx == null) return;
+            tracking = false;
+            const t = e.changedTouches && e.changedTouches[0];
+            if (!t) { sx = null; sy = null; return; }
+            const dx = t.clientX - sx, dy = t.clientY - sy;
+            sx = null; sy = null;
+            if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) {
+                shiftCheckinMonth(dx < 0 ? 1 : -1);
+            }
+        }, { passive: true });
+    });
+}
+
+function subTabs(tabs, current, module, extraHTML) {
     return `
         <div class="tab-bar">
             ${tabs.map(t => `
                 <button class="tab-btn ${current === t.id ? 'active' : ''}" data-action="tab" data-module="${module}" data-tab="${t.id}">${t.icon || ''} ${t.name}</button>
             `).join('')}
+            ${extraHTML || ''}
         </div>
     `;
 }
@@ -4696,10 +5249,26 @@ function pointsSummaryCard() {
     `;
 }
 
+// 认真打卡日历当前查看月份（内存状态，不持久化；默认本月）
+function getCheckinMonth() {
+    if (!state._checkinMonth || typeof state._checkinMonth !== 'object' || state._checkinMonth.y == null) {
+        const now = new Date();
+        state._checkinMonth = { y: now.getFullYear(), m: now.getMonth() };
+    }
+    return state._checkinMonth;
+}
+function shiftCheckinMonth(delta) {
+    const cm = getCheckinMonth();
+    const d = new Date(cm.y, cm.m + delta, 1);
+    state._checkinMonth = { y: d.getFullYear(), m: d.getMonth() };
+    render();
+}
+
 // 打卡日历（紧凑）通用渲染 —— 纯内容版（外层卡片由调用方提供）
 function calendarBodyHTML() {
-    const year = new Date().getFullYear();
-    const month = new Date().getMonth();
+    const cm = getCheckinMonth();
+    const year = cm.y;
+    const month = cm.m;
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const days = [];
@@ -4712,8 +5281,12 @@ function calendarBodyHTML() {
     });
     const checkedDays = getCheckedDays();
     return `
-        <div class="accordion-hint">${year}年 ${month + 1}月 · 已打卡 <strong>${checkedDays}</strong> 天</div>
-        <div class="calendar calendar-compact">
+        <div class="calendar-nav" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <button class="btn btn-sm btn-secondary" data-action="checkin-month" data-delta="-1">‹</button>
+            <span style="font-weight:700;font-size:15px">${year}年 ${month + 1}月 · 已打卡 <strong>${checkedDays}</strong> 天</span>
+            <button class="btn btn-sm btn-secondary" data-action="checkin-month" data-delta="1">›</button>
+        </div>
+        <div class="calendar calendar-compact checkin-cal-swipe" data-cal-swipe>
             <div class="calendar-header">日</div>
             <div class="calendar-header">一</div>
             <div class="calendar-header">二</div>
@@ -4730,7 +5303,7 @@ function calendarBodyHTML() {
                 return `<div class="calendar-day ${isToday ? 'today' : ''} ${count > 0 ? 'checked' : ''}"><span class="cal-num">${d}</span><span class="cal-hearts">${hearts}</span></div>`;
             }).join('')}
         </div>
-        <div class="calendar-legend">💗 越多，代表今天打卡越积极（最多 5 颗）</div>
+        <div class="calendar-legend">💗 越多，代表今天打卡越积极（最多 5 颗）<br>可左右滑动或点击箭头切换月份</div>
     `;
 }
 
@@ -5255,9 +5828,23 @@ const moduleRenderers = {
         return `<div class="study-section-head">📖 阅读</div><div class="card tab-card">${subTabs(tabs, tab, 'study')}</div>${body}`;
     },
 
-    english() {
-        const tab = validSubTab('english', ENG_TABS, 'eng-home');
-        return `<div class="card tab-card">${subTabs(ENG_TABS, tab, 'english')}</div><div class="eng-page">${renderEnglishPage(tab)}</div>`;
+    engcheck() {
+        // v20261106t：旧「刷题」子标签升级后直接落在新「查漏补缺」页
+        if (state.currentSubTab.engcheck === 'ec-quiz') state.currentSubTab.engcheck = 'ec-wrong';
+        // 子标签顺序与显隐由用户在「⚙️ 子标签显示设置」弹窗里自定义（state.data.engcheck.tabCfg）
+        const tabs = ecTabCfgVisible();
+        // v20261106y：学习驾驶舱独立成「📊 总览」一页，四个学习页顶部只留一条紧凑状态条
+        const isHub = state.currentSubTab.engcheck === 'ec-hub';
+        const tab = isHub ? 'ec-hub' : validSubTab('engcheck', tabs, tabs[0].id);
+        const extra = `<button class="ec-tabcfg-btn" data-action="ec-tabcfg-open" title="子标签显示设置（隐藏 / 排序）">⚙️</button>`;
+        // 进入查漏补缺会话时整条状态栏都收起，保持沉浸
+        const top = state._wbSession ? '' : (isHub ? ecHeaderHTML() : ecMiniBarHTML());
+        const body = isHub ? ecHubPageHTML() : renderEngCheckPage(tab);
+        return `<div class="card tab-card">${ecMainTabsHTML(tabs, tab, extra)}</div><div class="ec-page">${top}${body}</div>`;
+    },
+
+    yjxs() {
+        return `<div class="yjxs-host"><iframe src="yuejixiangshou.html" title="悦己享瘦" loading="lazy" onload="pushYjxsToIframe()"></iframe></div>`;
     },
 
     hot() {
@@ -5382,45 +5969,35 @@ async function loadHomeData() {
     // 每日金句：改为用户自定义库，无需等待网络
     renderDailyQuote();
 
-    // 历史上的今天（数据源：维基百科 On This Day，比旧接口更准确）
+    // 历史上的今天（多源容错：中文 API 优先，英文 API 兜底，均失败则用本地生成事件）
     const historyEl = document.getElementById('historyToday');
     if (historyEl) {
         const cached = getCache('history_wiki', today(), 60);
         if (cached && cached.list) {
             renderHistory(cached.list);
         } else {
+            let list = null;
+            const d = new Date();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
             try {
-                const d = new Date();
-                const mm = String(d.getMonth() + 1).padStart(2, '0');
-                const dd = String(d.getDate()).padStart(2, '0');
-                const res = await fetch(`${API.history}/${mm}/${dd}`);
-                const data = await res.json();
-                const raw = Array.isArray(data.selected) ? data.selected : [];
-                const list = raw.map(it => {
-                    // 取第一个非“XX年”的关联页面作为详情链接
-                    const page = (it.pages || []).find(p => p.type === 'standard' && !/^\d+年$/.test(p.title || ''));
-                    const link = page?.content_urls?.desktop?.page || page?.content_urls?.mobile?.page || '';
-                    return {
-                        year: String(it.year),
-                        title: it.text,
-                        link: link,
-                        category: classifyHistory(it.text)
-                    };
-                });
-                setCache('history_wiki', today(), { list });
-                renderHistory(list);
-            } catch (e) {
-                // 8月13日 fallback：与维基百科保持一致
-                const fallback = [
-                    { year: '1961', title: '东德政府开始围绕西柏林建造柏林墙，封锁东西柏林交通往来。', category: 'international' },
-                    { year: '1937', title: '日本军队以上海租界和军舰为基地向上海中国守军发起攻击，淞沪会战爆发。', category: 'domestic' },
-                    { year: '1704', title: '西班牙王位继承战争期间，大同盟联军在布伦海姆战役中取得关键胜利。', category: 'international' },
-                    { year: '1553', title: '神学家米格尔·塞尔韦特在日内瓦参加布道会时遭到逮捕。', category: 'international' },
-                    { year: '1521', title: '埃尔南·科尔特斯攻陷阿兹特克首都特诺奇提特兰，皇帝夸乌特莫克投降。', category: 'international' }
-                ];
-                setCache('history_wiki', today(), { list: fallback });
-                renderHistory(fallback);
+                list = await fetchHistoryZh();
+            } catch (e) { console.log('中文历史 API 失败', e); }
+            if (!list || !list.length) {
+                try {
+                    list = await fetchHistoryWiki(mm, dd);
+                } catch (e) { console.log('维基历史 API 失败', e); }
             }
+            if (!list || !list.length) {
+                try {
+                    list = await fetchHistoryMuffin(mm, dd);
+                } catch (e) { console.log('英文历史 API 失败', e); }
+            }
+            if (!list || !list.length) {
+                list = buildHistoryFallback(mm, dd);
+            }
+            setCache('history_wiki', today(), { list });
+            renderHistory(list);
         }
     }
 }
@@ -5473,6 +6050,68 @@ function renderHistory(list) {
         ` : ''}
         ${holiday ? `<div class="history-holiday">🎂 今日纪念日：${holiday}</div>` : ''}
     `;
+}
+
+// 历史上的今天：多源抓取与兜底
+async function fetchWithTimeout(url, ms = 8000) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms);
+    try {
+        const res = await fetch(url, { signal: ctrl.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res;
+    } finally {
+        clearTimeout(t);
+    }
+}
+
+async function fetchHistoryZh() {
+    const res = await fetchWithTimeout(API.historyZh, 6000);
+    const text = await res.text();
+    const list = [];
+    const lines = text.split(/\n+/);
+    for (const line of lines) {
+        const m = line.match(/^\d+\s*[：:]\s*(\d{4})年\d{1,2}月\d{1,2}日\s*[-—]\s*(.+)$/);
+        if (m) {
+            list.push({ year: m[1], title: m[2].trim(), link: '', category: classifyHistory(m[2]) });
+        }
+    }
+    return list.slice(0, 12);
+}
+
+async function fetchHistoryWiki(mm, dd) {
+    const res = await fetchWithTimeout(`${API.history}/${mm}/${dd}`, 6000);
+    const data = await res.json();
+    const raw = Array.isArray(data.selected) ? data.selected : [];
+    return raw.map(it => {
+        const page = (it.pages || []).find(p => p.type === 'standard' && !/^\d+年$/.test(p.title || ''));
+        const link = page?.content_urls?.desktop?.page || page?.content_urls?.mobile?.page || '';
+        return { year: String(it.year), title: it.text, link, category: classifyHistory(it.text) };
+    }).slice(0, 12);
+}
+
+async function fetchHistoryMuffin(mm, dd) {
+    const res = await fetchWithTimeout(`${API.historyBackup}/${parseInt(mm, 10)}/${parseInt(dd, 10)}`, 8000);
+    const data = await res.json();
+    const raw = (data.data && data.data.Events) || [];
+    return raw.map(it => ({
+        year: String(it.year),
+        title: String(it.text || '').replace(/<[^>]+>/g, ''),
+        link: '',
+        category: classifyHistory(it.text)
+    })).slice(0, 12);
+}
+
+function buildHistoryFallback(mm, dd) {
+    const month = parseInt(mm, 10);
+    const day = parseInt(dd, 10);
+    return [
+        { year: '2020', title: `今天是 ${month} 月 ${day} 日，愿你今天也能创造属于自己的小历史。`, category: 'domestic' },
+        { year: '2019', title: '中国 5G 商用牌照正式发放，移动通信进入新纪元。', category: 'domestic' },
+        { year: '2008', title: '北京奥运会成功举办，向世界展示了中国的风采。', category: 'domestic' },
+        { year: '1978', title: '改革开放开启了中国发展的新篇章。', category: 'domestic' },
+        { year: '1969', title: '人类首次登上月球，阿姆斯特朗迈出历史性一步。', category: 'international' }
+    ];
 }
 
 function renderWater() {
@@ -5641,8 +6280,9 @@ function scheduleWeeklyBody() {
 }
 
 function scheduleMonthlyBody() {
-    const year = new Date().getFullYear();
-    const month = new Date().getMonth();
+    const cm = getCheckinMonth();
+    const year = cm.y;
+    const month = cm.m;
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const days = [];
@@ -5653,8 +6293,15 @@ function scheduleMonthlyBody() {
     const checkedDays = getCheckedDays();
     return `
         <div class="card">
-            <div class="card-header"><div class="card-title">🗓️ ${year}年${month + 1}月打卡</div><span style="font-size:13px;color:var(--text-secondary)">已打卡 ${checkedDays} 天</span></div>
-            <div class="calendar calendar-compact">
+            <div class="card-header">
+                <div style="display:flex;align-items:center;gap:8px">
+                    <button class="btn btn-sm btn-secondary" data-action="checkin-month" data-delta="-1">‹</button>
+                    <div class="card-title">🗓️ ${year}年${month + 1}月打卡</div>
+                    <button class="btn btn-sm btn-secondary" data-action="checkin-month" data-delta="1">›</button>
+                </div>
+                <span style="font-size:13px;color:var(--text-secondary)">已打卡 ${checkedDays} 天</span>
+            </div>
+            <div class="calendar calendar-compact checkin-cal-swipe" data-cal-swipe>
                 <div class="calendar-header">日</div><div class="calendar-header">一</div><div class="calendar-header">二</div><div class="calendar-header">三</div><div class="calendar-header">四</div><div class="calendar-header">五</div><div class="calendar-header">六</div>
                 ${days.map(d => {
                     if (!d) return '<div class="calendar-day empty"></div>';
@@ -5665,7 +6312,7 @@ function scheduleMonthlyBody() {
                     return `<div class="calendar-day ${isToday ? 'today' : ''} ${count > 0 ? 'checked' : ''}"><span class="cal-num">${d}</span><span class="cal-hearts">${hearts}</span></div>`;
                 }).join('')}
             </div>
-            <div class="calendar-legend">💗 越多，代表今天打卡越积极（最多 5 颗）</div>
+            <div class="calendar-legend">💗 越多，代表今天打卡越积极（最多 5 颗）<br>可左右滑动或点击箭头切换月份</div>
         </div>
     `;
 }
@@ -6200,6 +6847,8 @@ function isBookRead(title) {
 function markBookRead(book) {
     if (!Array.isArray(state.data.bookRead)) state.data.bookRead = [];
     if (state.data.bookRead.some(b => b.title === book.title)) { render(); return; }
+    // 重新收藏时清掉删除墓碑，否则下一次合并会被墓碑再删一遍
+    if (state.data.bookReadTombs && state.data.bookReadTombs[book.title]) delete state.data.bookReadTombs[book.title];
     state.data.bookRead.unshift({
         title: book.title,
         author: book.author || '',
@@ -6218,6 +6867,9 @@ function unmarkBookRead(book) {
     const idx = state.data.bookRead.findIndex(b => b.title === book.title);
     if (idx < 0) { render(); return; }
     state.data.bookRead.splice(idx, 1);
+    // 删除墓碑：否则另一台设备的旧快照会在下次合并时把这本书加回来
+    state.data.bookReadTombs = state.data.bookReadTombs || {};
+    state.data.bookReadTombs[book.title] = Date.now();
     saveState(); render();
     toast('已移出收藏书屋');
 }
@@ -6339,1871 +6991,6 @@ function renderBookShelf() {
 
 
 
-// ==================== 探索英语（英语游乐场 · 一级模块） ====================
-// 说明：本模块完全独立，localStorage 键统一 engPlay_ 前缀，CSS 类统一 eng- 前缀，
-// 不与任何现有模块共享数据/样式/事件，不影响其他板块功能。
-
-const ENG_TABS = [
-    { id: 'eng-home', name: '首页', icon: '🏠' },
-    { id: 'eng-achievement', name: '成就', icon: '🏆' },
-    { id: 'eng-history', name: '历史', icon: '📜' },
-    { id: 'eng-thought', name: '感悟', icon: '💬' },
-    { id: 'eng-more', name: '更多', icon: '📖' }
-];
-
-// ---------- 等级符号系统 ----------
-function engGetLevelSymbols(level) {
-    if (level <= 0) return '⚓';
-    let galaxyCount = 0;
-    let remaining = level;
-    if (level >= 500) {
-        galaxyCount = Math.floor((level - 500) / 500) + 1;
-        remaining = level - galaxyCount * 500;
-        if (remaining < 0) { remaining = level; galaxyCount = 0; }
-    }
-    const symbols = [];
-    for (let i = 0; i < galaxyCount; i++) symbols.push('🌌');
-    const tiers = [
-        { symbol: '🌍', value: 256 },
-        { symbol: '🌊', value: 64 },
-        { symbol: '⛵', value: 16 },
-        { symbol: '🧭', value: 4 },
-        { symbol: '⚓', value: 1 }
-    ];
-    for (const tier of tiers) {
-        const count = Math.floor(remaining / tier.value);
-        remaining = remaining % tier.value;
-        for (let i = 0; i < count; i++) symbols.push(tier.symbol);
-    }
-    if (symbols.length === 0) symbols.push('⚓');
-    return symbols.join(' ');
-}
-
-function engGetLevel(s) {
-    return Math.min(Math.floor(s / 10) + 1, 1999);
-}
-
-function engGetScore() {
-    return parseInt(localStorage.getItem('engPlay_score')) || 0;
-}
-function engSetScore(v) {
-    localStorage.setItem('engPlay_score', String(v));
-}
-
-// ---------- 月度成就（键：engPlay_month） ----------
-function engMonthKey() {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-function engGetMonthData() {
-    let data = {};
-    try { data = JSON.parse(localStorage.getItem('engPlay_month')) || {}; } catch (e) { data = {}; }
-    const key = engMonthKey();
-    if (!data[key]) data[key] = { searches: 0, copies: 0, words: 0, score: 0, unlocked: [] };
-    return data[key];
-}
-function engSaveMonthData(md) {
-    let data = {};
-    try { data = JSON.parse(localStorage.getItem('engPlay_month')) || {}; } catch (e) { data = {}; }
-    data[engMonthKey()] = md;
-    localStorage.setItem('engPlay_month', JSON.stringify(data));
-}
-function engHistoricalMonths() {
-    let data = {};
-    try { data = JSON.parse(localStorage.getItem('engPlay_month')) || {}; } catch (e) { data = {}; }
-    const months = Object.keys(data).filter(k => k !== engMonthKey());
-    const allUnlocked = {};
-    months.forEach(m => {
-        if (data[m] && Array.isArray(data[m].unlocked)) {
-            data[m].unlocked.forEach(id => {
-                if (!allUnlocked[id]) allUnlocked[id] = [];
-                allUnlocked[id].push(m);
-            });
-        }
-    });
-    return allUnlocked;
-}
-
-// ---------- 今日数据（键：engPlay_today） ----------
-function engTodayKey() {
-    return new Date().toLocaleDateString('zh-CN');
-}
-function engGetTodayStats() {
-    let stats = {};
-    try { stats = JSON.parse(localStorage.getItem('engPlay_today')) || {}; } catch (e) { stats = {}; }
-    if (stats.date !== engTodayKey()) {
-        stats = { date: engTodayKey(), searches: 0, copies: 0, words: 0, score: 0 };
-    }
-    return stats;
-}
-function engSaveTodayStats(stats) {
-    stats.date = engTodayKey();
-    localStorage.setItem('engPlay_today', JSON.stringify(stats));
-}
-
-// ---------- 正反馈 + 等级 ----------
-function engUpdateScore(amount) {
-    const score = engGetScore();
-    const oldLv = engGetLevel(score);
-    const ns = score + amount;
-    engSetScore(ns);
-    const monthData = engGetMonthData();
-    monthData.score += amount;
-    engSaveMonthData(monthData);
-    const todayStats = engGetTodayStats();
-    todayStats.score += amount;
-    engSaveTodayStats(todayStats);
-    const newLv = engGetLevel(ns);
-    if (newLv > oldLv) {
-        engToast(`⬆️ Lv.${newLv} 升级！`);
-    }
-    engToast(`+${amount} 正反馈 ⭐`);
-    engUpdateAchievements();
-}
-
-function engToast(msg) {
-    if (typeof toast === 'function') { toast(msg); return; }
-    try { alert(msg); } catch (e) {}
-}
-
-// ---------- 抄写工坊 ----------
-function engGetCopyCount() {
-    return parseInt(localStorage.getItem('engPlay_copyCount')) || 0;
-}
-function engSetCopyCount(v) {
-    localStorage.setItem('engPlay_copyCount', String(v));
-}
-
-function engGetHistory(kind) {
-    let arr = [];
-    try { arr = JSON.parse(localStorage.getItem('engPlay_' + kind)) || []; } catch (e) { arr = []; }
-    return Array.isArray(arr) ? arr : [];
-}
-function engAddHistory(kind, item, maxLen) {
-    const arr = engGetHistory(kind);
-    arr.unshift(item);
-    const m = maxLen || 50;
-    const trimmed = arr.slice(0, m);
-    localStorage.setItem('engPlay_' + kind, JSON.stringify(trimmed));
-}
-
-// ---------- 翻译引擎（百度 API + CORS 代理 + 兜底） ----------
-function engGetBaiduCreds() {
-    let appid = '', secret = '', apiKeys = '';
-    try {
-        appid = localStorage.getItem('engPlay_baiduAppid') || '';
-        secret = localStorage.getItem('engPlay_baiduKey') || '';
-        apiKeys = localStorage.getItem('engPlay_apiKeys') || '';
-    } catch (e) {}
-    return { appid, secret, apiKeys };
-}
-
-// 浏览器直连百度接口会跨域，统一走 CORS 代理重试（每个代理 5s 超时，绝不挂死）
-async function engFetchBaidu(appid, key, zh) {
-    const salt = Date.now();
-    const sign = engMd5(appid + zh + salt + key);
-    const base = `https://api.fanyi.baidu.com/api/trans/vip/translate?q=${encodeURIComponent(zh)}&from=zh&to=en&appid=${appid}&salt=${salt}&sign=${sign}`;
-    const proxies = [
-        u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-        u => `https://cors-anywhere.herokuapp.com/${u}`
-    ];
-    const fetchWithTimeout = (u, opt) => Promise.race([
-        fetch(u, opt),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-    ]);
-    for (const wrap of proxies) {
-        try {
-            const res = await fetchWithTimeout(wrap(base), { mode: 'cors' });
-            if (!res.ok) continue;
-            const data = await res.json();
-            if (data && data.trans_result && data.trans_result.length > 0) {
-                return data.trans_result[0].dst;
-            }
-            // 返回了 JSON 但有 error_code，说明密钥/参数不对，立即返回错误信息
-            if (data && data.error_code) {
-                return `[百度错误:${data.error_code}] ${data.error_msg || ''}`;
-            }
-        } catch (e) { continue; }
-    }
-    return null;
-}
-
-function engMockTranslate(zh) {
-    const result = engMockTranslateInner(zh);
-    if (!result) return null;
-    // 纯净度校验：翻译结果里若仍含中文，按"无本地翻译"返回 null，避免 'I tomorrow 要去...' 这种中英混杂伪结果
-    if (/[\u4e00-\u9fa5]/.test(result)) return null;
-    return result;
-}
-
-function engMockTranslateInner(zh) {
-    const dict = {
-        // 日常寒暄
-        '你好': 'Hello.', '谢谢': 'Thank you.', '再见': 'Goodbye.', '我爱你': 'I love you.',
-        '晚安': 'Good night.', '早上好': 'Good morning.', '下午好': 'Good afternoon.',
-        '晚上好': 'Good evening.', '对不起': 'I\'m sorry.', '没关系': 'It\'s okay.',
-        '等一下': 'Wait a moment.', '好的': 'Okay.', '是的': 'Yes.', '不是': 'No.',
-        '也许': 'Maybe.', '当然': 'Of course.', '真的吗': 'Really?', '太好了': 'That\'s great.',
-        '我不知道': 'I don\'t know.', '我明白了': 'I understand.',
-        '请再说一遍': 'Please say that again.', '你能说慢一点吗': 'Can you speak slower?',
-        '我喜欢这个': 'I like this.', '我不喜欢': 'I don\'t like it.', '太棒了': 'Awesome.',
-        '加油': 'Keep going.', '相信自己': 'Believe in yourself.',
-        '很高兴认识你': 'Nice to meet you.', '你能帮我吗': 'Can you help me?',
-        '这个多少钱': 'How much is this?', '今天吃什么': 'What to eat today?',
-        '慢慢来': 'Take it easy.', '每一天都是新的开始': 'Every day is a new beginning.',
-        // 天气 / 状态
-        '今天天气真好': 'The weather is nice today.', '我饿了': 'I\'m hungry.',
-        '我渴了': 'I\'m thirsty.', '我累了': 'I\'m tired.', '我很开心': 'I am very happy.',
-        '我很忙': 'I am very busy.', '今天下雨了': 'It is raining today.',
-        '今天好热': 'It is so hot today.', '今天好冷': 'It is so cold today.',
-        // 出行 / 旅游
-        '我想去旅行': 'I want to travel.', '我下周要去上海出差': 'I am going to Shanghai on a business trip next week.',
-        '我要坐地铁去上班': 'I take the subway to work.', '我每天开车上班': 'I drive to work every day.',
-        '我打车去机场': 'I take a taxi to the airport.', '我准备去爬山': 'I am going to climb a mountain.',
-        '上个月我和朋友去爬山了': 'Last month I went mountain climbing with a friend.',
-        '我们昨天去了公园': 'We went to the park yesterday.',
-        '我们一家去年去了北京': 'My family and I went to Beijing last year.',
-        '我周末喜欢去图书馆': 'I like going to the library on weekends.',
-        // 工作 / 学习
-        '我今天下班后要拿很多快递': 'I have to get a lot of express delivery after work today.',
-        '我明天要开会': 'I have a meeting tomorrow.', '我今晚要加班': 'I have to work overtime tonight.',
-        '我在学习英语': 'I am learning English.', '我在背单词': 'I am memorizing vocabulary.',
-        '我要准备考试': 'I am preparing for an exam.', '我在看英语视频': 'I am watching an English video.',
-        '我今天学了一个小时英语': 'I studied English for one hour today.',
-        '他每天早晨喝咖啡': 'He drinks coffee every morning.', '她正在看书': 'She is reading a book.',
-        // 吃饭 / 食物
-        '我今天想吃好吃的': 'I want something delicious today.',
-        '我去吃泰式火锅了 好好吃 在昨天': 'I went to eat a Thai hotpot. It was delicious yesterday.',
-        '我下周想请几个朋友来家里吃烤肉': 'I want to have some friends over for BBQ at my place next week.',
-        '昨天我和我老公去吃好吃的火锅了': 'Yesterday, my husband and I went to eat a delicious hot pot.',
-        '我昨天吃了一个很好吃的零食': 'I had a delicious snack yesterday.',
-        '我想喝咖啡': 'I want to drink coffee.', '我们出去吃晚饭吧': 'Let\'s go out for dinner.',
-        '我做了早饭': 'I made breakfast.',
-        // 家庭 / 生活
-        '小明和奶奶今天出去玩了 看了电影': 'Xiaoming and grandma went out to play and watched a movie today.',
-        '我和小狗跑步': 'I run and play with my puppy.',
-        '我要去买菜': 'I am going to buy groceries.', '我在打扫房间': 'I am cleaning the room.',
-        '晚上我陪孩子写作业': 'I help my child with homework in the evening.',
-        // 常用提问
-        '你叫什么名字': 'What\'s your name?', '你来自哪里': 'Where are you from?',
-        '你做什么工作': 'What do you do for a living?', '你周末做什么': 'What do you do on weekends?',
-        '为什么我总是三分钟热度': 'Why do I always lose interest quickly?',
-        '如何养成习惯': 'How to build a habit?', '心流是什么': 'What is flow state?',
-        '为什么拖延': 'Why do we procrastinate?', '怎么提高英语口语': 'How to improve spoken English?',
-        '如何坚持看英语': 'How to stick to English?'
-    };
-    if (dict[zh]) return dict[zh];
-    // 包含匹配（从长到短，避免误配）
-    const keys = Object.keys(dict).sort((a, b) => b.length - a.length);
-    for (const key of keys) {
-        if (key.length >= 3 && zh.includes(key)) return dict[key];
-    }
-    // 通用疑问句模板（不产生乱码，返回 null 表示"无本地匹配，走联网"）
-    const t = zh.replace(/[，。！？、\s]+/g, '').trim();
-    if (/^如何/.test(t)) return `How to ${t.replace(/^如何/, '').trim()}?`;
-    if (/^怎么/.test(t)) return `How to ${t.replace(/^怎么/, '').trim()}?`;
-    if (/^为什么/.test(t)) return `Why ${t.replace(/^为什么/, '').trim()}?`;
-    if (/^什么是/.test(t)) return `What is ${t.replace(/^什么是/, '').trim()}?`;
-    if (/^什么/.test(t) && !t.includes('是')) return `What ${t.replace(/^什么/, '').trim()}?`;
-    // 简单主谓结构兜底：我/你/他/她/我们/他们 + 动词（去掉标点空格后匹配，至少匹配到常用动词才输出）
-    const subjMap = { '我': 'I', '你': 'you', '他': 'he', '她': 'she', '我们': 'we', '他们': 'they', '你们': 'you' };
-    const verbMap = { '要': 'am going to', '想': 'want to', '会': 'will', '可以': 'can', '能': 'can', '喜欢': 'like', '去': 'go to', '来': 'come to', '吃': 'eat', '喝': 'drink', '看': 'watch', '是': 'am', '有': 'have', '在': 'am at', '明天': 'tomorrow', '今天': 'today', '今晚': 'tonight', '昨天': 'yesterday' };
-    for (const [zhS, enS] of Object.entries(subjMap)) {
-        if (t.startsWith(zhS)) {
-            const rest = t.slice(zhS.length);
-            // 截取前 5 个"字"找首个动词
-            const verb = Object.keys(verbMap).find(v => rest.startsWith(v));
-            if (verb) {
-                const after = rest.slice(verb.length);
-                return `${enS} ${verbMap[verb]}${after ? ' ' + after : ''}.`;
-            }
-            // 没匹配到动词：返回 null，让上层显示提示（不再输出 'I rest' 这种半翻译伪结果）
-            return null;
-        }
-    }
-    return null; // 无匹配：交由上层显示"翻译暂不可用"，绝不输出 [Translation] 假结果
-}
-
-// 带超时与多 CORS 代理的通用 GET JSON 工具
-async function engFetchWithProxies(url, extractor, timeoutMs) {
-    const proxies = [
-        u => u, // 直连
-        u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-        u => `https://cors-anywhere.herokuapp.com/${u}`
-    ];
-    const to = timeoutMs || 6000;
-    const fetchWithTimeout = (u) => Promise.race([
-        fetch(u, { mode: 'cors' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), to))
-    ]);
-    for (const wrap of proxies) {
-        try {
-            const res = await fetchWithTimeout(wrap(url));
-            if (!res.ok) continue;
-            const text = await res.text();
-            let data = null;
-            try { data = JSON.parse(text); } catch (e) { continue; }
-            const t = extractor(data);
-            if (t && String(t).trim() && !/^\[Translation\]/.test(String(t))) {
-                return String(t).trim();
-            }
-        } catch (e) { continue; }
-    }
-    return null;
-}
-
-async function engTranslateAPI(zh) {
-    // 全程 20s 总超时（Promise.race 不取消挂起的 fetch，但保证有兜底结果）
-    const overallRace = new Promise(resolve => setTimeout(() => resolve('__TIMEOUT__'), 20000));
-    const work = (async () => {
-        // 第1层：MyMemory（免费、无需 key、无需翻墙，国内可访问）
-        const myMemoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(zh)}&langpair=zh|en&de=demo@example.com`;
-        const r1 = await engFetchWithProxies(myMemoryUrl, d => d && d.responseData && d.responseData.translatedText, 6000);
-        if (r1 && engIsGoodTranslation(r1, zh)) return r1;
-        // 第2层：Google Translate（走 CORS 代理，免 key）
-        const g = await engFetchGoogle(zh);
-        if (g && engIsGoodTranslation(g, zh)) return g;
-        // 第3层：百度翻译 API（用户配了 key 时最准）
-        const { appid, secret, apiKeys } = engGetBaiduCreds();
-        if (appid && secret) {
-            const r = await engFetchBaidu(appid, secret, zh);
-            if (r && !String(r).startsWith('[') && !String(r).startsWith('（')) return r;
-        }
-        // 第4层：API Keys（OpenAI 兼容接口，可填国内镜像如 deepseek）
-        if (apiKeys) {
-            const parts = apiKeys.split('|');
-            const key = parts[0].trim();
-            const baseUrl = parts.length >= 3 ? parts[2].trim() : (parts[1] && parts[1].startsWith('http') ? parts[1].trim() : 'https://api.openai.com/v1');
-            const rk = await engFetchOpenAICompat(key, baseUrl, zh);
-            if (rk) return rk;
-        }
-        // 第5层：LibreTranslate 公共实例（免费、无需 key，但常被 Cloudflare 拦截）
-        const lt = await engFetchLibreTranslate(zh);
-        if (lt && engIsGoodTranslation(lt, zh)) return lt;
-        // 第6层：内置词典 / 模板
-        const mock = engMockTranslate(zh);
-        if (mock) return mock;
-        return null;
-    })();
-    const r = await Promise.race([work, overallRace]);
-    if (r === '__TIMEOUT__') {
-        const mock = engMockTranslate(zh);
-        if (mock) return mock;
-        return '（翻译暂不可用：网络受限（已等待 20s），可到「更多→翻译API设置」填百度/聚合 key）';
-    }
-    if (!r) {
-        const mock = engMockTranslate(zh);
-        if (mock) return mock;
-        return '（翻译暂不可用：网络受限或未配置翻译API，可到「更多→翻译API设置」填写）';
-    }
-    return r;
-}
-
-// 简单校验翻译结果不是残缺的伪翻译
-function engIsGoodTranslation(en, zh) {
-    if (!en || typeof en !== 'string') return false;
-    const s = en.trim();
-    if (!s) return false;
-    if (s === zh.trim()) return false;
-    if (/\(local\)|\[Translation\]|MYMEMORY/i.test(s)) return false;
-    // 英文翻译至少应包含一些拉丁字符
-    return /[a-zA-Z]/.test(s);
-}
-
-// LibreTranslate 公共实例（POST JSON）
-async function engFetchLibreTranslate(zh) {
-    const base = 'https://libretranslate.com/translate';
-    const proxies = [
-        u => u,
-        u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    ];
-    const fetchWithTimeout = (u, opts) => Promise.race([
-        fetch(u, opts),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000))
-    ]);
-    for (const wrap of proxies) {
-        try {
-            const res = await fetchWithTimeout(wrap(base), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ q: zh, source: 'zh', target: 'en', format: 'text' })
-            });
-            if (!res.ok) continue;
-            const d = await res.json();
-            if (d && d.translatedText) return d.translatedText;
-        } catch (e) { continue; }
-    }
-    return null;
-}
-
-// Google Translate 走 CORS 代理（免 key，国内质量最稳）——通用方向版
-async function engFetchGoogleText(text, sl, tl) {
-    const base = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`;
-    const proxies = [
-        u => u,
-        u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-    ];
-    // 翻译源长度估算"合理翻译"长度下限（中文→英文通常相近），避免返回 'I' 这种残缺只匹配一两个词的伪翻译
-    const srcLen = (text || '').replace(/\s+/g, '').length;
-    const minOkLen = Math.max(2, Math.floor(srcLen * 0.35));
-    const fetchWithTimeout = (u) => Promise.race([
-        fetch(u, { method: 'GET' }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-    ]);
-    for (const wrap of proxies) {
-        try {
-            const res = await fetchWithTimeout(wrap(base));
-            if (!res.ok) continue;
-            const body = await res.text();
-            // 防御：必须以 [ 开头（Google 响应特征），避免匹配到错误页 HTML
-            if (!body || body[0] !== '[') continue;
-            // Google 返回格式: [[[["翻译","原文",...]],null,...]
-            const m = body.match(/\[\[\[\s*["']([^"']+)["']/);
-            if (m && m[1] && m[1].trim()) {
-                const got = m[1].trim();
-                // 合理性校验：去掉标点空白后字符数 < 原文 35% 视为残缺（实际是只匹配到几个字母）
-                if (got.replace(/[\s,.'"!?\-]/g, '').length >= minOkLen) return got;
-            }
-        } catch (e) { continue; }
-    }
-    return null;
-}
-
-// 英文成分 → 中文（查表加速，查不到就用 Google 英译中兜底，保证不出现英文）
-const engZhCache = {};
-async function engPhraseToZh(phrase) {
-    const key = String(phrase || '').toLowerCase().trim();
-    if (!key || key === '—') return '—';
-    // 缓存命中
-    if (engZhCache[key]) return engZhCache[key];
-    // 1) 查表（快路径）
-    const t = engTranslateToChinese(phrase);
-    if (t && t !== phrase && !/[a-zA-Z]{2,}/.test(t)) {
-        engZhCache[key] = t;
-        return t;
-    }
-    // 2) Google 英→中 兜底（不维护词表也能翻）
-    try {
-        const g = await engFetchGoogleText(key, 'en', 'zh-CN');
-        if (g && g.trim() && !/^[a-zA-Z\s,.'"!?]+$/.test(g.trim()) && !g.trim().toLowerCase().includes(key.toLowerCase())) {
-            engZhCache[key] = g.trim();
-            return g.trim();
-        }
-        if (g && g.trim() && /[\u4e00-\u9fa5]/.test(g.trim())) {
-            engZhCache[key] = g.trim();
-            return g.trim();
-        }
-    } catch (e) {}
-    // 3) 翻不出就显示 —（绝不回显英文）
-    engZhCache[key] = '—';
-    return '—';
-}
-
-// Google 中→英（抄写工坊主翻译链用）
-async function engFetchGoogle(zh) {
-    return engFetchGoogleText(zh, 'zh-CN', 'en');
-}
-
-// OpenAI 兼容接口翻译（用 API Keys 直接 POST /chat/completions）
-async function engFetchOpenAICompat(key, baseUrl, zh) {
-    const url = baseUrl.replace(/\/+$/, '') + '/chat/completions';
-    const body = {
-        model: 'gpt-3.5-turbo',
-        messages: [
-            { role: 'system', content: 'You are a translator. Translate the user\'s Chinese into natural, accurate English. Output ONLY the English translation, nothing else.' },
-            { role: 'user', content: zh }
-        ],
-        temperature: 0.3
-    };
-    const timeout = 8000;
-    const fetchWithTimeout = (u, opt) => Promise.race([
-        fetch(u, opt),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
-    ]);
-    try {
-        const res = await fetchWithTimeout(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + key
-            },
-            body: JSON.stringify(body)
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-        if (text && text.trim()) return text.trim();
-    } catch (e) { /* 忽略，继续下一层 */ }
-    return null;
-}
-
-// ---------- MD5（百度签名） ----------
-function engMd5(string) {
-    function md5cycle(x, k) {
-        var a = x[0], b = x[1], c = x[2], d = x[3];
-        a = ff(a, b, c, d, k[0], 7, -680876936);
-        d = ff(d, a, b, c, k[1], 12, -389564586);
-        c = ff(c, d, a, b, k[2], 17, 606105819);
-        b = ff(b, c, d, a, k[3], 22, -1044525330);
-        a = ff(a, b, c, d, k[4], 7, -176418897);
-        d = ff(d, a, b, c, k[5], 12, 1200080426);
-        c = ff(c, d, a, b, k[6], 17, -1473231341);
-        b = ff(b, c, d, a, k[7], 22, -45705983);
-        a = ff(a, b, c, d, k[8], 7, 1770035416);
-        d = ff(d, a, b, c, k[9], 12, -1958414417);
-        c = ff(c, d, a, b, k[10], 17, -42063);
-        b = ff(b, c, d, a, k[11], 22, -1990404162);
-        a = ff(a, b, c, d, k[12], 7, 1804603682);
-        d = ff(d, a, b, c, k[13], 12, -40341101);
-        c = ff(c, d, a, b, k[14], 17, -1502002290);
-        b = ff(b, c, d, a, k[15], 22, 1236535329);
-        a = gg(a, b, c, d, k[1], 5, -165796510);
-        d = gg(d, a, b, c, k[6], 9, -1069501632);
-        c = gg(c, d, a, b, k[11], 14, 643717713);
-        b = gg(b, c, d, a, k[0], 20, -373897302);
-        a = gg(a, b, c, d, k[5], 5, -701558691);
-        d = gg(d, a, b, c, k[10], 9, 38016083);
-        c = gg(c, d, a, b, k[15], 14, -660478335);
-        b = gg(b, c, d, a, k[4], 20, -405537848);
-        a = gg(a, b, c, d, k[9], 5, 568446438);
-        d = gg(d, a, b, c, k[14], 9, -1019803690);
-        c = gg(c, d, a, b, k[3], 14, -187363961);
-        b = gg(b, c, d, a, k[8], 20, 1163531501);
-        a = gg(a, b, c, d, k[13], 5, -1444681467);
-        d = gg(d, a, b, c, k[2], 9, -51403784);
-        c = gg(c, d, a, b, k[7], 14, 1735328473);
-        b = gg(b, c, d, a, k[12], 20, -1926607734);
-        a = hh(a, b, c, d, k[5], 4, -378558);
-        d = hh(d, a, b, c, k[8], 11, -2022574463);
-        c = hh(c, d, a, b, k[11], 16, 1839030562);
-        b = hh(b, c, d, a, k[14], 23, -35309556);
-        a = hh(a, b, c, d, k[1], 4, -1530992060);
-        d = hh(d, a, b, c, k[4], 11, 1272893353);
-        c = hh(c, d, a, b, k[7], 16, -155497632);
-        b = hh(b, c, d, a, k[10], 23, -1094730640);
-        a = hh(a, b, c, d, k[13], 4, 681279174);
-        d = hh(d, a, b, c, k[0], 11, -358537222);
-        c = hh(c, d, a, b, k[3], 16, -722521979);
-        b = hh(b, c, d, a, k[6], 23, 76029189);
-        a = hh(a, b, c, d, k[9], 4, -640364487);
-        d = hh(d, a, b, c, k[12], 11, -421815835);
-        c = hh(c, d, a, b, k[15], 16, 530742520);
-        b = hh(b, c, d, a, k[2], 23, -995338651);
-        a = ii(a, b, c, d, k[0], 6, -198630844);
-        d = ii(d, a, b, c, k[7], 10, 1126891415);
-        c = ii(c, d, a, b, k[14], 15, -1416354905);
-        b = ii(b, c, d, a, k[5], 21, -57434055);
-        a = ii(a, b, c, d, k[12], 6, 1700485571);
-        d = ii(d, a, b, c, k[3], 10, -1894986606);
-        c = ii(c, d, a, b, k[10], 15, -1051523);
-        b = ii(b, c, d, a, k[1], 21, -2054922799);
-        a = ii(a, b, c, d, k[8], 6, 1873313359);
-        d = ii(d, a, b, c, k[15], 10, -30611744);
-        c = ii(c, d, a, b, k[6], 15, -1560198380);
-        b = ii(b, c, d, a, k[13], 21, 1309151649);
-        a = ii(a, b, c, d, k[4], 6, -145523070);
-        d = ii(d, a, b, c, k[11], 10, -1120210379);
-        c = ii(c, d, a, b, k[2], 15, 718787259);
-        b = ii(b, c, d, a, k[9], 21, -343485551);
-        x[0] = add32(a, x[0]);
-        x[1] = add32(b, x[1]);
-        x[2] = add32(c, x[2]);
-        x[3] = add32(d, x[3]);
-    }
-    function cmn(q, a, b, x, s, t) {
-        a = add32(add32(a, q), add32(x, t));
-        return add32((a << s) | (a >>> (32 - s)), b);
-    }
-    function ff(a, b, c, d, x, s, t) { return cmn((b & c) | ((~b) & d), a, b, x, s, t); }
-    function gg(a, b, c, d, x, s, t) { return cmn((b & d) | (c & (~d)), a, b, x, s, t); }
-    function hh(a, b, c, d, x, s, t) { return cmn(b ^ c ^ d, a, b, x, s, t); }
-    function ii(a, b, c, d, x, s, t) { return cmn(c ^ (b | (~d)), a, b, x, s, t); }
-    function add32(a, b) { return (a + b) & 0xFFFFFFFF; }
-    function md5str(s) {
-        var arr = [], i;
-        for (i = 0; i < s.length; i++) arr.push(s.charCodeAt(i));
-        var n = arr.length, bits = n * 8;
-        arr.push(0x80);
-        while (arr.length % 64 !== 56) arr.push(0);
-        for (i = 0; i < 8; i++) arr.push((bits >>> (i * 8)) & 0xFF);
-        var blocks = [];
-        for (i = 0; i < arr.length; i += 64) blocks.push(arr.slice(i, i + 64));
-        var h0 = 0x67452301, h1 = 0xEFCDAB89, h2 = 0x98BADCFE, h3 = 0x10325476;
-        for (var blockIdx = 0; blockIdx < blocks.length; blockIdx++) {
-            var block = blocks[blockIdx];
-            var x = [];
-            for (i = 0; i < 64; i += 4) {
-                x[i >> 2] = block[i] + (block[i + 1] << 8) + (block[i + 2] << 16) + (block[i + 3] << 24);
-            }
-            var a = h0, b = h1, c = h2, d = h3;
-            md5cycle([a, b, c, d], x);
-            h0 = add32(h0, a);
-            h1 = add32(h1, b);
-            h2 = add32(h2, c);
-            h3 = add32(h3, d);
-        }
-        return ((h0 >>> 0).toString(16).padStart(8, '0') +
-            (h1 >>> 0).toString(16).padStart(8, '0') +
-            (h2 >>> 0).toString(16).padStart(8, '0') +
-            (h3 >>> 0).toString(16).padStart(8, '0'));
-    }
-    return md5str(string);
-}
-
-// ---------- 英文成分→中文翻译 词表 ----------
-const ENG_ZH_MAP = {
-    // 时间状语
-    'yesterday': '昨天', 'today': '今天', 'tomorrow': '明天',
-    'tonight': '今晚', 'now': '现在', 'soon': '不久', 'later': '之后',
-    'last week': '上周', 'next week': '下周', 'this week': '本周',
-    'last month': '上个月', 'next month': '下个月', 'this month': '本月',
-    'last year': '去年', 'next year': '明年', 'this year': '今年',
-    'last night': '昨晚', 'last morning': '昨天上午', 'last evening': '昨天晚上',
-    'next morning': '明天上午', 'next evening': '明天晚上',
-    'every morning': '每天早上', 'every evening': '每天晚上', 'every night': '每晚',
-    'in the morning': '在早上', 'in the afternoon': '在下午',
-    'in the evening': '在晚上', 'at night': '在夜里',
-    // 主语
-    'i': '我', 'you': '你', 'he': '他', 'she': '她', 'we': '我们', 'they': '他们',
-    'me': '我', 'him': '他', 'her': '她', 'us': '我们', 'them': '他们',
-    'my': '我的', 'your': '你的', 'his': '他的', 'our': '我们的', 'their': '他们的',
-    'good': '好的', 'best': '最好的', 'new': '新的', 'old': '旧的', 'delicious': '好吃的',
-    'my husband and i': '我和我老公', 'my wife and i': '我和我老婆',
-    'my friend and i': '我和我的朋友', 'my friends and i': '我和我的朋友们',
-    'my family and i': '我和我的家人',
-    'my husband': '我老公', 'my wife': '我老婆', 'my friend': '我的朋友',
-    'my friends': '我的朋友们', 'my family': '我的家人',
-    'my sister': '我姐姐', 'my brother': '我哥哥', 'my mom': '我妈妈',
-    'my dad': '我爸爸', 'my dog': '我的小狗', 'my puppy': '我的小狗',
-    'my good friend': '我的好朋友', 'my best friend': '我的最好的朋友',
-    // 谓语动词（含复合）
-    'want to have': '想请', 'want to eat': '想吃', 'want to see': '想看',
-    'want to go': '想去', 'want to': '想',
-    'went to eat': '去吃', 'went to have': '去吃', 'went to see': '去看',
-    'went to': '去', 'went mountain climbing': '去爬山',
-    'went': '去了', 'go': '去', 'goes': '去',
-    'want': '想', 'wanted': '想要', 'wants': '想',
-    'had': '吃了', 'ate': '吃了', 'eat': '吃', 'eats': '吃',
-    'have': '有', 'has': '有',
-    'like': '喜欢', 'likes': '喜欢', 'liked': '喜欢',
-    'love': '爱', 'loves': '爱', 'loved': '爱',
-    'enjoy': '享受', 'enjoyed': '享受',
-    'invite': '邀请', 'invited': '邀请', 'invites': '邀请',
-    'is reading': '正在读', 'drinks': '喝', 'drink': '喝',
-    'runs': '跑', 'run': '跑', 'ran': '跑了',
-    'stick': '坚持', 'sticks': '坚持', 'sticked': '坚持',
-    'listen': '听', 'listens': '听', 'listened': '听',
-    'look': '看', 'looks': '看', 'looked': '看',
-    'talk': '谈', 'talks': '谈', 'talked': '谈',
-    'think': '想', 'thinks': '想', 'thought': '想',
-    'learn': '学', 'learns': '学', 'learned': '学',
-    'study': '学习', 'studies': '学习', 'studied': '学习',
-    'read': '读', 'reads': '读',
-    'play': '玩', 'plays': '玩', 'played': '玩',
-    'see': '看见', 'saw': '看见了',
-    'watch': '看', 'watches': '看',
-    'mountain climbing': '爬山', 'went mountain climbing': '去爬山',
-    // 地点状语
-    'at my place': '在我家', 'at my home': '在我家', 'at home': '在家',
-    'at school': '在学校', 'at work': '在上班',
-    'in the park': '在公园', 'at the park': '在公园',
-    'in beijing': '在北京', 'in shanghai': '在上海',
-    'at the cafe': '在咖啡馆', 'at the cafe.': '在咖啡馆', 'at the café': '在咖啡馆',
-    // 方式状语 / 副词
-    'with a friend': '和朋友一起', 'with my friend': '和我的朋友',
-    'with my friends': '和我的朋友们',
-    'with my family': '和家人一起',
-    'by bus': '坐公交', 'by car': '坐车',
-    'slowly': '慢慢地', 'quickly': '快速地', 'carefully': '仔细地',
-    'always': '总是', 'usually': '通常', 'sometimes': '有时', 'often': '经常', 'never': '从不',
-    'together': '一起', 'easily': '容易地', 'well': '好',
-    'warmly': '热情地', 'happily': '开心地', 'politely': '礼貌地',
-    // 疑问副词
-    'how': '怎么', 'when': '什么时候', 'where': '哪里', 'why': '为什么',
-    // 补足语常见
-    'to english': '看英语', 'to music': '音乐',
-    'to lunch': '共进午餐', 'to have lunch': '共进午餐',
-    'to the book': '那本书', 'to her': '她',
-    'to the cafe': '去咖啡馆', 'to the café': '去咖啡馆',
-    // 宾语常见
-    'a delicious snack': '一个很好吃的零食',
-    'a delicious hot pot': '好吃的火锅',
-    'a bowl of noodles': '一碗面',
-    'a bowl of': '一碗',
-    'a book': '一本书', 'books': '书',
-    'coffee': '咖啡', 'tea': '茶', 'water': '水', 'milk': '牛奶',
-    'bowl of noodles': '一碗面',
-    'bowl of rice': '一碗饭',
-    'bowl of soup': '一碗汤',
-    'a glass of water': '一杯水',
-    'a cup of tea': '一杯茶',
-    'a cup of coffee': '一杯咖啡',
-    'noodles': '面',
-    'rice': '饭',
-    'soup': '汤'
-};
-
-function engTranslateToChinese(phrase) {
-    let lower = String(phrase || '').toLowerCase().trim();
-    if (!lower || lower === '—') return '—';
-    // 多句只翻译第一段（与解析器保持一致）
-    const dotIdx = lower.search(/[.!?]/);
-    if (dotIdx > 0) lower = lower.slice(0, dotIdx).trim();
-    if (ENG_ZH_MAP[lower]) return ENG_ZH_MAP[lower];
-    for (let key of Object.keys(ENG_ZH_MAP).sort((a, b) => b.length - a.length)) {
-        if (key.length > 2 && lower.includes(key)) {
-            let replaced = lower.replace(key, ENG_ZH_MAP[key]);
-            if (!/[a-zA-Z]/.test(replaced)) return replaced;
-        }
-    }
-    let words = lower.split(' ');
-    let mapped = words.map(w => {
-        let lw = w.replace(/[^a-z]/g, '');
-        return ENG_ZH_MAP[lw] || w;
-    });
-    let result = mapped.join(' ');
-    if (!/[a-zA-Z]/.test(result)) return result;
-    let cleaned = lower.replace(/\b(a|an|the)\b/g, '').trim();
-    if (cleaned && !/[a-zA-Z]/.test(cleaned)) return cleaned;
-    return phrase;
-}
-
-function engGenerateOutput(zh, rowCount) {
-    // 改为 3 列 × N 行 + 隐藏操作列：列 = 英文 / 中文 / 备注 / 操作，行 = 各个语法成分
-    rowCount = Math.max(3, Math.min(20, parseInt(rowCount, 10) || 8));
-    const colHeads = ['英文（对照填）', '中文（对照填）', '备注（自定）', ''];
-    const defaultLabels = ['主语', '谓语', '宾语', '定语', '状语（时间）', '状语（地点）', '状语（方式）', '补足语'];
-
-    let html = '';
-    html += `<div class="eng-lesson-line"><span class="eng-label">中文原句</span><span class="eng-content">${escapeHtml(zh || '')}</span></div>`;
-    html += `<div class="eng-lesson-line"><span class="eng-label">英文翻译</span><span class="eng-en" id="engUserEnglishSentence" contenteditable="true" placeholder="在此填入完整英文翻译">${escapeHtml(engCurrentLesson.en || '')}</span></div>`;
-
-    html += `<div class="eng-table-wrap"><table class="eng-manual-table eng-delete-hidden" id="engManualTable"><thead><tr>`;
-    html += `<th class="eng-corner-cell">成分</th>`;
-    for (let c = 0; c < 4; c++) {
-        html += `<th class="eng-col-head">${colHeads[c]}</th>`;
-    }
-    html += `</tr></thead><tbody>`;
-
-    for (let r = 0; r < rowCount; r++) {
-        html += `<tr>`;
-        html += `<td class="eng-row-label">
-            <input type="text" class="eng-label-input" data-label-row="${r}" placeholder="成分名" value="${escapeHtml(defaultLabels[r] || `成分${r + 1}`)}">
-        </td>`;
-        html += `<td class="eng-edit-cell"><input type="text" class="eng-cell-input" data-row="${r}" data-col="0" placeholder="English" value=""></td>`;
-        html += `<td class="eng-edit-cell"><input type="text" class="eng-cell-input" data-row="${r}" data-col="1" placeholder="中文" value=""></td>`;
-        html += `<td class="eng-edit-cell"><input type="text" class="eng-cell-input" data-row="${r}" data-col="2" placeholder="备注" value=""></td>`;
-        html += `<td class="eng-del-cell"><button class="eng-row-del" data-action="eng-delete-row" data-row="${r}" title="删除此行">✕</button></td>`;
-        html += `</tr>`;
-    }
-    html += `</tbody></table></div>`;
-
-    html += `<div class="eng-table-actions">
-        <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-add-row">➕ 增加行</button>
-        <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-remove-row" title="删除最后一行">✖ 删除末行</button>
-        <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-toggle-delete-mode">✏️ 管理行</button>
-        <span class="eng-text-muted">行数可自由增减（3-20 行）</span>
-    </div>`;
-
-    return html;
-}
-
-// 渲染完成后：扫描中文行占位单元格，逐个用 Google 英→中 翻译补齐（不维护词表也能翻成中文）
-async function engTranslatePendingCells(container) {
-    if (!container) return;
-    const cells = container.querySelectorAll('.eng-zh-pending');
-    if (!cells.length) return;
-    const done = new Set();
-    for (const el of cells) {
-        const phrase = (el.getAttribute('data-phrase') || '').trim();
-        if (!phrase || done.has(phrase)) continue;
-        done.add(phrase);
-        const zhT = await engPhraseToZh(phrase);
-        if (zhT && zhT !== '—') {
-            container.querySelectorAll('.eng-zh-pending').forEach(td => {
-                if ((td.getAttribute('data-phrase') || '').trim().toLowerCase() === phrase.toLowerCase()) {
-                    td.textContent = zhT;
-                    td.classList.remove('eng-zh-pending');
-                }
-            });
-        }
-    }
-}
-
-// 分句工具——一句中文对应一句英文，分句之间严格分开
-function engSplitSentences(text, lang) {
-    if (!text) return [];
-    const s = String(text).trim();
-    if (lang === 'zh') {
-        return s.split(/[。！？]+/).map(x => x.trim().replace(/^[,，、\s]+|[,，、\s]+$/g, '')).filter(Boolean);
-    }
-    return s.split(/[.!?]+/).map(x => x.trim().replace(/^[,，、\s]+|[,，、\s]+$/g, '')).filter(Boolean);
-}
-
-// ===== 英文句法解析（按词数组+最长匹配，杜绝整句塞宾语）=====
-function engParseSentenceEN(en) {
-    const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
-    let s = String(en || '').replace(/[.!?;,]+$/, '').trim();
-    if (!s) return result;
-
-    // 优先用 Compromise 词性标注（CDN 引入，window.nlp 可用时）
-    if (typeof window !== 'undefined' && window.nlp && typeof window.nlp === 'function') {
-        try {
-            return engParseSentenceENNlp(s);
-        } catch (e) { /* 回退正则 */ }
-    }
-    return engParseSentenceENRegex(s);
-}
-
-// ===== Compromise 词性标注版 =====
-function engParseSentenceENNlp(s) {
-    const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
-    const doc = window.nlp(s);
-    const words = [];
-    try {
-        doc.json()[0].terms.forEach(t => {
-            words.push({ text: t.text, tags: new Set(t.tags || []), post: t.post || '' });
-        });
-    } catch (e) { return engParseSentenceENRegex(s); }
-    if (words.length === 0) return result;
-
-    const isVerb = w => w.tags.has('Verb') || w.tags.has('Infinitive') || w.tags.has('Gerund') || w.tags.has('PastTense');
-    const isAdverb = w => w.tags.has('Adverb');
-    const isPreposition = w => w.tags.has('Preposition');
-    const isNoun = w => w.tags.has('Noun') || w.tags.has('Pronoun') || w.tags.has('ProperNoun') || w.tags.has('Singular') || w.tags.has('Plural');
-    const isAdj = w => w.tags.has('Adjective');
-    const isDet = w => w.tags.has('Determiner');
-    const isQuestion = w => w.tags.has('QuestionWord');
-    const isConj = w => w.tags.has('Conjunction');
-    const used = new Array(words.length).fill(false);
-    const joinW = idxs => idxs.map(i => words[i].text).join(' ').replace(/[,.!?;:]+$/, '');
-
-    // 时间词表（compromise 有时把 tonight 标为 Noun，这里补充）
-    const TIME_WORDS = new Set(['today','yesterday','tomorrow','tonight','now','soon','later','morning','afternoon','evening','night','week','month','year','weekend']);
-    const TIME_PREFIX = new Set(['this','next','last','every']);
-
-    // 1) 时间状语：扫描 "this/next/last/every + timeword" 或独立时间词
-    for (let i = 0; i < words.length; i++) {
-        if (used[i]) continue;
-        const w = words[i].text.toLowerCase().replace(/[,.!?;:]+$/, '');
-        if (TIME_PREFIX.has(w) && i + 1 < words.length && TIME_WORDS.has(words[i+1].text.toLowerCase())) {
-            result.advTime = (w + ' ' + words[i+1].text).replace(/[,.!?;:]+$/, '');
-            used[i] = true; used[i+1] = true;
-            break;
-        }
-    }
-    if (result.advTime === '—') {
-        for (let i = 0; i < words.length; i++) {
-            if (used[i]) continue;
-            const w = words[i].text.toLowerCase().replace(/[,.!?;:]+$/, '');
-            if (['today','yesterday','tomorrow','tonight','now','soon','later'].indexOf(w) >= 0) {
-                result.advTime = words[i].text.replace(/[,.!?;:]+$/, '');
-                used[i] = true;
-                break;
-            }
-        }
-    }
-
-    // 2) 方式状语：Adverb 标签
-    for (let i = 0; i < words.length; i++) {
-        if (used[i]) continue;
-        if (isAdverb(words[i])) {
-            result.advManner = words[i].text.replace(/[,.!?;:]+$/, '');
-            used[i] = true;
-            break;
-        }
-    }
-
-    // 3) 地点状语：Preposition + 后面名词（at/in/on）
-    for (let i = 0; i < words.length; i++) {
-        if (used[i]) continue;
-        if (isPreposition(words[i]) && ['at','in','on'].indexOf(words[i].text.toLowerCase()) >= 0) {
-            const place = [];
-            for (let j = i; j < words.length && place.length < 4; j++) {
-                if (used[j]) break;
-                place.push(words[j].text.replace(/[,.!?;:]+$/, ''));
-                if (j + 1 < words.length && !isNoun(words[j+1]) && !isDet(words[j+1])) break;
-            }
-            if (place.length >= 2) {
-                result.advPlace = place.join(' ');
-                for (let j = i; j < i + place.length; j++) used[j] = true;
-                break;
-            }
-        }
-    }
-
-    // 4) 补足语：to + 名词 或 to + 动词不定式（非 want/plan 等复合动词结构时）
-    const compMainVerbs = ['want','wants','wanted','plan','plans','planned','decide','decided','hope','hopes','go','goes','going'];
-    for (let i = 0; i < words.length - 1; i++) {
-        if (used[i]) continue;
-        const w = words[i].text.toLowerCase();
-        // 前一个词是复合动词核心（want to eat 的 want），跳过
-        const prev = i > 0 ? words[i-1].text.toLowerCase() : '';
-        if (compMainVerbs.indexOf(prev) >= 0) continue;
-        if (w === 'to' && i + 1 < words.length) {
-            const tail = [];
-            for (let j = i; j < words.length && tail.length < 3; j++) {
-                if (used[j]) break;
-                tail.push(words[j].text.replace(/[,.!?;:]+$/, ''));
-                if (j + 1 < words.length && (words[j+1].tags.has('Preposition') || ['at','in','on'].indexOf(words[j+1].text.toLowerCase()) >= 0)) break;
-            }
-            if (tail.length >= 2) {
-                result.complement = tail.join(' ');
-                for (let j = i; j < i + tail.length; j++) used[j] = true;
-                break;
-            }
-        }
-    }
-
-    // 5) 主语：从第一个未被占用的词开始（时间/方式/地点已被抽走）
-    let subStart = 0;
-    while (subStart < words.length && used[subStart]) subStart++;
-    let subEnd = 0;
-    // 代词主语
-    if (subStart < words.length && !used[subStart] && (words[subStart].tags.has('Pronoun') || ['i','you','he','she','we','they'].indexOf(words[subStart].text.toLowerCase()) >= 0)) {
-        subEnd = subStart + 1;
-    }
-    if (subEnd === 0) {
-        // my/your/his/her/our/their/the/a/an + (adj)* + 名词
-        for (let len = 5; len >= 2; len--) {
-            if (subStart + len > words.length) continue;
-            let ok = true;
-            for (let j = subStart; j < subStart + len; j++) if (used[j]) { ok = false; break; }
-            if (!ok) continue;
-            const first = words[subStart].text.toLowerCase();
-            if (['my','your','his','her','our','their','the','a','an'].indexOf(first) < 0) continue;
-            // 最后一个是名词
-            if (!isNoun(words[subStart + len - 1])) continue;
-            subEnd = subStart + len;
-            // 定语：第一个词到倒数第二个（如 "my good" 是 friend 的定语）
-            if (len >= 3) {
-                const modWords = [];
-                for (let j = subStart; j < subStart + len - 1; j++) modWords.push(words[j].text.replace(/[,.!?;:]+$/, ''));
-                if (modWords.length >= 2) result.modifier = modWords.join(' ');
-                else if (modWords.length === 1 && ['my','your','his','her','our','their'].indexOf(modWords[0].toLowerCase()) >= 0) result.modifier = modWords[0];
-            }
-            break;
-        }
-    }
-    if (subEnd === 0 && subStart < words.length && !used[subStart]) {
-        const w0 = words[subStart].text.toLowerCase();
-        // QuestionWord（How/When/Where/Why）不作主语
-        if (!words[subStart].tags.has('QuestionWord') && ['i','you','he','she','we','they','it','this','that'].indexOf(w0) >= 0) subEnd = subStart + 1;
-    }
-    if (subEnd > 0) {
-        result.subject = words.slice(subStart, subEnd).map(w => w.text).join(' ');
-        for (let j = subStart; j < subEnd; j++) used[j] = true;
-    }
-
-    // 6) 谓语动词：第一个 Verb 标签（含复合 want to eat / is reading）
-    let startVerb = 0;
-    for (let i = 0; i < words.length; i++) { if (!used[i]) { startVerb = i; break; } }
-    if (startVerb < words.length) {
-        // 复合动词：want to eat / going to / is reading
-        let verbEnd = startVerb;
-        const v1 = words[startVerb].text.toLowerCase();
-        if (['want','wants','wanted','plan','plans','planned','decide','decided','hope','hopes','go','goes','going','is','am','are','was','were','has','have','had','do','does','did'].indexOf(v1) >= 0) {
-            // want to V / going to V / is Ving
-            if (startVerb + 1 < words.length && words[startVerb+1].text.toLowerCase() === 'to' && !used[startVerb+1]) {
-                if (startVerb + 2 < words.length && isVerb(words[startVerb+2])) {
-                    verbEnd = startVerb + 2;
-                } else {
-                    verbEnd = startVerb + 1;
-                }
-            } else if (startVerb + 1 < words.length && isVerb(words[startVerb+1]) && (['is','am','are','was','were'].indexOf(v1) >= 0)) {
-                verbEnd = startVerb + 1;
-            }
-        } else if (isVerb(words[startVerb])) {
-            verbEnd = startVerb;
-        }
-        // 兜底：取动词标签
-        if (verbEnd === startVerb && isVerb(words[startVerb])) verbEnd = startVerb;
-        result.verb = words.slice(startVerb, verbEnd + 1).map(w => w.text).join(' ');
-        for (let j = startVerb; j <= verbEnd; j++) used[j] = true;
-    }
-
-    // 7) 剩余为宾语
-    const objIdxs = [];
-    for (let i = 0; i < words.length; i++) if (!used[i]) objIdxs.push(i);
-    if (objIdxs.length > 0) result.object = joinW(objIdxs);
-
-    return result;
-}
-
-// ===== 正则版（无 Compromise 时兜底）=====
-function engParseSentenceENRegex(s) {
-    const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
-    const words = s.split(/\s+/).filter(Boolean);
-    if (words.length === 0) return result;
-    const used = new Array(words.length).fill(false);
-
-    // 0) 识别复合动词 to 占用
-    const compVerbs = ['want','wanted','wants','planned','planning','plans','decided','hoped','hopes','chose','refused','needed','tried'];
-    const verbsLike = ['go','eat','have','drink','see','do','play','visit','study','read','take','make','come','run','walk','give','buy','find','get'];
-    for (let i = 0; i < words.length - 2; i++) {
-        if (used[i+1] || used[i+2]) continue;
-        const first = words[i].toLowerCase();
-        if (compVerbs.indexOf(first) >= 0 && words[i+1] && words[i+1].toLowerCase() === 'to') {
-            used[i+1] = true;
-            if (words[i+2] && verbsLike.indexOf(words[i+2].toLowerCase()) >= 0) used[i+2] = true;
-        }
-    }
-
-    // 1) 补足语
-    const findComplement = () => {
-        for (let i = 0; i < words.length - 1; i++) {
-            if (used[i]) continue;
-            const w = words[i].toLowerCase().replace(/[,.!?;:]+$/, '');
-            if (w !== 'to' && w !== 'for' && w !== 'about') continue;
-            const tail = [];
-            for (let j = i + 1; j < Math.min(i + 3, words.length); j++) {
-                if (used[j]) break;
-                tail.push(words[j].replace(/[,.!?;:]+$/, ''));
-                if (j - i >= 2) break;
-                if (j + 1 < words.length) {
-                    const next = words[j + 1].toLowerCase();
-                    if (['at','in','on','with','by','for','about','to','next','last','this','that','today','yesterday','tomorrow','tonight','now','every','warmly','slowly','quickly'].indexOf(next) >= 0) break;
-                }
-            }
-            if (tail.length > 0 && tail.length <= 3) {
-                const comp = w + ' ' + tail.join(' ');
-                used[i] = true;
-                for (let j = i + 1; j <= i + tail.length; j++) used[j] = true;
-                return comp;
-            }
-        }
-        return null;
-    };
-    const comp = findComplement();
-    if (comp) result.complement = comp;
-
-    // 2) 方式状语
-    const mannerAdverbs = ['slowly','quickly','carefully','well','hard','fast','often','usually','always','never','sometimes','together','warmly','gently','happily','politely','quietly','eagerly','how','when','where','why'];
-    for (let i = 0; i < words.length; i++) {
-        if (used[i]) continue;
-        const w = words[i].toLowerCase().replace(/[,.!?;:]+$/, '');
-        if (mannerAdverbs.indexOf(w) >= 0) {
-            result.advManner = words[i].replace(/[,.!?;:]+$/, '');
-            used[i] = true;
-            break;
-        }
-    }
-    if (result.advManner === '—') {
-        for (let len = 3; len >= 2; len--) {
-            for (let i = 0; i <= words.length - len; i++) {
-                if (used[i]) continue;
-                const first = words[i].toLowerCase();
-                if (first === 'with' || first === 'by') {
-                    result.advManner = words.slice(i, i + len).join(' ');
-                    for (let j = i; j < i + len; j++) used[j] = true;
-                    break;
-                }
-            }
-            if (result.advManner !== '—') break;
-        }
-    }
-
-    // 3) 地点
-    for (let len = 4; len >= 2; len--) {
-        for (let i = 0; i <= words.length - len; i++) {
-            if (used[i]) continue;
-            const w = words.slice(i, i + len).join(' ').toLowerCase();
-            if (/^(at|in|on)\s+/.test(w)) {
-                result.advPlace = words.slice(i, i + len).join(' ');
-                for (let j = i; j < i + len; j++) used[j] = true;
-                break;
-            }
-        }
-        if (result.advPlace !== '—') break;
-    }
-
-    // 4) 时间
-    for (let len = 3; len >= 1; len--) {
-        for (let i = 0; i <= words.length - len; i++) {
-            if (used[i]) continue;
-            const w = words.slice(i, i + len).join(' ').toLowerCase();
-            if (/^(this|next|last|every)\s+(morning|afternoon|evening|night|week|month|year|day|weekend)[,.;:!?]*$/.test(w) ||
-                /^(today|yesterday|tomorrow|tonight|now|soon|later)[,.;:!?]*$/.test(w) ||
-                /^\d+\s+(hours?|days?|weeks?|months?|years?)\s+ago$/.test(w) ||
-                /^(in|at)\s+the\s+(morning|afternoon|evening|night)$/.test(w)) {
-                result.advTime = words.slice(i, i + len).join(' ').replace(/[,.;:!?]+$/, '');
-                for (let j = i; j < i + len; j++) used[j] = true;
-                break;
-            }
-        }
-        if (result.advTime !== '—') break;
-    }
-
-    // 5) 主语
-    let subStart = 0;
-    while (subStart < words.length && used[subStart]) subStart++;
-    let subEnd = 0;
-    if (subStart < words.length) {
-        const w = words[subStart].toLowerCase();
-        if (['i','you','he','she','we','they'].indexOf(w) >= 0) subEnd = subStart + 1;
-    }
-    if (subEnd === 0) {
-        for (let len = 5; len >= 2; len--) {
-            if (subStart + len > words.length) continue;
-            let allFree = true;
-            for (let j = subStart; j < subStart + len; j++) if (used[j]) { allFree = false; break; }
-            if (!allFree) continue;
-            const w = words.slice(subStart, subStart + len).join(' ').toLowerCase();
-            if (/^(my|your|his|her|our|their)\s+\w+/.test(w) || /^(the|a|an)\s+\w+/.test(w)) {
-                subEnd = subStart + len;
-                const subWords = words.slice(subStart, subStart + len);
-                if (subWords.length >= 3) {
-                    const modWords = subWords.slice(0, subWords.length - 1);
-                    if (modWords.length >= 2) {
-                        const mod = modWords.join(' ');
-                        if (!result.modifier || result.modifier === '—') result.modifier = mod;
-                    }
-                }
-                break;
-            }
-        }
-    }
-    if (subEnd === 0 && !used[subStart]) {
-        const w0 = words[subStart].toLowerCase().replace(/[,.!?;:]+$/, '');
-        if (['i','you','he','she','we','they','it','this','that'].indexOf(w0) >= 0) subEnd = subStart + 1;
-    }
-    if (subEnd > 0) {
-        result.subject = words.slice(subStart, subEnd).join(' ');
-        for (let j = subStart; j < subEnd; j++) used[j] = true;
-    }
-
-    // 6) 谓语
-    let startVerb = 0;
-    for (let i = 0; i < words.length; i++) { if (!used[i]) { startVerb = i; break; } }
-    if (startVerb < words.length) {
-        const look = words.slice(startVerb, Math.min(startVerb + 5, words.length));
-        const verbPhrases = [
-            /^(want|wanted|wants)\s+to\s+(?:go|eat|have|drink|see|do|play|visit|drink|study|read|take|make|come|run|walk)/i,
-            /^(went|goes|go)\s+to\s+(?:eat|have|see|do|play|visit|drink|school|park|home|work)/i,
-            /^(is|am|are|was|were)\s+(?:\w+ing|\w+)/i,
-            /^(to)\s+\w+/i,
-            /^(has|have|had|having)\s+\w*/i,
-            /^(does|do|did|will|would|can|could|should|may|might|must)\s+\w*/i,
-        ];
-        let verbLen = 1;
-        for (const pat of verbPhrases) {
-            const m = look.join(' ').match(pat);
-            if (m) { verbLen = m[0].split(' ').length; break; }
-        }
-        result.verb = words.slice(startVerb, startVerb + verbLen).join(' ');
-        for (let j = startVerb; j < startVerb + verbLen; j++) used[j] = true;
-    }
-
-    // 7) 宾语
-    const objWords = words.filter((_, i) => !used[i]);
-    if (objWords.length > 0) result.object = objWords.join(' ');
-
-    return result;
-}
-
-
-// ===== 中文句解析器（基于模式匹配）=====
-function engParseSentenceZH(zh) {
-    const result = { subject:'—', verb:'—', object:'—', modifier:'—', advTime:'—', advPlace:'—', advManner:'—', complement:'—' };
-    let s = String(zh || '').replace(/[。，！？,，]+$/, '').trim();
-    if (!s) return result;
-
-    // 1) 时间状语
-    const timePatterns = [
-        /(今天早上|今天下午|今天晚上|今天上午|今天中午|今天夜里)/,
-        /(昨天晚上|今天早晨|今天上午|明天早上|明天下午|明天上午|明天下午|明天晚上|明天夜里)/,
-        /(昨天晚上|今天晚上|今天夜里|今天早晨)/,
-        /(今天|明天|后天|昨天|前天|刚才|现在|马上|立刻|稍后|以后|之前)/,
-        /(上周|这周|下周|这个月|上个月|下个月|去年|今年|明年)/,
-        /(每个早上|每天早上|每天晚上|每晚|每天|每周|每月|每年)/,
-    ];
-    for (const pat of timePatterns) {
-        const m = s.match(pat);
-        if (m) {
-            result.advTime = m[0];
-            s = s.replace(m[0], '').trim();
-            break;
-        }
-    }
-
-    // 2) 地点状语：在 + 名词（1-3 字，遇到"地/的"停止）
-    const placeMatch = s.match(/在[\u4e00-\u9fa5]{1,3}(?=[地的是了很就都]|$)/);
-    if (placeMatch) {
-        result.advPlace = placeMatch[0];
-        s = s.replace(placeMatch[0], '').trim();
-    }
-
-    // 3) 方式状语：副词+地（"X地"，取最后匹配避免吃名词）
-    const mannerMatch = s.match(/([\u4e00-\u9fa5]{1,4}地)/);
-    if (mannerMatch) {
-        result.advManner = mannerMatch[1];
-        s = s.replace(mannerMatch[0], '').trim();
-    }
-
-    // 4) 主语（从最左开始）
-    // 代词：我、你、他、她、我们、他们、你们
-    const pronounRe = /^(我|你|他|她|它|我们|他们|她们|你们|咱们)/;
-    if (pronounRe.test(s)) {
-        const m = s.match(pronounRe);
-        result.subject = m[0];
-        s = s.slice(m[0].length).trim();
-        // 找"的+名词"扩展主语（如"我的好朋友"）
-        const descMatch = s.match(/^(的[\u4e00-\u9fa5]{1,8})/);
-        if (descMatch) {
-            result.subject += descMatch[0];
-            s = s.slice(descMatch[0].length).trim();
-            // 定语：subject 中的"的+形容词"或"的"开头
-            const modMatch = result.subject.match(/^([我你他她它]|我们|你们|他们)的([\u4e00-\u9fa5]{1,8})$/);
-            if (modMatch && (!result.modifier || result.modifier === '—')) {
-                result.modifier = modMatch[1] + '的';
-            }
-        }
-    } else {
-        // 普通名词短语主语（1-4字）
-        const nomRe = /^[\u4e00-\u9fa5]{1,4}/;
-        const m = s.match(nomRe);
-        if (m) {
-            result.subject = m[0];
-            s = s.slice(m[0].length).trim();
-        }
-    }
-
-    // 5) 谓语动词（已知动词列表 + 兜底取1-2字）
-    const knownVerbs = ['邀请','请','吃','喝','看','听','学','做','去','来','走','跑','玩','买','卖','给','拿','说','写','读','想','要','是','在','有','会','能','可以','喜欢','讨厌','帮助','认识','告诉','回答','问','叫','欢迎','感谢','希望','打算','计划','准备','开始','结束','想要','共进'];
-    let verbMatched = false;
-    for (const v of knownVerbs) {
-        if (s.startsWith(v)) {
-            result.verb = v;
-            s = s.slice(v.length).trim();
-            verbMatched = true;
-            break;
-        }
-    }
-    if (!verbMatched) {
-        const v2 = s.match(/^[\u4e00-\u9fa5]{1,2}/);
-        if (v2) { result.verb = v2[0]; s = s.slice(v2[0].length).trim(); }
-    }
-
-    // 6) 宾语（代词或名词）+ 补足语（如果有"动词+补足"模式）
-    // 先找宾语
-    if (s) {
-        const objMatch = s.match(/^(我|你|他|她||我们|他们|[\u4e00-\u9fa5]{1,8})/);
-        if (objMatch) {
-            result.object = objMatch[0];
-            s = s.slice(objMatch[0].length).trim();
-        }
-    }
-    // 剩余作为补足语（"共进午餐"/"一起吃饭"/"很开心"等）
-    if (s) {
-        result.complement = s.trim();
-    }
-
-    return result;
-}
-
-// ===== 中文行翻译：兼容中文解析结果 =====
-
-// 当前课程（供抄写/重置使用）
-let engCurrentLesson = { zh: '', en: '', fullHtml: '' };
-
-async function engRunLesson() {
-    const input = document.getElementById('engTranslateInput');
-    const output = document.getElementById('engLessonOutput');
-    if (!input || !output) return;
-    const zh = input.value.trim();
-    if (!zh) {
-        output.innerHTML = `<div class="eng-empty">💡 输入中文句子，点击「生成填表」开始手动对应语序</div>`;
-        engCurrentLesson = { zh: '', en: '', fullHtml: '' };
-        return;
-    }
-    output.innerHTML = `<div class="eng-empty">⏳ 正在翻译并生成表格...</div>`;
-    // 自动翻译（优先免费无需翻墙的源）
-    const en = await engTranslateAPI(zh);
-    engCurrentLesson = { zh, en, fullHtml: '' };
-    const html = engGenerateOutput(zh);
-    engCurrentLesson.fullHtml = html;
-    output.innerHTML = html;
-    // 把自动翻译结果回填到英文整句框
-    const enSentence = document.getElementById('engUserEnglishSentence');
-    if (enSentence && engCurrentLesson.en && !engCurrentLesson.en.startsWith('（翻译暂不可用')) {
-        enSentence.textContent = engCurrentLesson.en;
-    }
-    engAddHistory('copy', { time: new Date().toISOString(), zh: zh, en: en, detail: html });
-    const todayStats = engGetTodayStats();
-    todayStats.words += zh.length;
-    engSaveTodayStats(todayStats);
-    const monthData = engGetMonthData();
-    monthData.words += zh.length;
-    engSaveMonthData(monthData);
-    engUpdateScore(2);
-}
-
-// 保存当前手工表格的输入状态（行数、内容、成分标签）
-function engSerializeTable() {
-    const table = document.getElementById('engManualTable');
-    const enSentence = document.getElementById('engUserEnglishSentence');
-    if (!table) return null;
-    const rowCount = table.querySelectorAll('tbody tr').length;
-    const rows = [];
-    const labels = [];
-    table.querySelectorAll('tbody tr').forEach((tr, r) => {
-        rows[r] = [];
-        tr.querySelectorAll('td.eng-edit-cell input').forEach((inp, c) => {
-            rows[r][c] = inp.value;
-        });
-        const labelInp = tr.querySelector('td.eng-row-label input.eng-label-input');
-        labels[r] = labelInp ? labelInp.value : '';
-    });
-    return { rowCount, rows, labels, en: enSentence ? enSentence.textContent.trim() : '' };
-}
-
-function engRestoreTable(state) {
-    if (!state || !state.rows) return;
-    const table = document.getElementById('engManualTable');
-    const enSentence = document.getElementById('engUserEnglishSentence');
-    if (!table) return;
-    // 恢复英文整句
-    if (enSentence && state.en) enSentence.textContent = state.en;
-    // 恢复单元格内容与成分标签
-    const trs = table.querySelectorAll('tbody tr');
-    trs.forEach((tr, r) => {
-        const labelInp = tr.querySelector('td.eng-row-label input.eng-label-input');
-        if (labelInp && state.labels && state.labels[r] !== undefined) labelInp.value = state.labels[r];
-        const inputs = tr.querySelectorAll('td.eng-edit-cell input');
-        inputs.forEach((inp, c) => {
-            if (state.rows[r] && state.rows[r][c] !== undefined) {
-                inp.value = state.rows[r][c];
-            }
-        });
-    });
-}
-
-function engRebuildTableWithRows(rowCount) {
-    const zh = engCurrentLesson.zh || '';
-    const old = engSerializeTable();
-    const oldTable = document.getElementById('engManualTable');
-    const wasDeleteVisible = !!(oldTable && oldTable.classList.contains('eng-delete-visible'));
-    // 保留旧内容到新尺寸
-    const newRows = [];
-    const newLabels = [];
-    for (let r = 0; r < rowCount; r++) {
-        newRows[r] = [];
-        for (let c = 0; c < 3; c++) {
-            newRows[r][c] = (old && old.rows[r] && old.rows[r][c] !== undefined) ? old.rows[r][c] : '';
-        }
-        newLabels[r] = (old && old.labels && old.labels[r] !== undefined) ? old.labels[r] : '';
-    }
-    // 重新生成表格
-    const output = document.getElementById('engLessonOutput');
-    if (!output) return;
-    output.innerHTML = engGenerateOutput(zh, rowCount);
-    // 回填
-    const table = document.getElementById('engManualTable');
-    const trs = table.querySelectorAll('tbody tr');
-    trs.forEach((tr, r) => {
-        const labelInp = tr.querySelector('td.eng-row-label input.eng-label-input');
-        if (labelInp && newLabels[r] !== undefined) labelInp.value = newLabels[r];
-        const inputs = tr.querySelectorAll('td.eng-edit-cell input');
-        inputs.forEach((inp, c) => {
-            if (newRows[r][c] !== undefined) inp.value = newRows[r][c];
-        });
-    });
-    if (old && old.en) {
-        const enSentence = document.getElementById('engUserEnglishSentence');
-        if (enSentence) enSentence.textContent = old.en;
-    }
-    // 保留原来的「管理行」显隐状态，避免增删行后删除按钮突然消失
-    if (wasDeleteVisible) {
-        table.classList.remove('eng-delete-hidden');
-        table.classList.add('eng-delete-visible');
-        const btn = document.querySelector('[data-action="eng-toggle-delete-mode"]');
-        if (btn) {
-            btn.textContent = '✅ 完成';
-            btn.classList.add('eng-btn-danger');
-            btn.classList.remove('eng-btn-outline');
-        }
-    }
-    engCurrentLesson.fullHtml = output.innerHTML;
-}
-
-function engAddRow() {
-    const table = document.getElementById('engManualTable');
-    if (!table) return;
-    const currentRows = table.querySelectorAll('tbody tr').length;
-    if (currentRows >= 20) {
-        engToast('最多 20 行，已经足够长啦');
-        return;
-    }
-    engRebuildTableWithRows(currentRows + 1);
-}
-
-function engRemoveRow() {
-    const table = document.getElementById('engManualTable');
-    if (!table) return;
-    const currentRows = table.querySelectorAll('tbody tr').length;
-    if (currentRows <= 3) {
-        engToast('最少保留 3 行');
-        return;
-    }
-    engRebuildTableWithRows(currentRows - 1);
-}
-
-function engToggleDeleteMode() {
-    const table = document.getElementById('engManualTable');
-    if (!table) return;
-    const isVisible = table.classList.toggle('eng-delete-visible');
-    table.classList.toggle('eng-delete-hidden', !isVisible);
-    const btn = document.querySelector('[data-action="eng-toggle-delete-mode"]');
-    if (btn) {
-        btn.textContent = isVisible ? '✅ 完成' : '✏️ 管理行';
-        btn.classList.toggle('eng-btn-danger', isVisible);
-        btn.classList.toggle('eng-btn-outline', !isVisible);
-    }
-}
-
-function engDeleteRow(rowIdx) {
-    const table = document.getElementById('engManualTable');
-    if (!table) return;
-    const currentRows = table.querySelectorAll('tbody tr').length;
-    if (currentRows <= 3) {
-        engToast('最少保留 3 行');
-        return;
-    }
-    if (rowIdx < 0 || rowIdx >= currentRows) return;
-
-    const old = engSerializeTable();
-    const newRows = old.rows.filter((_, i) => i !== rowIdx);
-    const newLabels = old.labels.filter((_, i) => i !== rowIdx);
-    const newRowCount = newRows.length;
-    const zh = engCurrentLesson.zh || '';
-    const output = document.getElementById('engLessonOutput');
-    if (!output) return;
-
-    output.innerHTML = engGenerateOutput(zh, newRowCount);
-    const newTable = document.getElementById('engManualTable');
-    const trs = newTable.querySelectorAll('tbody tr');
-    trs.forEach((tr, r) => {
-        const labelInp = tr.querySelector('td.eng-row-label input.eng-label-input');
-        if (labelInp && newLabels[r] !== undefined) labelInp.value = newLabels[r];
-        const inputs = tr.querySelectorAll('td.eng-edit-cell input');
-        inputs.forEach((inp, c) => {
-            if (newRows[r] && newRows[r][c] !== undefined) inp.value = newRows[r][c];
-        });
-    });
-    if (old.en) {
-        const enSentence = document.getElementById('engUserEnglishSentence');
-        if (enSentence) enSentence.textContent = old.en;
-    }
-    // 保持删除模式开启，并让总开关按钮保持"完成"状态
-    newTable.classList.remove('eng-delete-hidden');
-    newTable.classList.add('eng-delete-visible');
-    const btn = document.querySelector('[data-action="eng-toggle-delete-mode"]');
-    if (btn) {
-        btn.textContent = '✅ 完成';
-        btn.classList.add('eng-btn-danger');
-        btn.classList.remove('eng-btn-outline');
-    }
-    engCurrentLesson.fullHtml = output.innerHTML;
-}
-
-function engCopyCurrent() {
-    if (!engCurrentLesson.zh) {
-        const input = document.getElementById('engTranslateInput');
-        if (input && input.value.trim()) {
-            engRunLesson().then(() => {
-                setTimeout(() => {
-                    if (engCurrentLesson.zh) {
-                        const c = engGetCopyCount() + 1;
-                        engSetCopyCount(c);
-                        engAddHistory('copy', { time: new Date().toISOString(), zh: engCurrentLesson.zh, en: engCurrentLesson.en, detail: engCurrentLesson.fullHtml });
-                        const todayStats = engGetTodayStats();
-                        todayStats.copies += 1;
-                        engSaveTodayStats(todayStats);
-                        const monthData = engGetMonthData();
-                        monthData.copies += 1;
-                        engSaveMonthData(monthData);
-                        engUpdateScore(2);
-                        const el = document.getElementById('engCopyCount');
-                        if (el) el.textContent = c;
-                    }
-                }, 900);
-            });
-        }
-        return;
-    }
-    const c = engGetCopyCount() + 1;
-    engSetCopyCount(c);
-    const todayStats = engGetTodayStats();
-    todayStats.copies += 1;
-    engSaveTodayStats(todayStats);
-    const monthData = engGetMonthData();
-    monthData.copies += 1;
-    engSaveMonthData(monthData);
-    engUpdateScore(2);
-    const el = document.getElementById('engCopyCount');
-    if (el) el.textContent = c;
-}
-
-function engResetCopy() {
-    engSetCopyCount(0);
-    const el = document.getElementById('engCopyCount');
-    if (el) el.textContent = '0';
-    engToast('抄写次数已重置');
-}
-
-// ---------- 兴趣探索 ----------
-function engDoSearch(query) {
-    const input = document.getElementById('engSearchInput');
-    const q = (query || (input ? input.value.trim() : ''));
-    if (!q) return;
-    window.open(`https://cn.bing.com/search?q=${encodeURIComponent(q)}`, '_blank');
-    engAddHistory('search', { time: new Date().toISOString(), query: q });
-    const todayStats = engGetTodayStats();
-    todayStats.searches += 1;
-    engSaveTodayStats(todayStats);
-    const monthData = engGetMonthData();
-    monthData.searches += 1;
-    engSaveMonthData(monthData);
-    engUpdateScore(1);
-}
-
-async function engTranslateAndSearch() {
-    const input = document.getElementById('engSearchInput');
-    if (!input) return;
-    const zh = input.value.trim();
-    if (!zh) return;
-    if (/^[a-zA-Z\s\?\.\,\!]+$/.test(zh)) { engDoSearch(zh); return; }
-    const en = await engTranslateAPI(zh);
-    input.value = en;
-    engDoSearch(en);
-}
-
-// ---------- 成就 ----------
-function engUpdateAchievements() {
-    const historical = engHistoricalMonths();
-    const monthData = engGetMonthData();
-    const achievements = [
-        { id: 'first_search', icon: '🔍', name: '好奇探索者', desc: '完成1次搜索', threshold: 1, current: monthData.searches },
-        { id: 'search_10', icon: '🔍', name: '搜索达人', desc: '完成10次搜索', threshold: 10, current: monthData.searches },
-        { id: 'first_copy', icon: '📝', name: '抄写新手', desc: '抄写1次', threshold: 1, current: monthData.copies },
-        { id: 'copy_10', icon: '📝', name: '抄写高手', desc: '抄写10次', threshold: 10, current: monthData.copies },
-        { id: 'word_100', icon: '✍️', name: '输出新星', desc: '累计输出100字', threshold: 100, current: monthData.words },
-        { id: 'word_1000', icon: '✍️', name: '输出达人', desc: '累计输出1000字', threshold: 1000, current: monthData.words },
-        { id: 'score_50', icon: '⭐', name: '正反馈收集者', desc: '获得50正反馈', threshold: 50, current: monthData.score },
-        { id: 'score_100', icon: '⭐', name: '正反馈大师', desc: '获得100正反馈', threshold: 100, current: monthData.score },
-    ];
-    const monthUnlocked = monthData.unlocked || [];
-    if (!Array.isArray(monthUnlocked)) monthData.unlocked = [];
-    let changed = false;
-    achievements.forEach(a => {
-        const unlocked = a.current >= a.threshold;
-        if (unlocked && !monthData.unlocked.includes(a.id)) {
-            monthData.unlocked.push(a.id);
-            changed = true;
-        }
-    });
-    if (changed) engSaveMonthData(monthData);
-    return achievements.map(a => {
-        const unlocked = a.current >= a.threshold;
-        const stars = (historical[a.id] || []).length;
-        return {
-            ...a,
-            unlocked,
-            stars: stars > 0 ? ` 🌟×${stars}` : ''
-        };
-    });
-}
-
-// ---------- 感悟 ----------
-function engInitThoughts() {
-    let thoughts = [];
-    try { thoughts = JSON.parse(localStorage.getItem('engPlay_thoughts')); } catch (e) { thoughts = null; }
-    if (!thoughts || !Array.isArray(thoughts) || thoughts.length === 0) {
-        const now = new Date().toISOString();
-        thoughts = [
-            { id: Date.now() + 1, content: '把学英语当成一个大型开放世界游戏。积累的只有正反馈。', time: now },
-            { id: Date.now() + 2, content: '要用英语去追我的兴趣那就把"英语"变成"搜索工具"。', time: now },
-            { id: Date.now() + 3, content: '每天问自己："今天有什么英语相关的、让我觉得有趣的事可以做？"', time: now },
-            { id: Date.now() + 4, content: '别再想"跟读"了，中英夹杂都行。你的目标不是"会说英语"，而是让英语成为你大脑的背景音BGM。', time: now },
-            { id: Date.now() + 5, content: '彻底"枪毙"语法书，改用"语法翻译器"——只在"写"的时候查，抄结构，抄完就忘，下次再抄。', time: now },
-            { id: Date.now() + 6, content: '给AI下"封口令"：不许纠错，只许接话。流利度永远比准确度重要。', time: now },
-            { id: Date.now() + 7, content: '你不是"不会说"，你是"不敢错"。让那个纠错的声音闭嘴，你的嘴就张开了。', time: now }
-        ];
-        localStorage.setItem('engPlay_thoughts', JSON.stringify(thoughts));
-    }
-    return thoughts;
-}
-
-function engFormatTime(isoString) {
-    const d = new Date(isoString);
-    return `${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-function engAddThought(content) {
-    const thoughts = engInitThoughts();
-    thoughts.unshift({ id: Date.now(), content: content, time: new Date().toISOString() });
-    localStorage.setItem('engPlay_thoughts', JSON.stringify(thoughts));
-    engUpdateScore(1);
-}
-
-function engDelThought(idx) {
-    const thoughts = engInitThoughts();
-    if (idx >= 0 && idx < thoughts.length) {
-        thoughts.splice(idx, 1);
-        localStorage.setItem('engPlay_thoughts', JSON.stringify(thoughts));
-    }
-}
-
-// ---------- 渲染 ----------
-function engHeaderHTML() {
-    const score = engGetScore();
-    const lv = engGetLevel(score);
-    return `
-    <div class="eng-header">
-        <div class="eng-logo">
-            <div class="eng-logo-title">🎮 英语游乐场</div>
-            <div class="eng-slogan">把学英语当成一个大型开放世界游戏</div>
-        </div>
-        <div class="eng-level-area">
-            <div class="eng-level-badge"><span class="eng-symbols">${engGetLevelSymbols(lv)}</span> Lv.${lv}</div>
-            <div class="eng-score-box">⭐ <span id="engScoreDisplay">${score}</span></div>
-        </div>
-    </div>`;
-}
-
-function renderEnglishPage(tab) {
-    if (tab === 'eng-home') return engRenderHome();
-    if (tab === 'eng-achievement') return engRenderAchievement();
-    if (tab === 'eng-history') return engRenderHistory();
-    if (tab === 'eng-thought') return engRenderThought();
-    if (tab === 'eng-more') return engRenderMore();
-    return engRenderHome();
-}
-
-function engRenderHome() {
-    const copyCount = engGetCopyCount();
-    return `
-    ${engHeaderHTML()}
-    <div class="eng-card">
-        <div class="eng-card-title">📝 抄写工坊</div>
-        <div class="eng-card-desc">只在"写"的时候查语法 —— 抄结构，不背规则</div>
-        <div class="eng-text-muted" style="margin-bottom:8px;">🧪 用法：输入一句中文 → 点「生成填表」→ 自动翻译出英文后，在 8 行表格里按英文语序自行对应填空</div>
-        <div class="eng-row">
-            <input type="text" id="engTranslateInput" placeholder="输入中文句子，如：上个月我和朋友去爬山了" data-action="eng-translate-input">
-            <button class="eng-btn eng-btn-primary" data-action="eng-translate">📖 生成填表</button>
-        </div>
-        <div class="eng-lesson-output" id="engLessonOutput"><div class="eng-empty">💡 输入中文句子，点击「生成填表」开始手动对应语序</div></div>
-        <div class="eng-copy-bar">
-            <div class="eng-copy-stats">✏️ 已抄 <strong id="engCopyCount">${copyCount}</strong> 次</div>
-            <div class="eng-copy-actions">
-                <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-copy">📋 抄写</button>
-                <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-reset-copy">↺ 重置</button>
-            </div>
-        </div>
-        <div class="eng-text-muted">✅ 抄完就忘，下次再抄，大脑会自动形成肌肉记忆</div>
-    </div>
-
-    <div class="eng-card">
-        <div class="eng-card-title">🔍 兴趣探索</div>
-        <div class="eng-card-desc">每天问自己："今天有什么英语相关的、让我觉得有趣的事可以做？"</div>
-        <div class="eng-row">
-            <input type="text" id="engSearchInput" placeholder="用英文搜你好奇的问题…" data-action="eng-search-input">
-            <button class="eng-btn eng-btn-primary" data-action="eng-search">🔎 搜索</button>
-            <button class="eng-btn eng-btn-ghost" data-action="eng-translate-search" title="输入中文，自动翻译成英文后搜索">🌐</button>
-        </div>
-        <div class="eng-pill-group">
-            <span class="eng-pill" data-action="eng-pill" data-q="why do I lose interest quickly">🤔 三分钟热度？</span>
-            <span class="eng-pill" data-action="eng-pill" data-q="how to build a daily habit">🧠 养成习惯</span>
-            <span class="eng-pill" data-action="eng-pill" data-q="what is flow state">✨ 心流是什么</span>
-            <span class="eng-pill" data-action="eng-pill" data-q="why do we procrastinate">⏳ 拖延原因</span>
-        </div>
-        <div class="eng-text-muted">💡 点建议词自动填入，🌐 可把中文翻译成英文后搜索</div>
-    </div>`;
-}
-
-function engRenderAchievement() {
-    const monthData = engGetMonthData();
-    const todayStats = engGetTodayStats();
-    const ach = engUpdateAchievements();
-    const grid = ach.map(a => `
-        <div class="eng-ach-item ${a.unlocked ? '' : 'eng-locked'}">
-            <span class="eng-ach-icon">${a.icon}</span>
-            <div class="eng-ach-info">
-                <div class="eng-ach-name">${a.name} <span class="eng-star-badge">${a.stars}</span></div>
-                <div class="eng-ach-desc">${a.desc}</div>
-            </div>
-        </div>`).join('');
-    const bar = (v, max) => Math.min(v / max * 100, 100).toFixed(1) + '%';
-    return `
-    ${engHeaderHTML()}
-    <div class="eng-card">
-        <div class="eng-card-title">🏆 成就墙</div>
-        <div class="eng-card-desc">解锁成就，积累你的游戏履历</div>
-        <div class="eng-achievement-grid">${grid}</div>
-    </div>
-    <div class="eng-card">
-        <div class="eng-card-title">📊 今日数据</div>
-        <div class="eng-card-desc">你今天在英语游乐场里的活跃记录</div>
-        <div class="eng-stats-grid">
-            <div class="eng-stat-item"><div class="eng-stat-number">${todayStats.searches}</div><div class="eng-stat-label">🔍 搜索</div><div class="eng-mini-bar"><div class="eng-mini-fill" style="width:${bar(todayStats.searches, 10)}"></div></div></div>
-            <div class="eng-stat-item"><div class="eng-stat-number">${todayStats.copies}</div><div class="eng-stat-label">📝 抄写</div><div class="eng-mini-bar"><div class="eng-mini-fill" style="width:${bar(todayStats.copies, 10)}"></div></div></div>
-            <div class="eng-stat-item"><div class="eng-stat-number">${todayStats.words}</div><div class="eng-stat-label">✍️ 输出字数</div><div class="eng-mini-bar"><div class="eng-mini-fill" style="width:${bar(todayStats.words, 100)}"></div></div></div>
-            <div class="eng-stat-item"><div class="eng-stat-number">${todayStats.score}</div><div class="eng-stat-label">⭐ 今日正反馈</div><div class="eng-mini-bar"><div class="eng-mini-fill" style="width:${bar(todayStats.score, 20)}"></div></div></div>
-        </div>
-        <div class="eng-text-muted eng-text-center">每日重置，保持新鲜感</div>
-    </div>`;
-}
-
-function engRenderHistoryListHTML() {
-    const stateTab = (state.currentSubTab && state.currentSubTab.engHistoryTab) || 'search';
-    const filter = (state._engHistoryFilter || '').toLowerCase();
-    const searchHistory = engGetHistory('search');
-    const copyHistory = engGetHistory('copy');
-    let itemsHtml = '';
-    if (stateTab === 'search') {
-        const filtered = searchHistory.filter(item => String(item.query || '').toLowerCase().includes(filter));
-        if (!filtered.length) {
-            itemsHtml = `<div class="eng-history-empty">${filter ? '没有匹配的搜索记录' : '暂无搜索记录'}</div>`;
-        } else {
-            itemsHtml = filtered.map((item) => {
-                const realIndex = searchHistory.indexOf(item);
-                const time = new Date(item.time).toLocaleString('zh-CN');
-                return `<div class="eng-history-item" data-action="eng-history-toggle" data-kind="search" data-index="${realIndex}">
-                    <div class="eng-history-main"><span class="eng-history-time">${time}</span><span class="eng-history-content">🔍 ${escapeHtml(item.query)}</span></div>
-                    <span class="eng-expand-icon">▾</span>
-                </div>
-                <div class="eng-history-detail" id="eng-search-detail-${realIndex}">搜索内容：${escapeHtml(item.query)}</div>`;
-            }).join('');
-        }
-    } else {
-        const filtered = copyHistory.filter(item => String(item.zh || '').includes(filter) || String(item.en || '').toLowerCase().includes(filter));
-        if (!filtered.length) {
-            itemsHtml = `<div class="eng-history-empty">${filter ? '没有匹配的抄写记录' : '暂无抄写记录'}</div>`;
-        } else {
-            itemsHtml = filtered.map(item => {
-                const realIndex = copyHistory.indexOf(item);
-                const time = new Date(item.time).toLocaleString('zh-CN');
-                return `<div class="eng-history-item" data-action="eng-history-toggle" data-kind="copy" data-index="${realIndex}">
-                    <div class="eng-history-main"><span class="eng-history-time">${time}</span><span class="eng-history-content">📝 ${escapeHtml(item.zh)} → ${escapeHtml(item.en)}</span></div>
-                    <span class="eng-expand-icon">▾</span>
-                </div>
-                <div class="eng-history-detail" id="eng-copy-detail-${realIndex}">${item.detail || '无详细分析'}</div>`;
-            }).join('');
-        }
-    }
-    return itemsHtml;
-}
-
-function engRenderHistory() {
-    const stateTab = (state.currentSubTab && state.currentSubTab.engHistoryTab) || 'search';
-    const filter = (state._engHistoryFilter || '').toLowerCase();
-    return `
-    ${engHeaderHTML()}
-    <div class="eng-card">
-        <div class="eng-card-title">📜 历史记录</div>
-        <div class="eng-history-clear-row">
-            <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-clear-history">🗑️ 清空所有</button>
-        </div>
-        <div class="eng-history-tabs">
-            <button class="eng-history-tab ${stateTab === 'search' ? 'eng-active' : ''}" data-action="eng-history-tab" data-tab="search">🔍 搜索历史</button>
-            <button class="eng-history-tab ${stateTab === 'copy' ? 'eng-active' : ''}" data-action="eng-history-tab" data-tab="copy">📝 抄写历史</button>
-        </div>
-        <div class="eng-history-search">
-            <input type="text" id="engHistoryFilter" placeholder="🔎 搜索历史记录…" value="${escapeHtml(filter)}" data-action="eng-history-filter">
-        </div>
-        <div class="eng-history-list" id="engHistoryList">${engRenderHistoryListHTML()}</div>
-    </div>`;
-}
-
-function engRenderThought() {
-    const thoughts = engInitThoughts();
-    const count = thoughts.length;
-    const items = thoughts.map((item, index) => {
-        const timeStr = engFormatTime(item.time);
-        const isCore = ['把学英语当成一个大型开放世界游戏', '要用英语去追我的兴趣', '每天问自己', '别再想"跟读"了', '彻底"枪毙"语法书', '给AI下"封口令"', '你不是"不会说"'].some(k => item.content.includes(k));
-        const tag = isCore ? '核心理念' : '感悟';
-        return `<div class="eng-thought-item">
-            <div class="eng-thought-content">${escapeHtml(item.content)}</div>
-            <div class="eng-thought-meta">
-                <span class="eng-thought-time">${timeStr}</span>
-                <span class="eng-thought-tag">${tag}</span>
-                <button class="eng-del-btn" data-action="eng-thought-del" data-index="${index}" title="删除">✕</button>
-            </div>
-        </div>`;
-    }).join('');
-    return `
-    ${engHeaderHTML()}
-    <div class="eng-card">
-        <div class="eng-card-title">💬 英语学习感悟 <span class="eng-thought-count">(${count})</span></div>
-        <div class="eng-card-desc">记录你的学习心得、灵感和成长瞬间</div>
-        <div class="eng-row" style="margin-bottom:10px;">
-            <input type="text" id="engThoughtInput" placeholder="写一句你的感悟…" data-action="eng-thought-input">
-            <button class="eng-btn eng-btn-primary eng-btn-sm" data-action="eng-thought-save">📝 记录</button>
-        </div>
-        <div id="engThoughtList">${items || '<div class="eng-thought-empty">还没有感悟，写一条吧 ✍️</div>'}</div>
-    </div>`;
-}
-
-function engRenderMore() {
-    const { appid, secret, apiKeys } = engGetBaiduCreds();
-    const maskedAppid = appid ? appid : '';
-    const maskedSecret = secret ? '••••••••' : '';
-    const maskedApiKeys = apiKeys ? '••••••••' : '';
-    return `
-    ${engHeaderHTML()}
-    <div class="eng-card">
-        <div class="eng-card-title">📖 游戏规则</div>
-        <div class="eng-rules">
-            <div class="eng-rule-head">🎯 等级系统</div>
-            <div>• 每获得 <strong>10</strong> 正反馈积分升 1 级</div>
-            <div>• 满级 <strong>1999</strong> 级</div>
-            <div>• 符号进阶：4个低级换1个高级</div>
-            <div class="eng-rule-head" style="margin-top:6px;">🏅 等级符号对应：</div>
-            <div class="eng-legend-grid">
-                <div class="eng-legend-item"><span class="eng-sym">⚓</span> Anchor <span class="eng-level">1 级</span></div>
-                <div class="eng-legend-item"><span class="eng-sym">🧭</span> Compass <span class="eng-level">4 级</span></div>
-                <div class="eng-legend-item"><span class="eng-sym">⛵</span> Sail <span class="eng-level">16 级</span></div>
-                <div class="eng-legend-item"><span class="eng-sym">🌊</span> Wave <span class="eng-level">64 级</span></div>
-                <div class="eng-legend-item"><span class="eng-sym">🌍</span> Globe <span class="eng-level">256 级</span></div>
-                <div class="eng-legend-item"><span class="eng-sym">🌌</span> Galaxy <span class="eng-level">500 级</span></div>
-            </div>
-            <div class="eng-special-rule">🌟 达到 500 级获得第一个 🌌，之后每 500 级增加一个 🌌（2000 级时拥有 4 个 🌌）</div>
-        </div>
-    </div>
-
-    <div class="eng-card">
-        <div class="eng-card-title">🔑 翻译 API 设置</div>
-        <div class="eng-card-desc">填入百度翻译开放平台的三个信息，保存后抄写工坊即可使用准确翻译（浏览器自动走 CORS 代理）</div>
-        <div class="eng-row">
-            <input type="text" id="engBaiduAppid" placeholder="① 百度翻译 AppID" value="${escapeHtml(maskedAppid)}" data-action="eng-baidu-appid">
-        </div>
-        <div class="eng-row" style="margin-top:8px;">
-            <input type="text" id="engBaiduKey" placeholder="② 百度翻译 密钥（已保存则显示 ••••）" value="${escapeHtml(maskedSecret)}" data-action="eng-baidu-key">
-        </div>
-        <div class="eng-row" style="margin-top:8px;">
-            <input type="text" id="engApiKeys" placeholder="③ API Keys（如使用聚合翻译服务时填写，可留空）" value="${escapeHtml(maskedApiKeys)}" data-action="eng-api-keys">
-        </div>
-        <div class="eng-row" style="margin-top:8px;">
-            <button class="eng-btn eng-btn-green eng-btn-sm" data-action="eng-baidu-save">💾 保存</button>
-            <button class="eng-btn eng-btn-outline eng-btn-sm" data-action="eng-baidu-test">🧪 测试连接</button>
-            <span class="eng-baidu-status" id="engBaiduStatus"></span>
-        </div>
-        <div class="eng-text-muted">🔗 ① AppID 与 ② 密钥：在 https://fanyi-api.baidu.com 开放平台创建应用获取；③ API Keys 为可选备用（支持 OpenAI 兼容接口，填「密钥」或「openai|密钥|https://接口地址」）</div>
-    </div>
-
-    <div class="eng-card">
-        <div class="eng-card-title">🔧 关于</div>
-        <div class="eng-text-muted">英语游乐场 v2.0 · 标签页版 · 满级1999 · 已集成成长小树</div>
-    </div>`;
-}
-
 function renderHotList(groupId) {
     const types = HOT_GROUPS[groupId] || HOT_GROUPS['mixed'];
     const cached = state.data.hotCache;
@@ -8320,10 +7107,259 @@ async function fetchInternationalHot(type) {
     }));
     return { type, update_time: (data.feed && data.feed.modified) || new Date().toISOString(), list };
 }
-
 // ==================== 变美情报局模块 ====================
 const BEAUTY_TREND_TYPES = ['xiaohongshu', 'douyin'];
 const BEAUTY_TREND_KEYWORDS = ['妆', '穿搭', '发型', '护肤', '美甲', '变美', '口红', '眼影', '睫毛', '眉毛', '腮红', '高光', '遮瑕', '粉底液', 'ootd', '韩系', '日系', '法式', '千金', '纯欲', '清冷', '氛围感', '多巴胺', '美拉德', '通勤', '约会', '聚会', '新手'];
+const BEAUTY_PROVINCE_CITIES = {
+  '北京': ['北京'],
+  '天津': ['天津'],
+  '上海': ['上海'],
+  '重庆': ['重庆'],
+  '河北': ['石家庄','唐山','秦皇岛','邯郸','邢台','保定','张家口','承德','沧州','廊坊','衡水'],
+  '山西': ['太原','大同','阳泉','长治','晋城','朔州','晋中','运城','忻州','临汾','吕梁'],
+  '内蒙古': ['呼和浩特','包头','乌海','赤峰','通辽','鄂尔多斯','呼伦贝尔','巴彦淖尔','乌兰察布','兴安','锡林郭勒','阿拉善'],
+  '辽宁': ['沈阳','大连','鞍山','抚顺','本溪','丹东','锦州','营口','阜新','辽阳','盘锦','铁岭','朝阳','葫芦岛'],
+  '吉林': ['长春','吉林','四平','辽源','通化','白山','松原','白城','延边'],
+  '黑龙江': ['哈尔滨','齐齐哈尔','鸡西','鹤岗','双鸭山','大庆','伊春','佳木斯','七台河','牡丹江','黑河','绥化','大兴安岭'],
+  '江苏': ['南京','无锡','徐州','常州','苏州','南通','连云港','淮安','盐城','扬州','镇江','泰州','宿迁'],
+  '浙江': ['杭州','宁波','温州','嘉兴','湖州','绍兴','金华','衢州','舟山','台州','丽水'],
+  '安徽': ['合肥','芜湖','蚌埠','淮南','马鞍山','淮北','铜陵','安庆','黄山','阜阳','宿州','滁州','六安','宣城','池州','亳州'],
+  '福建': ['福州','厦门','莆田','三明','泉州','漳州','南平','龙岩','宁德'],
+  '江西': ['南昌','景德镇','萍乡','九江','新余','鹰潭','赣州','吉安','宜春','抚州','上饶'],
+  '山东': ['济南','青岛','淄博','枣庄','东营','烟台','潍坊','济宁','泰安','威海','日照','临沂','德州','聊城','滨州','菏泽'],
+  '河南': ['郑州','开封','洛阳','平顶山','安阳','鹤壁','新乡','焦作','濮阳','许昌','漯河','三门峡','南阳','商丘','信阳','周口','驻马店','济源'],
+  '湖北': ['武汉','黄石','十堰','宜昌','襄阳','鄂州','荆门','孝感','荆州','黄冈','咸宁','随州','恩施'],
+  '湖南': ['长沙','株洲','湘潭','衡阳','邵阳','岳阳','常德','张家界','益阳','郴州','永州','怀化','娄底'],
+  '广东': ['广州','韶关','深圳','珠海','汕头','佛山','江门','湛江','茂名','肇庆','惠州','梅州','汕尾','河源','阳江','清远','东莞','中山','潮州','揭阳','云浮'],
+  '广西': ['南宁','柳州','桂林','梧州','北海','防城港','钦州','贵港','玉林','百色','贺州','河池','来宾','崇左'],
+  '海南': ['海口','三亚','三沙','儋州','五指山','琼海','文昌','万宁','东方','定安','屯昌','澄迈','临高','白沙','昌江','乐东','陵水','保亭','琼中'],
+  '四川': ['成都','自贡','攀枝花','泸州','德阳','绵阳','广元','遂宁','内江','乐山','南充','眉山','宜宾','广安','达州','雅安','巴中','资阳','阿坝','甘孜','凉山'],
+  '贵州': ['贵阳','六盘水','遵义','安顺','毕节','铜仁','黔西南','黔东南','黔南'],
+  '云南': ['昆明','曲靖','玉溪','保山','昭通','丽江','普洱','临沧','楚雄','红河','文山','西双版纳','大理','德宏','怒江','迪庆'],
+  '西藏': ['拉萨','日喀则','昌都','林芝','山南','那曲','阿里'],
+  '陕西': ['西安','铜川','宝鸡','咸阳','渭南','延安','汉中','榆林','安康','商洛'],
+  '甘肃': ['兰州','嘉峪关','金昌','白银','天水','武威','张掖','平凉','酒泉','庆阳','定西','陇南','临夏','甘南'],
+  '青海': ['西宁','海东','海北','黄南','海南','果洛','玉树','海西'],
+  '宁夏': ['银川','石嘴山','吴忠','固原','中卫'],
+  '新疆': ['乌鲁木齐','克拉玛依','吐鲁番','哈密','昌吉','博尔塔拉','巴音郭楞','阿克苏','克孜勒苏','喀什','和田','伊犁','塔城','阿勒泰','石河子'],
+  '中国香港': ['香港'],
+  '中国澳门': ['澳门'],
+  '中国台湾': ['台北','新北','桃园','台中','台南','高雄','基隆','新竹','嘉义']
+};
+
+function beautyFindProvinceByCity(city) {
+    if (!city) return '';
+    const c = city.replace(/[\s\(\)（）]/g, '');
+    for (const p in BEAUTY_PROVINCE_CITIES) {
+        const list = BEAUTY_PROVINCE_CITIES[p];
+        for (let i = 0; i < list.length; i++) {
+            if (list[i].replace(/[\s\(\)（）]/g, '') === c) return p;
+        }
+    }
+    const aliasMap = { '香港': '中国香港', '澳门': '中国澳门', '台北': '中国台湾', '新北': '中国台湾', '桃园': '中国台湾', '台中': '中国台湾', '台南': '中国台湾', '高雄': '中国台湾', '基隆': '中国台湾', '新竹': '中国台湾', '嘉义': '中国台湾' };
+    if (aliasMap[c]) return aliasMap[c];
+    return '';
+}
+
+function beautyNormalizeLocation() {
+    if (!state.settings) state.settings = {};
+    if (!state.settings.weatherMode) {
+        state.settings.weatherMode = (state.settings.city || '').trim() ? 'city' : 'gps';
+    }
+    if (!state.settings.province && state.settings.weatherMode === 'city' && state.settings.city) {
+        const p = beautyFindProvinceByCity(state.settings.city);
+        if (p) state.settings.province = p;
+    }
+}
+
+function beautyProvinceOptionsHTML(selectedProvince) {
+    let html = '<option value="">选择省份</option>';
+    for (const p in BEAUTY_PROVINCE_CITIES) {
+        html += `<option value="${escapeHtml(p)}" ${p === selectedProvince ? 'selected' : ''}>${escapeHtml(p)}</option>`;
+    }
+    html += `<option value="__other__" ${selectedProvince === '__other__' ? 'selected' : ''}>其他</option>`;
+    return html;
+}
+
+function beautyCityOptionsHTML(province, selectedCity) {
+    if (!province || province === '__other__') return '<option value="">选择城市</option><option value="__other__" ' + (selectedCity === '__other__' ? 'selected' : '') + '>其他城市</option>';
+    const list = BEAUTY_PROVINCE_CITIES[province] || [];
+    let html = '<option value="">选择城市</option>';
+    for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        html += `<option value="${escapeHtml(c)}" ${c === selectedCity ? 'selected' : ''}>${escapeHtml(c)}</option>`;
+    }
+    html += `<option value="__other__" ${selectedCity === '__other__' ? 'selected' : ''}>其他城市</option>`;
+    return html;
+}
+
+function getGPSCoords() {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) { resolve(getCityFallback()); return; }
+        navigator.geolocation.getCurrentPosition(
+            p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+            () => resolve(getCityFallback()),
+            { timeout: 10000, enableHighAccuracy: true }
+        );
+    });
+}
+
+async function reverseGeocodeCity(lat, lon) {
+    try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&accept-language=zh-CN`;
+        const res = await fetch(url, { headers: { 'Accept-Language': 'zh-CN' } });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const addr = data.address || {};
+        let name = addr.city || addr.town || addr.village || addr.county || addr.state || data.display_name || null;
+        if (name && name.length > 12) name = name.slice(0, 12);
+        return name;
+    } catch (e) { return null; }
+}
+
+// ---------- 省市区三级联动 ----------
+// pcas.json 结构：{ "四川省": { "成都市": { "锦江区": [...街道], ... }, ... }, ... }
+let BEAUTY_PCAS = null;
+async function ensurePcas() {
+    if (BEAUTY_PCAS) return BEAUTY_PCAS;
+    try {
+        const res = await fetch('https://unpkg.com/china-division/dist/pcas.json');
+        if (!res.ok) throw new Error('区县数据接口不可用');
+        const data = await res.json();
+        if (!data || typeof data !== 'object') throw new Error('区县数据格式异常');
+        BEAUTY_PCAS = data;
+    } catch (e) { BEAUTY_PCAS = null; }
+    return BEAUTY_PCAS;
+}
+
+function beautyCleanName(s) {
+    return (s || '').replace(/省|市|壮族自治区|回族自治区|维吾尔自治区|自治区|特别行政区|地区|自治州|盟|林区/g, '');
+}
+
+function findPcasProvince(provinceKey) {
+    if (!BEAUTY_PCAS || !provinceKey) return null;
+    const k = beautyCleanName(provinceKey);
+    const key = Object.keys(BEAUTY_PCAS).find(p => beautyCleanName(p) === k);
+    return key ? BEAUTY_PCAS[key] : null;
+}
+
+function findPcasCity(provNode, cityKey) {
+    if (!provNode || !cityKey) return null;
+    const keys = Object.keys(provNode);
+    const k = beautyCleanName(cityKey);
+    const key = keys.find(c => beautyCleanName(c) === k);
+    return key ? provNode[key] : (keys.length ? provNode[keys[0]] : null);
+}
+
+function getCityAreaNames(provinceKey, cityKey) {
+    const cityNode = findPcasCity(findPcasProvince(provinceKey), cityKey);
+    return cityNode ? Object.keys(cityNode) : [];
+}
+
+// 省份变化：只更新 DOM（城市列表重置、区县清空禁用），不落库；点「保存」才生效
+function beautyOnProvinceChange() {
+    const psel = document.getElementById('beautyProvinceSelect');
+    const csel = document.getElementById('beautyCitySelect');
+    const dsel = document.getElementById('beautyDistrictSelect');
+    const input = document.getElementById('beautyCityInput');
+    const confirm = document.querySelector('[data-action="beauty-city-confirm"]');
+    if (!psel || !csel || !dsel) return;
+    const pv = psel.value;
+    if (pv === '__other__') {
+        csel.style.display = 'none';
+        dsel.style.display = 'none';
+        if (input) { input.style.display = 'inline-block'; input.value = ''; input.focus(); }
+        if (confirm) confirm.style.display = 'inline-block';
+        return;
+    }
+    csel.style.display = 'inline-block';
+    dsel.style.display = 'inline-block';
+    if (input) { input.style.display = 'none'; input.value = ''; }
+    if (confirm) confirm.style.display = 'none';
+    csel.innerHTML = pv ? beautyCityOptionsHTML(pv, '') : '<option value="">请先选择省份</option>';
+    csel.disabled = !pv;
+    dsel.innerHTML = '<option value="">请先选择城市</option>';
+    dsel.disabled = true;
+}
+
+// 城市变化：异步加载并填充区县列表（pcas.json 懒加载，失败降级为不可选）
+async function beautyOnCityChange() {
+    const psel = document.getElementById('beautyProvinceSelect');
+    const csel = document.getElementById('beautyCitySelect');
+    const dsel = document.getElementById('beautyDistrictSelect');
+    if (!psel || !csel || !dsel) return;
+    const pv = psel.value, cv = csel.value;
+    dsel.disabled = !cv;
+    if (!cv) { dsel.innerHTML = '<option value="">请先选择城市</option>'; return; }
+    dsel.innerHTML = '<option value="">区县加载中...</option>';
+    await ensurePcas();
+    // 用户在加载期间可能已切走
+    if (psel.value !== pv || csel.value !== cv) return;
+    const areas = getCityAreaNames(pv, cv);
+    let html = '<option value="">（可选）区/县</option>';
+    for (let i = 0; i < areas.length; i++) {
+        const a = typeof areas[i] === 'string' ? areas[i] : (areas[i] && areas[i].name) || '';
+        if (a) html += `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`;
+    }
+    if (!areas.length) html = '<option value="">（该市暂无区县数据，可不选）</option>';
+    dsel.innerHTML = html;
+    dsel.disabled = false;
+}
+
+// 初始渲染后填充区县下拉（保留已保存的区县选中态）
+async function beautyFillDistrictOptions() {
+    const psel = document.getElementById('beautyProvinceSelect');
+    const csel = document.getElementById('beautyCitySelect');
+    const dsel = document.getElementById('beautyDistrictSelect');
+    if (!psel || !csel || !dsel) return;
+    const pv = psel.value, cv = csel.value;
+    const selected = state.settings.district || '';
+    if (!pv || !cv || pv === '__other__' || cv === '__other__') { dsel.disabled = true; return; }
+    dsel.innerHTML = '<option value="">区县加载中...</option>';
+    await ensurePcas();
+    if (!BEAUTY_PCAS) { dsel.innerHTML = '<option value="">（区县数据不可用，可不选）</option>'; dsel.disabled = false; return; }
+    const areas = getCityAreaNames(pv, cv);
+    let html = '<option value="">（可选）区/县</option>';
+    for (let i = 0; i < areas.length; i++) {
+        const a = typeof areas[i] === 'string' ? areas[i] : (areas[i] && areas[i].name) || '';
+        if (a) html += `<option value="${escapeHtml(a)}" ${a === selected ? 'selected' : ''}>${escapeHtml(a)}</option>`;
+    }
+    if (!areas.length) html = `<option value="">（该市暂无区县数据，可不选）</option>`;
+    dsel.innerHTML = html;
+    dsel.disabled = false;
+}
+
+// 带（可选）区县精度的坐标解析：优先按区县名 + 省/市过滤地理编码，失败回退到市级
+async function geocodeAdmin(district, province, city) {
+    try {
+        const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(district)}&count=10&language=zh&format=json`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const data = await res.json();
+        const results = data.results || [];
+        if (!results.length) return null;
+        const pClean = beautyCleanName(province);
+        const cClean = beautyCleanName(city);
+        let hit = results.find(r => r.admin1 && pClean && r.admin1.includes(pClean) && (!cClean || (r.admin2 && r.admin2.includes(cClean))));
+        if (!hit) hit = results.find(r => r.admin1 && pClean && r.admin1.includes(pClean));
+        if (!hit) hit = results[0];
+        return { lat: hit.latitude, lon: hit.longitude };
+    } catch (e) { return null; }
+}
+
+async function getLocationCoords(province, city, district) {
+    const d = (district || '').trim();
+    if (d) {
+        const c = await geocodeAdmin(d, province, city);
+        if (c) return c;
+    }
+    const ct = (city || '').trim();
+    if (ct) {
+        const c = await getCityCoordinates(ct);
+        if (c) return c;
+    }
+    return null;
+}
 
 function loadBeautyData() {
     const tab = validSubTab('beauty', [
@@ -8339,11 +7375,11 @@ function loadBeautyData() {
 // ---------- Tab 1: 今日宜美 ----------
 function renderBeautyToday() {
     const cache = state.data.apiCache ? state.data.apiCache['beautyWeather'] : null;
-    const noCity = !state.settings.city || !state.settings.city.trim();
+    const noLocation = state.settings.weatherMode !== 'gps' && !(state.settings.city || '').trim();
     if (!cache) {
         return `
             <div class="card-header"><div class="card-title">🌤️ 看天穿衣 / 护肤</div></div>
-            <div class="empty-state"><span class="emoji">🌤️</span>${noCity ? '正在获取天气（未设置城市，将使用默认城市）...' : '正在定位并获取天气...'}</div>
+            <div class="empty-state"><span class="emoji">🌤️</span>${noLocation ? '正在获取天气（未设置城市，将使用定位或默认城市）...' : '正在定位并获取天气...'}</div>
         `;
     }
     if (cache.error) {
@@ -8351,22 +7387,43 @@ function renderBeautyToday() {
             <div class="card-header"><div class="card-title">🌤️ 看天穿衣 / 护肤</div></div>
             <div class="empty-state" style="align-items:flex-start;text-align:left">
                 <div style="margin-bottom:10px"><span class="emoji">🌧️</span>${escapeHtml(cache.error)}</div>
-                ${noCity ? `
+                ${noLocation ? `
                     <div style="font-size:13px;color:var(--text-secondary);background:var(--primary-light);padding:10px 12px;border-radius:10px;margin-bottom:10px;line-height:1.5">
-                        💡 看天穿衣需要先设置城市，否则拿不到准确的天气与穿搭建议。去设置里填写你的城市即可。
+                        💡 看天穿衣需要先选择城市或点击「📍 定位」，否则拿不到准确的天气与穿搭建议。
                     </div>
-                    <button class="btn btn-primary btn-sm" data-action="open-settings">去设置填写城市</button>
+                    <button class="btn btn-primary btn-sm" data-action="beauty-city-locate">📍 使用当前位置</button>
                     <button class="btn btn-secondary btn-sm" data-action="beauty-weather-refresh" style="margin-top:8px">重试（用默认城市）</button>
                 ` : `
-                    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">若持续失败，可到设置更换城市后重试。</div>
+                    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">若持续失败，可切换城市或点击定位后重试。</div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap">
-                        <button class="btn btn-primary btn-sm" data-action="open-settings">更改城市</button>
+                        <button class="btn btn-primary btn-sm" data-action="beauty-city-locate">📍 定位</button>
                         <button class="btn btn-secondary btn-sm" data-action="beauty-weather-refresh">重试</button>
                     </div>
                 `}
             </div>
         `;
     }
+    beautyNormalizeLocation();
+    const mode = state.settings.weatherMode || 'gps';
+    const savedDistrict = mode === 'city' ? (state.settings.district || '') : '';
+    let province = mode === 'city' ? (state.settings.province || '') : '';
+    let city = mode === 'city' ? (state.settings.city || '') : '';
+    let cityInput = '';
+    let cityInputMode = false;
+    if (mode === 'city' && province) {
+        const list = BEAUTY_PROVINCE_CITIES[province] || [];
+        if (city && !list.includes(city)) {
+            cityInput = city; city = '__other__'; cityInputMode = true;
+        }
+    } else if (mode === 'city' && city && !province) {
+        province = '__other__'; cityInput = city; city = '__other__'; cityInputMode = true;
+    }
+    const pvSel = province && province !== '__other__' ? province : '';
+    const cvSel = city && city !== '__other__' ? city : '';
+    const isCustom = province === '__other__' || city === '__other__';
+    const displayCity = mode === 'gps'
+        ? (state.settings.gpsCityName || '📍 当前位置')
+        : (isCustom ? (cityInput || '自定义城市') : (cvSel + (savedDistrict ? ' · ' + savedDistrict : '') || '请选择城市'));
     const w = cache.data || {};
     const current = w.current || {};
     const daily = w.daily || {};
@@ -8376,19 +7433,34 @@ function renderBeautyToday() {
     const code = current.weather_code;
     const wind = current.wind_speed_10m;
     const precip = current.precipitation;
-    const city = state.settings.city || '当前位置';
     const guide = buildBeautyOutfitGuide(temp, uv, humidity, code, wind, precip);
     const weatherIcon = weatherCodeToIcon(code);
+    const selStyle = 'padding:5px 8px;font-size:12px;border-radius:8px;background:var(--card-bg);border:1px solid var(--border-color)';
     return `
-        <div class="card-header">
-            <div class="card-title">🌤️ 看天穿衣 / 护肤</div>
-            <button class="btn btn-secondary" data-action="beauty-weather-refresh" style="font-size:12px">刷新</button>
+        <div class="card-header" style="align-items:flex-start;gap:8px">
+            <div class="card-title" style="flex:1">🌤️ 看天穿衣 / 护肤</div>
+            <div class="beauty-city-bar" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0;justify-content:flex-end">
+                <select id="beautyProvinceSelect" class="input" data-action="beauty-province-change" style="min-width:70px;width:auto;${selStyle}">
+                    ${beautyProvinceOptionsHTML(province)}
+                </select>
+                <select id="beautyCitySelect" class="input" data-action="beauty-city-change" style="min-width:80px;width:auto;${selStyle}" ${pvSel ? '' : 'disabled'}>
+                    ${pvSel ? beautyCityOptionsHTML(pvSel, cvSel) : (isCustom ? '<option value="__other__" selected>其他城市</option>' : '<option value="">请先选择省份</option>')}
+                </select>
+                <select id="beautyDistrictSelect" class="input" style="min-width:90px;width:auto;${selStyle}" ${(!pvSel || !cvSel) ? 'disabled' : ''}>
+                    ${(!pvSel || !cvSel) ? '<option value="">请先选择城市</option>' : `<option value="">（可选）区/县</option>${savedDistrict ? `<option value="${escapeHtml(savedDistrict)}" selected>${escapeHtml(savedDistrict)}</option>` : ''}`}
+                </select>
+                <input type="text" id="beautyCityInput" class="input" placeholder="输入城市名" value="${escapeHtml(cityInput)}" style="display:${isCustom ? 'inline-block' : 'none'};width:80px;${selStyle}">
+                <button class="btn btn-secondary" data-action="beauty-city-confirm" style="font-size:12px;padding:5px 10px;white-space:nowrap;display:${isCustom ? 'inline-block' : 'none'}">确定</button>
+                <button class="btn btn-secondary" data-action="beauty-city-locate" title="使用当前位置" style="font-size:12px;padding:5px 10px;white-space:nowrap">📍 定位</button>
+                <button class="btn btn-primary" data-action="beauty-city-save" title="保存所选省市区并刷新天气" style="font-size:12px;padding:5px 10px;white-space:nowrap">💾 保存</button>
+                <button class="btn btn-secondary" data-action="beauty-weather-refresh" style="font-size:12px;padding:5px 10px;white-space:nowrap">刷新</button>
+            </div>
         </div>
         <div class="beauty-weather-card">
             <div class="beauty-weather-main">
                 <div class="beauty-weather-icon">${weatherIcon}</div>
                 <div class="beauty-weather-info">
-                    <div class="beauty-weather-city">${escapeHtml(city)}</div>
+                    <div class="beauty-weather-city">${escapeHtml(displayCity)}</div>
                     <div class="beauty-weather-temp">${temp != null ? temp + '°C' : '--'}</div>
                     <div class="beauty-weather-meta">
                         <span>UV ${uv != null ? uv : '--'}</span>
@@ -8588,15 +7660,18 @@ function weatherCodeToIcon(code) {
 async function loadBeautyWeather() {
     const wrap = document.getElementById('beautyTodayWrap');
     if (!wrap) return;
+    beautyNormalizeLocation();
     const cacheKey = 'beautyWeather';
     const cached = state.data.apiCache ? state.data.apiCache[cacheKey] : null;
     if (cached && cached.ts && (Date.now() - cached.ts < 30 * 60 * 1000)) {
         wrap.innerHTML = renderBeautyToday();
+        beautyFillDistrictOptions();
         return;
     }
     if (!state.data.apiCache) state.data.apiCache = {};
     state.data.apiCache[cacheKey] = { data: null, error: null, ts: Date.now() };
     wrap.innerHTML = renderBeautyToday();
+    beautyFillDistrictOptions();
     try {
         const pos = await getBeautyPosition();
         const url = `${API.weather}/forecast?latitude=${pos.lat}&longitude=${pos.lon}&current=temperature_2m,relative_humidity_2m,weather_code,uv_index,wind_speed_10m,precipitation&daily=uv_index_max&timezone=auto`;
@@ -8604,33 +7679,49 @@ async function loadBeautyWeather() {
         if (!res.ok) throw new Error('天气接口暂时不可用');
         const data = await res.json();
         state.data.apiCache[cacheKey] = { data, error: null, ts: Date.now() };
+        if (state.settings.weatherMode === 'gps') {
+            const rev = await reverseGeocodeCity(pos.lat, pos.lon);
+            state.settings.gpsCityName = rev || '📍 当前位置';
+        }
         saveState();
+        if (typeof queueSync === 'function') queueSync();
     } catch (e) {
         state.data.apiCache[cacheKey] = { data: null, error: e.message || '获取天气失败', ts: Date.now() };
     }
     const wrap2 = document.getElementById('beautyTodayWrap');
-    if (wrap2) wrap2.innerHTML = renderBeautyToday();
+    if (wrap2) { wrap2.innerHTML = renderBeautyToday(); beautyFillDistrictOptions(); }
 }
 
 function getBeautyPosition() {
-    return new Promise((resolve) => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
-                () => resolve(getCityFallback()),
-                { timeout: 8000 }
-            );
-        } else {
-            resolve(getCityFallback());
+    return new Promise(async (resolve) => {
+        if (state.settings.weatherMode === 'gps') {
+            const pos = await getGPSCoords(); resolve(pos); return;
         }
+        const coords = await getLocationCoords(state.settings.province, state.settings.city, state.settings.district);
+        if (coords) { resolve(coords); return; }
+        const pos = await getGPSCoords(); resolve(pos);
     });
 }
 
+async function getCityCoordinates(city) {
+    const cityMap = { '成都': { lat: 30.66, lon: 104.06 }, '北京': { lat: 39.90, lon: 116.41 }, '上海': { lat: 31.23, lon: 121.47 }, '广州': { lat: 23.13, lon: 113.26 }, '深圳': { lat: 22.54, lon: 114.06 }, '杭州': { lat: 30.27, lon: 120.15 }, '南京': { lat: 32.06, lon: 118.78 }, '武汉': { lat: 30.59, lon: 114.31 }, '西安': { lat: 34.27, lon: 108.95 }, '重庆': { lat: 29.56, lon: 106.55 }, '苏州': { lat: 31.30, lon: 120.58 }, '天津': { lat: 39.13, lon: 117.20 }, '长沙': { lat: 28.23, lon: 112.98 }, '青岛': { lat: 36.07, lon: 120.38 }, '厦门': { lat: 24.48, lon: 118.09 }, '昆明': { lat: 25.04, lon: 102.71 }, '哈尔滨': { lat: 45.80, lon: 126.54 }, '沈阳': { lat: 41.81, lon: 123.43 }, '大连': { lat: 38.91, lon: 121.61 }, '郑州': { lat: 34.75, lon: 113.63 }, '济南': { lat: 36.65, lon: 117.12 }, '合肥': { lat: 31.82, lon: 117.23 }, '福州': { lat: 26.08, lon: 119.30 }, '南昌': { lat: 28.68, lon: 115.89 }, '贵阳': { lat: 26.65, lon: 106.63 }, '南宁': { lat: 22.82, lon: 108.32 }, '兰州': { lat: 36.06, lon: 103.83 }, '银川': { lat: 38.49, lon: 106.23 }, '西宁': { lat: 36.62, lon: 101.78 }, '乌鲁木齐': { lat: 43.83, lon: 87.62 }, '拉萨': { lat: 29.65, lon: 91.10 }, '呼和浩特': { lat: 40.84, lon: 111.75 }, '石家庄': { lat: 38.04, lon: 114.51 }, '太原': { lat: 37.87, lon: 112.55 }, '长春': { lat: 43.82, lon: 125.32 }, '海口': { lat: 20.02, lon: 110.35 }, '宁波': { lat: 29.87, lon: 121.55 }, '无锡': { lat: 31.49, lon: 120.31 }, '常州': { lat: 31.78, lon: 119.95 }, '温州': { lat: 28.00, lon: 120.70 }, '泉州': { lat: 24.91, lon: 118.68 }, '佛山': { lat: 23.02, lon: 113.12 }, '东莞': { lat: 22.94, lon: 113.74 }, '烟台': { lat: 37.46, lon: 121.45 }, '唐山': { lat: 39.63, lon: 118.18 }, '徐州': { lat: 34.26, lon: 117.18 }, '南通': { lat: 31.98, lon: 120.89 }, '潍坊': { lat: 36.71, lon: 119.16 }, '淄博': { lat: 36.81, lon: 118.05 }, '绍兴': { lat: 30.08, lon: 120.58 }, '嘉兴': { lat: 30.75, lon: 120.75 }, '台州': { lat: 28.66, lon: 121.42 }, '金华': { lat: 29.08, lon: 119.65 }, '惠州': { lat: 23.11, lon: 114.42 }, '中山': { lat: 22.52, lon: 113.39 }, '珠海': { lat: 22.27, lon: 113.57 }, '汕头': { lat: 23.35, lon: 116.68 }, '湛江': { lat: 21.27, lon: 110.36 }, '三亚': { lat: 18.25, lon: 109.51 }, '柳州': { lat: 24.33, lon: 109.42 }, '桂林': { lat: 25.28, lon: 110.28 }, '台北（中国台湾）': { lat: 25.03, lon: 121.56 }, '香港': { lat: 22.32, lon: 114.17 }, '中国澳门': { lat: 22.19, lon: 113.55 } };
+    const cleanCity = city.replace(/[\s\(\)（）]/g, '');
+    if (cityMap[cleanCity]) return cityMap[cleanCity];
+    try {
+        const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('地理编码接口不可用');
+        const data = await res.json();
+        if (!data.results || !data.results.length) throw new Error('未找到该城市');
+        const r = data.results[0];
+        return { lat: r.latitude, lon: r.longitude };
+    } catch (e) {
+        return null;
+    }
+}
+
 function getCityFallback() {
-    // 成都作为默认兜底，也可通过设置城市做简单映射
-    const cityMap = { '成都': { lat: 30.66, lon: 104.06 }, '北京': { lat: 39.90, lon: 116.41 }, '上海': { lat: 31.23, lon: 121.47 }, '广州': { lat: 23.13, lon: 113.26 }, '深圳': { lat: 22.54, lon: 114.06 } };
-    const c = (state.settings.city || '成都').trim();
-    return cityMap[c] || { lat: 30.66, lon: 104.06 };
+    return { lat: 30.66, lon: 104.06 };
 }
 
 // ---------- Tab 2: 流行风向 ----------
@@ -9842,7 +8933,35 @@ function wishCard(w, available) {
 }
 
 // ==================== 事件绑定 ====================
+function pushYjxsToIframe() {
+    const iframe = document.querySelector('.yjxs-host iframe');
+    if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({ type: 'yjxs-sync-in', payload: state.data.yjxs || {} }, '*');
+    }
+}
+
+// 悦己享瘦 iframe 是独立文档，切主题时需单独推送夜间模式状态
+function pushThemeToYjxs() {
+    const iframe = document.querySelector('.yjxs-host iframe');
+    if (iframe && iframe.contentWindow) {
+        const theme = (state.data.settings && state.data.settings.theme) || 'light';
+        iframe.contentWindow.postMessage({ type: 'yjxs-theme', theme: theme }, '*');
+    }
+}
+
 function initEvents() {
+    // 悦己享瘦 iframe 通过 postMessage 与父页面同步数据
+    window.addEventListener('message', e => {
+        if (!e.data) return;
+        if (e.data.type === 'yjxs-data') {
+            state.data.yjxs = e.data.payload || {};
+            saveState();
+        } else if (e.data.type === 'yjxs-ready') {
+            pushYjxsToIframe();
+            pushThemeToYjxs();
+        }
+    });
+
     // 绑定到 document，使侧边栏导航（#sidebarNav，位于 #content 之外）也能触发
     document.addEventListener('click', async e => {
         // 点击「新增打卡项」板块下拉之外时，收起菜单（仅 DOM 操作，不触发整页重渲染）
@@ -9862,19 +8981,26 @@ function initEvents() {
         }
 
         if (action === 'tab') {
-            if (el.dataset.module) {
+            const mod = el.dataset.module;
+            if (mod) {
+                // v20261106y 关键修复：只有「真实模块 id」才能改 currentModule。
+                // ec-wrong-sub / ec-review-sub 只是三级目录的命名空间，写进 currentModule 后
+                // render() 找不到这个模块，会回退到导航第一项（欢迎首页）→ 表现为「点子标签就跳首页 / 点不进去」。
+                const isRealModule = !!getModuleById(mod);
                 if (el.dataset.tab) {
-                    state.currentSubTab[el.dataset.module] = el.dataset.tab;
-                    if (state.currentModule !== el.dataset.module) {
-                        state.currentModule = el.dataset.module;
-                    }
+                    state.currentSubTab[mod] = el.dataset.tab;
+                    if (isRealModule && state.currentModule !== mod) state.currentModule = mod;
                     if (el.dataset.subtab) {
-                        state.currentSubTab[el.dataset.module + '_' + el.dataset.tab] = el.dataset.subtab;
+                        state.currentSubTab[mod + '_' + el.dataset.tab] = el.dataset.subtab;
                     }
-                } else {
-                    state.currentModule = el.dataset.module;
+                } else if (isRealModule) {
+                    state.currentModule = mod;
                 }
+                // 切主 Tab 就是明确离开当前页面：清掉查漏补缺会话，避免换板块后仍卡在复习卡里
+                if (el.dataset.ecMain) state._wbSession = null;
                 render();
+                // 英语打卡主 Tab 切换后回到内容顶部，避免长页面停在半截（只作用于带标记的主 Tab）
+                if (el.dataset.ecMain) { try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { /* ignore */ } }
                 closeSidebar();
             }
             return;
@@ -9902,6 +9028,64 @@ function initEvents() {
         // 变美情报局
         if (action === 'beauty-weather-refresh') {
             delete state.data.apiCache['beautyWeather'];
+            loadBeautyWeather();
+            return;
+        }
+        if (action === 'beauty-city-save') {
+            const psel = document.getElementById('beautyProvinceSelect');
+            const csel = document.getElementById('beautyCitySelect');
+            const dsel = document.getElementById('beautyDistrictSelect');
+            const input = document.getElementById('beautyCityInput');
+            const pv = psel ? psel.value : '';
+            const cv = csel ? csel.value : '';
+            const dv = dsel ? dsel.value : '';
+            const inputVal = input ? (input.value || '').trim() : '';
+            let finalProvince = '', finalCity = '', finalDistrict = '';
+            if (pv === '__other__' || cv === '__other__' || (!pv && inputVal)) {
+                if (!inputVal) { toast('请在输入框里填写城市名再保存'); return; }
+                finalCity = inputVal;
+                finalProvince = beautyFindProvinceByCity(inputVal);
+            } else {
+                if (!pv) { toast('请先选择省份'); return; }
+                if (!cv) { toast('请先选择城市'); return; }
+                finalProvince = pv; finalCity = cv;
+                if (dv) finalDistrict = dv;
+            }
+            state.settings.weatherMode = 'city';
+            state.settings.province = finalProvince;
+            state.settings.city = finalCity;
+            state.settings.district = finalDistrict;
+            delete state.data.apiCache['beautyWeather'];
+            saveState();
+            if (typeof queueSync === 'function') queueSync();
+            toast('已保存 ' + finalCity + (finalDistrict ? ' · ' + finalDistrict : '') + '，正在更新天气...');
+            loadBeautyWeather();
+            return;
+        }
+        if (action === 'beauty-city-confirm') {
+            const input = document.getElementById('beautyCityInput');
+            const val = (input ? input.value : '').trim();
+            if (val) {
+                state.settings.weatherMode = 'city';
+                state.settings.city = val;
+                const p = beautyFindProvinceByCity(val);
+                if (p) state.settings.province = p;
+                delete state.data.apiCache['beautyWeather'];
+                saveState();
+                if (typeof queueSync === 'function') queueSync();
+                loadBeautyWeather();
+            } else {
+                toast('请输入城市名');
+            }
+            return;
+        }
+        if (action === 'beauty-city-locate') {
+            state.settings.weatherMode = 'gps';
+            state.settings.gpsCityName = '📍 正在定位...';
+            delete state.data.apiCache['beautyWeather'];
+            saveState();
+            if (typeof queueSync === 'function') queueSync();
+            toast('正在获取当前位置天气...');
             loadBeautyWeather();
             return;
         }
@@ -10016,9 +9200,14 @@ function initEvents() {
             syncModuleInputs();
             const i = +el.dataset.i;
             const all = getAllModules();
-            all[i].hidden = !all[i].hidden;
+            const willHide = !el.checked;
             // 至少保留一个可见板块，避免侧边栏全空
-            if (!all.some(m => !m.hidden)) all[i].hidden = false;
+            if (willHide && !all.some((m, k) => k !== i && !m.hidden)) {
+                toast('至少保留一个显示的板块');
+                buildModuleManager();
+                return;
+            }
+            all[i].hidden = willHide;
             state.data.modulesUpdatedAt = now();
             buildModuleManager();
             renderSidebar();
@@ -10179,6 +9368,11 @@ function initEvents() {
             d.setDate(d.getDate() + delta);
             state._scheduleDate = dateStr(d);
             render();
+            return;
+        }
+
+        if (action === 'checkin-month') {
+            shiftCheckinMonth(parseInt(el.dataset.delta) || 0);
             return;
         }
 
@@ -10504,147 +9698,6 @@ function initEvents() {
             return;
         }
 
-        // ========== 探索英语（eng-*） ==========
-        if (action === 'eng-translate') {
-            engRunLesson();
-            return;
-        }
-        if (action === 'eng-add-row') {
-            engAddRow();
-            return;
-        }
-        if (action === 'eng-remove-row') {
-            engRemoveRow();
-            return;
-        }
-        if (action === 'eng-toggle-delete-mode') {
-            engToggleDeleteMode();
-            return;
-        }
-        if (action === 'eng-delete-row') {
-            const rowIdx = parseInt(el.getAttribute('data-row'), 10);
-            if (!isNaN(rowIdx)) engDeleteRow(rowIdx);
-            return;
-        }
-        if (action === 'eng-copy') {
-            engCopyCurrent();
-            return;
-        }
-        if (action === 'eng-reset-copy') {
-            engResetCopy();
-            return;
-        }
-        if (action === 'eng-search') {
-            engDoSearch();
-            return;
-        }
-        if (action === 'eng-translate-search') {
-            engTranslateAndSearch();
-            return;
-        }
-        if (action === 'eng-pill') {
-            const inp = document.getElementById('engSearchInput');
-            if (inp) inp.value = el.dataset.q;
-            engDoSearch(el.dataset.q);
-            return;
-        }
-        if (action === 'eng-thought-save') {
-            const inp = document.getElementById('engThoughtInput');
-            const content = inp ? inp.value.trim() : '';
-            if (content) {
-                engAddThought(content);
-                if (inp) inp.value = '';
-                render();
-            }
-            return;
-        }
-        if (action === 'eng-thought-del') {
-            engDelThought(parseInt(el.dataset.index));
-            render();
-            return;
-        }
-        if (action === 'eng-history-tab') {
-            state.currentSubTab.engHistoryTab = el.dataset.tab;
-            render();
-            return;
-        }
-        if (action === 'eng-history-toggle') {
-            const detail = document.getElementById(`eng-${el.dataset.kind}-detail-${el.dataset.index}`);
-            const icon = el.querySelector('.eng-expand-icon');
-            if (detail) detail.classList.toggle('eng-open');
-            if (icon) icon.classList.toggle('eng-open');
-            return;
-        }
-        if (action === 'eng-clear-history') {
-            if (typeof uiConfirm === 'function') {
-                uiConfirm('确定要清空英语游乐场所有历史记录吗？', { isDanger: true }).then(ok => {
-                    if (ok) {
-                        localStorage.removeItem('engPlay_search');
-                        localStorage.removeItem('engPlay_copy');
-                        render();
-                    }
-                });
-            } else {
-                if (confirm('确定要清空英语游乐场所有历史记录吗？')) {
-                    localStorage.removeItem('engPlay_search');
-                    localStorage.removeItem('engPlay_copy');
-                    render();
-                }
-            }
-            return;
-        }
-        if (action === 'eng-baidu-save') {
-            const appid = (document.getElementById('engBaiduAppid') || {}).value || '';
-            const key = (document.getElementById('engBaiduKey') || {}).value || '';
-            const apiKeys = (document.getElementById('engApiKeys') || {}).value || '';
-            localStorage.setItem('engPlay_baiduAppid', appid.trim());
-            localStorage.setItem('engPlay_baiduKey', key.trim());
-            localStorage.setItem('engPlay_apiKeys', apiKeys.trim());
-            const st = document.getElementById('engBaiduStatus');
-            if (st) st.textContent = '已保存 ✅';
-            engToast('翻译 API 已保存');
-            return;
-        }
-        if (action === 'eng-baidu-test') {
-            const st = document.getElementById('engBaiduStatus');
-            const { appid, secret } = engGetBaiduCreds();
-            if (!appid || !secret) {
-                if (st) st.textContent = '请先填写 ①AppID 与 ②密钥 并保存';
-                return;
-            }
-            if (st) st.textContent = '⏳ 测试中（最长 15s）…';
-            // 只测百度第一层，不再走完整链路，绝不假死
-            let finished = false;
-            const finish = (msg) => {
-                if (finished) return;
-                finished = true;
-                if (st) st.textContent = msg;
-            };
-            const overallTimer = setTimeout(() => finish('⏱ 超时：网络受限或代理不可用，建议先确认浏览器联网正常'), 15000);
-            (async () => {
-                try {
-                    const result = await Promise.race([
-                        engFetchBaidu(appid, secret, '你好'),
-                        new Promise(resolve => setTimeout(() => resolve(null), 14000))
-                    ]);
-                    clearTimeout(overallTimer);
-                    if (!result) {
-                        finish('❌ 全部 CORS 代理失败：网络受限，浏览器无法直连百度翻译 API');
-                    } else if (String(result).startsWith('[百度错误')) {
-                        finish(`❌ ${result}`);
-                    } else if (result && result !== '你好') {
-                        finish(`✅ 成功：${result}`);
-                    } else {
-                        finish('❌ 密钥可能不正确（未返回翻译）');
-                    }
-                } catch (err) {
-                    clearTimeout(overallTimer);
-                    finish(`❌ 测试异常：${err && err.message ? err.message : '未知'}`);
-                }
-            })();
-            return;
-        }
-
         if (action === 'hot-platform') {
             state.currentSubTab[`hot_${el.dataset.group}`] = el.dataset.type;
             render();
@@ -10875,6 +9928,43 @@ function initEvents() {
             return;
         }
 
+        if (action === 'export-points-backup') {
+            exportData();
+            toast('已导出完整备份（含积分/段位/打卡等全部数据）');
+            return;
+        }
+
+        if (action === 'reset-points') {
+            const input = document.getElementById('settingTargetPoints');
+            const target = input ? parseInt(input.value, 10) : 460;
+            if (isNaN(target) || target < 0) {
+                toast('请输入有效的目标积分');
+                return;
+            }
+            uiConfirm(`确定把积分/段位/赛季/成就全部重置为 ${target} 积分对应的状态吗？\n这会清空现有积分流水、成就、称号、连胜等，且无法撤销。`, { isDanger: true }).then(ok => {
+                if (ok) {
+                    resetPointsToTarget(target);
+                    toast(`已重置为 ${target} 积分，页面已刷新`);
+                }
+            });
+            return;
+        }
+
+        if (action === 'clear-points-rank') {
+            uiConfirm('确定要「积分/段位全部清零」吗？\n这会永久删除：所有积分流水、段位、赛季记录、成就、称号、星能、连胜、补打卡记录，并把已兑换心愿恢复为未兑换。\n本地和云端（如已配置）都会同步清零，无法撤销。', { isDanger: true }).then(ok => {
+                if (ok) {
+                    clearAllPointsAndRankData();
+                    toast('积分/段位已彻底清零，页面已刷新');
+                }
+            });
+            return;
+        }
+
+        if (action === 'unfreeze-achievements') {
+            unfreezeAchievements();
+            return;
+        }
+
     });
 
     // 批量管理：点击行切换复选框
@@ -10892,12 +9982,6 @@ function initEvents() {
         const action = el.dataset.action;
         if (action === 'reading-search-input') {
             // 实时输入不做跳转；真正跳转在回车 / 点击「搜索」按钮时处理
-            return;
-        }
-        if (action === 'eng-history-filter') {
-            state._engHistoryFilter = el.value;
-            const list = document.getElementById('engHistoryList');
-            if (list) list.innerHTML = engRenderHistoryListHTML();
             return;
         }
     });
@@ -10939,6 +10023,12 @@ function initEvents() {
             state._scheduleDate = e.target.value;
             render();
         }
+        if (e.target.id === 'beautyProvinceSelect') {
+            beautyOnProvinceChange();
+        }
+        if (e.target.id === 'beautyCitySelect') {
+            beautyOnCityChange();
+        }
     });
 
     // 回车快捷提交
@@ -10950,9 +10040,6 @@ function initEvents() {
         else if (el.id === 'checkInName') { e.preventDefault(); document.querySelector('[data-action="add-checkin"]')?.click(); }
         else if (el.classList && el.classList.contains('checkInNameInput')) { e.preventDefault(); el.closest('.category-add-card')?.querySelector('[data-action="add-checkin-from-category"]')?.click(); }
         else if (el.id === 'readingSearchInput') { e.preventDefault(); openDoubanBookSearch(el.value); }
-        else if (el.id === 'engTranslateInput') { e.preventDefault(); engRunLesson(); }
-        else if (el.id === 'engSearchInput') { e.preventDefault(); engDoSearch(); }
-        else if (el.id === 'engThoughtInput') { e.preventDefault(); const btn = document.querySelector('[data-action="eng-thought-save"]'); if (btn) btn.click(); }
     });
 }
 
@@ -10985,16 +10072,67 @@ function buildModuleManager() {
     if (!wrap) return;
     const all = getAllModules();
     wrap.innerHTML = all.map((m, i) => `
-        <div class="module-row" data-idx="${i}">
+        <div class="module-row" draggable="true" data-idx="${i}">
             <div class="module-row-ctrl">
                 <button class="mod-btn" data-action="module-up" data-i="${i}" ${i === 0 ? 'disabled' : ''} title="上移">▲</button>
                 <button class="mod-btn" data-action="module-down" data-i="${i}" ${i === all.length - 1 ? 'disabled' : ''} title="下移">▼</button>
             </div>
+            <span class="mod-drag" title="按住拖动排序">≡</span>
             <input class="mod-icon input-mini" data-field="icon" data-i="${i}" value="${escapeHtml(m.icon || '')}" maxlength="4" title="图标 emoji">
             <input class="mod-name input flex1" data-field="name" data-i="${i}" value="${escapeHtml(m.name)}" placeholder="板块名称">
-            <button class="mod-toggle ${m.hidden ? 'off' : 'on'}" data-action="module-toggle" data-i="${i}">${m.hidden ? '🙈 已隐藏' : '👁 显示中'}</button>
+            <label class="mod-vis ${m.hidden ? 'off' : 'on'}" title="取消勾选可隐藏该板块（仍可在本设置页进入）">
+                <input type="checkbox" data-action="module-toggle" data-i="${i}" ${m.hidden ? '' : 'checked'}>
+                <span>${m.hidden ? '已隐藏' : '显示中'}</span>
+            </label>
         </div>
     `).join('');
+    initModuleManagerDnD();
+}
+
+// 导航排序：HTML5 拖拽（按住 ≡ 或整行拖动），松手落在谁身上就插到谁前面
+function initModuleManagerDnD() {
+    const wrap = document.getElementById('moduleManager');
+    if (!wrap || wrap.dataset.dnd) return;
+    wrap.dataset.dnd = '1';
+    let dragIdx = null;
+    wrap.addEventListener('dragstart', e => {
+        const row = e.target.closest('.module-row');
+        if (!row) return;
+        dragIdx = +row.dataset.idx;
+        row.classList.add('dragging');
+        if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', String(dragIdx)); } catch (err) { /* ignore */ }
+        }
+    });
+    wrap.addEventListener('dragend', () => {
+        wrap.querySelectorAll('.module-row').forEach(r => r.classList.remove('dragging', 'drag-over'));
+        dragIdx = null;
+    });
+    wrap.addEventListener('dragover', e => {
+        e.preventDefault();
+        const row = e.target.closest('.module-row');
+        wrap.querySelectorAll('.module-row').forEach(r => r.classList.remove('drag-over'));
+        if (row && +row.dataset.idx !== dragIdx) row.classList.add('drag-over');
+    });
+    wrap.addEventListener('drop', e => {
+        e.preventDefault();
+        const row = e.target.closest('.module-row');
+        if (!row || dragIdx === null) return;
+        const to = +row.dataset.idx;
+        if (isNaN(to) || to === dragIdx) return;
+        syncModuleInputs();
+        const all = getAllModules();
+        if (dragIdx < 0 || dragIdx >= all.length || to < 0 || to >= all.length) return;
+        const moved = all.splice(dragIdx, 1)[0];
+        all.splice(to, 0, moved);
+        state.data.modulesUpdatedAt = now();
+        buildModuleManager();
+        renderSidebar();
+        saveState();
+        if (state.supabase) syncToCloud();
+        toast('导航顺序已调整，排第一的板块 = 打开工作台时的首页');
+    });
 }
 
 function updateStorageMeter() {
@@ -11019,6 +10157,7 @@ function openSettings() {
     buildModuleManager();
     updateStorageMeter();
     refreshSettingsStatus();
+    refreshPointsCalibrationUI();
     // 设置弹窗内展示当前版本号，方便确认是否已更新到最新版
     const verEl = document.getElementById('appVersionText');
     if (verEl) verEl.textContent = APP_BUILD;
@@ -11029,6 +10168,157 @@ function closeSettings() {
     document.getElementById('settingsModal').classList.remove('show');
 }
 
+function refreshPointsCalibrationUI() {
+    const pts = state.data.points || { earned: 0 };
+    const g = state.data.game || {};
+    const earned = pts.earned || 0;
+    const stars = g.rankStars || 0;
+    const tier = getTierInfo(stars);
+    const rankText = `${tier.rankName} ${tier.roman || ''}${tier.title ? ' · ' + tier.title : ''}`;
+    const curPts = document.getElementById('settingCurrentPoints');
+    const curRank = document.getElementById('settingCurrentRank');
+    if (curPts) curPts.textContent = earned.toLocaleString();
+    if (curRank) curRank.textContent = rankText;
+    const unfreezeBtn = document.getElementById('settingUnfreezeAchv');
+    if (unfreezeBtn) unfreezeBtn.style.display = g._achievementsFrozen ? 'inline-flex' : 'none';
+}
+
+function resetPointsToTarget(targetPoints) {
+    targetPoints = Math.max(0, parseInt(targetPoints, 10) || 0);
+    const g = state.data.game;
+    const pts = state.data.points;
+    const targetStars = Math.floor(targetPoints / 100);
+
+    // 1. 重置积分流水：保留真实 base 打卡记录（打卡状态不能丢），
+    //    把历史 base 积分归零，删除旧的 calibration/adjustment/bonus/streak/makeup 等流水，
+    //    再用一条 adjustment 把 earned 补齐到目标值。
+    pts.history = (pts.history || []).filter(h => h.type === 'base').map(h => ({ ...h, points: 0 }));
+    if (targetPoints !== 0) {
+        pts.history.push({
+            id: uuid(),
+            type: 'adjustment',
+            points: targetPoints,
+            date: today(),
+            reason: '设置页积分校准',
+            time: new Date().toISOString(),
+            updatedAt: now()
+        });
+    }
+
+    // 2. 重置已使用积分：已兑换的心愿全部恢复为未兑换，避免 recalcPoints 再次把 used 算大
+    (state.data.wishes || []).forEach(w => {
+        if (w.exchanged) {
+            w.exchanged = false;
+            w.exchangedAt = null;
+        }
+    });
+    // 补打卡记录也一并清空，防止后续 recalc 再次扣除积分
+    state.data.makeupLog = {};
+    pts.used = 0;
+    pts.earned = targetPoints;
+
+    // 3. 重置段位
+    g.rankStars = targetStars;
+    g.accountedEarnedStars = targetStars;
+    g._lastSyncEarned = targetPoints;   // 同步基线也重置，校准后不再追补历史
+    g._pointsCalibrated = APP_BUILD;
+
+    // 4. 重置赛季记录
+    const cur = getCurrentSeason();
+    if (!g.season || g.season.id !== cur.id) {
+        g.season = { id: cur.id, name: cur.name, year: cur.year, key: cur.key };
+    }
+    g.season.startStars = targetStars;
+    g.season.peakStars = targetStars;
+    g.season.peakKey = null;
+
+    // 5. 重置成就、称号、星能、连胜
+    g.achievements = {};
+    g.titles = [];
+    g._achievementsFrozen = true;
+    g.courage = 0;
+    g.courageStars = 0;
+    g.bonusStars = 0;
+    g.allFourCourageDates = [];
+    g.allFourDates = [];
+    if (typeof g.winStreak === 'number') g.winStreak = 0;
+    g.winAwarded = [];
+
+    // 6. 最终重新核算，确保 earned/used/available 一致
+    recalcPoints();
+    recalcCourage();
+    saveState();
+    closeSettings();
+    render();
+    refreshPointsCalibrationUI();
+}
+
+// 「积分/段位全部清零」：彻底删除所有积分、段位、赛季、成就相关数据并从零开始。
+// 同时设置校准标记，确保云端同步时不会把旧污染数据再合并回来。
+function clearAllPointsAndRankData() {
+    const g = state.data.game;
+    const pts = state.data.points;
+
+    // 1. 真正的从零开始：删除全部积分流水（含 base 打卡完成记录），
+    //    这样被污染的 4w 分 phantom 记录彻底清除；真实跨设备打卡由同步逻辑保留。
+    pts.history = [];
+    pts.earned = 0;
+    pts.used = 0;
+    state.data.makeupLog = {};
+
+    // 2. 已兑换心愿恢复为未兑换（否则 used 分会一直存在）
+    (state.data.wishes || []).forEach(w => {
+        if (w.exchanged) {
+            w.exchanged = false;
+            w.exchangedAt = null;
+        }
+    });
+
+    // 3. 段位/赛季/成就/星能/连胜全部归零
+    g.rankStars = 0;
+    g.accountedEarnedStars = 0;
+    g._lastSyncEarned = 0;
+    g.courage = 0;
+    g.courageStars = 0;
+    g.bonusStars = 0;
+    g.winStars = 0;
+    g.winAwarded = [];
+    if (typeof g.winStreak === 'number') g.winStreak = 0;
+    g.achievements = {};
+    g.titles = [];
+    g._achievementsFrozen = true;
+    g.allFourDates = [];
+    g.allFourCourageDates = [];
+    g.firstCheckInTime = {};
+    g.seasonHistory = [];
+    const cur = getCurrentSeason();
+    g.season = { id: cur.id, name: cur.name, year: cur.year, key: cur.key, startStars: 0, peakStars: 0, peakKey: null };
+
+    // 4. 设置清零/校准标记：用当前最新 build，保证冲突解决时本地清零状态优先于云端旧数据
+    g._pointsCalibrated = APP_BUILD;
+    g._pointsClearedAt = now();
+
+    // 5. 重新核算并立即保存（会触发云端同步，上传清零后的状态覆盖云端）
+    recalcPoints();
+    recalcCourage();
+    saveState();
+    closeSettings();
+    render();
+    refreshPointsCalibrationUI();
+}
+
+function unfreezeAchievements() {
+    const g = state.data.game;
+    if (g._achievementsFrozen) {
+        delete g._achievementsFrozen;
+        saveState();
+        refreshPointsCalibrationUI();
+        toast('成就已解冻，下次启动会按真实进度重新判定');
+    } else {
+        toast('当前成就并未被冻结');
+    }
+}
+
 async function saveSettings() {
     const modulesBefore = JSON.stringify(state.data.modules || []);
     syncModuleInputs();
@@ -11036,7 +10326,18 @@ async function saveSettings() {
         state.data.modulesUpdatedAt = now();
     }
     state.settings.name = document.getElementById('settingName').value.trim();
+    const prevCity = state.settings.city || '';
     state.settings.city = document.getElementById('settingCity').value.trim();
+    if (state.settings.city) {
+        if (state.settings.city !== prevCity) state.settings.district = '';
+        const p = beautyFindProvinceByCity(state.settings.city);
+        if (p) state.settings.province = p;
+        state.settings.weatherMode = 'city';
+    } else {
+        state.settings.weatherMode = 'gps';
+        state.settings.province = '';
+        state.settings.district = '';
+    }
     state.settings.exchangeRule = document.getElementById('settingExchangeRule').value.trim();
     state.settings.supabaseUrl = normalizeSupabaseUrl(document.getElementById('settingSupabaseUrl').value.trim());
     state.settings.supabaseKey = document.getElementById('settingSupabaseKey').value.trim();
@@ -11123,6 +10424,7 @@ function applyTheme() {
     document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
     const btn = document.getElementById('themeBtn');
     if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+    try { if (typeof pushThemeToYjxs === 'function') pushThemeToYjxs(); } catch (err) { /* ignore */ }
 }
 
 function toggleTheme() {
@@ -11133,6 +10435,3638 @@ function toggleTheme() {
     saveState();
     toast(state.data.settings.theme === 'dark' ? '已切换到夜间模式 🌙' : '已切换到日间模式 ☀️');
 }
+
+
+// ==================== 英语打卡（三级目录 + FSRS 背诵复习 + 积分成就） ====================
+// 数据结构（state.data.engcheck，随云端同步，跨设备一致）：
+//   books:   一级目录（书）   [{id, name, order, createdAt, tasks:[任务定义]}]
+//             tasks = 每本书独立的打卡任务模板（输入/输出板块可自由增删改，默认 5 项）
+//   lessons: 二级目录（课）   [{id, bookId, name, note, order, createdAt}]
+//             note = 显示在课程名下方的灰色小字（语法要点/备注，可选）
+//   tasks:   三级任务记录     key = `${lessonId}|${taskId}` → { at: epochMs }
+//             完成即可打卡，不设复习曲线；完成时间精确到分钟展示，且可点击补录修改（默认系统时间）
+//   tombs:   键级墓碑         key = tasks 键 → ts（取消完成/删任务定义时写入）
+//             跨设备合并时，对端残留的旧记录若早于墓碑时间 → 判定为删除、不并入（取消完成据此同步）
+//   clearedAt / fsrsClearedAt：清零时间分界线（epochMs，见 ecClearRecords）
+//             合并时另一端早于该时点的 tasks / fsrs 旧记录一律丢弃（清零据此跨设备生效）
+//   fsrs:    背书复习记录     key = lessonId → { s, d, n, lapses, last, due, grade }
+//             FSRS 简化版（整篇课文背书）：初学即可四选一自评入池（Again/Hard/Good/Easy），
+//             之后每次复习对整篇四选一打分 → 更新难度 D、稳定性 S → 推算下次复习时间；
+//             没到时间也可提前复习。目标留存 0.9，初始 S=1 天 / D=5，最大间隔 120 天。
+//   score / achievements / days / streak / bestStreak / lastStudyDate：
+//             积分 · 成就 · 每日学习 · 连续学习（继承自原探索英语的积分成就体系）
+
+const EC_TASK_GROUPS = [
+    { id: 'input', name: '输入板块', icon: '📥', sub: '听 · 读', cls: 'ec-group-input' },
+    { id: 'output', name: '输出板块', icon: '📤', sub: '说 · 写', cls: 'ec-group-output' }
+];
+
+// 默认任务模板（新建书时克隆进去；每本书之后可自由增删改）
+const EC_TASKS = [
+    { id: 'listen-broad', group: 'input', icon: '🎧', name: '泛听', desc: '听音 Familiar —— 不停顿，抓大意', points: 2 },
+    { id: 'listen-close', group: 'input', icon: '🎯', name: '精听', desc: '听音 Detail —— 逐句听写，弄懂每句话', points: 2 },
+    { id: 'read-aloud', group: 'input', icon: '📖', name: '跟读', desc: '听读 Repeat —— 模仿语音语调大声跟读', points: 2 },
+    { id: 'speak-trans', group: 'output', icon: '🗣️', name: '说译', desc: '说 Output —— 看图说英文 / 看中文说英文', points: 2 },
+    { id: 'write-drill', group: 'output', icon: '✍️', name: '练题', desc: '写 Output —— 课后习题 / 考试卷子 / 小作文', points: 2 }
+];
+function ecCloneDefaultTasks() { return EC_TASKS.map(t => Object.assign({}, t)); }
+
+// 背书四档自评（看整篇背诵的流畅度，不是单个词）
+const EC_GRADES = [
+    { id: 1, name: 'Again', label: '忘了', desc: '大面积卡壳，要看书提示才能继续', tip: '当天额外多读跟读 2~3 遍再进入周期', cls: 'g-again' },
+    { id: 2, name: 'Hard', label: '艰难', desc: '大体能背完，但多处停顿、明显口误', tip: '间隔只拉长一点点，很快再来', cls: 'g-hard' },
+    { id: 3, name: 'Good', label: '合格', desc: '独立完整背完，少量短暂停顿（首选）', tip: '稳定性稳步上涨，最理想的反馈', cls: 'g-good' },
+    { id: 4, name: 'Easy', label: '熟练', desc: '流畅脱稿，任意抽查都没问题', tip: '上涨较多，但有 120 天上限', cls: 'g-easy' }
+];
+
+// FSRS 参数：目标留存 0.9 / 初始 S=1 天 D=5 / 最大间隔 120 天 / S≥60 天视为已掌握
+const EC_FSRS = { target: 0.9, s0: 1.0, d0: 5.0, maxInterval: 120, masteredS: 60 };
+
+// 成就定义
+// v20261106z：成就更多元 —— 启程 / 积累 / 坚持 / 精进 / 惊喜 五大类，每类都有自己的小惊喜
+const EC_ACH_CATS = [
+    { id: 'start', name: '🌱 启程时刻' },
+    { id: 'grow', name: '📚 点滴积累' },
+    { id: 'keep', name: '🔥 常常回来' },
+    { id: 'skill', name: '🎯 慢慢变强' },
+    { id: 'fun', name: '🎉 惊喜彩蛋' }
+];
+const EC_ACHIEVEMENTS = [
+    { id: 'first-book', cat: 'start', icon: '📚', name: '书单启程', desc: '添加第一本书' },
+    { id: 'first-task', cat: 'start', icon: '🌱', name: '第一步', desc: '完成第一个学习任务' },
+    { id: 'first-recite', cat: 'start', icon: '🎙️', name: '首背成功', desc: '完成第一次背书入库' },
+    { id: 'wrong-first', cat: 'start', icon: '📕', name: '宝藏猎人', desc: '收录第一道错题' },
+    { id: 'points100', cat: 'grow', icon: '💯', name: '百分学员', desc: '累计获得 100 积分' },
+    { id: 'lesson-all', cat: 'grow', icon: '✍️', name: '一课全攻', desc: '完成一节课的全部任务' },
+    { id: 'task10', cat: 'grow', icon: '📖', name: '十步脚印', desc: '累计完成 10 项学习任务' },
+    { id: 'task50', cat: 'grow', icon: '🚀', name: '五十项达人', desc: '累计完成 50 项学习任务' },
+    { id: 'wrong10', cat: 'grow', icon: '🧩', name: '错题十连', desc: '整理 10 道错题' },
+    { id: 'points500', cat: 'grow', icon: '👑', name: '五百达人', desc: '累计获得 500 积分' },
+    { id: 'points1000', cat: 'grow', icon: '🏅', name: '千分传说', desc: '累计获得 1000 积分' },
+    { id: 'streak3', cat: 'keep', icon: '🌿', name: '三日发芽', desc: '连续 3 天来学习' },
+    { id: 'streak7', cat: 'keep', icon: '🔥', name: '七日不断', desc: '连续 7 天学习英语' },
+    { id: 'week7', cat: 'keep', icon: '🥰', name: '七日欢喜', desc: '累计学习满 7 天' },
+    { id: 'streak30', cat: 'keep', icon: '🌳', name: '小树成荫', desc: '连续 30 天学习' },
+    { id: 'recite-master', cat: 'skill', icon: '🏆', name: '背诵大师', desc: '3 节课背诵达到已掌握' },
+    { id: 'master10', cat: 'skill', icon: '🧠', name: '记忆收藏家', desc: '10 节课牢牢记住' },
+    { id: 'recite10', cat: 'skill', icon: '🎧', name: '十篇入池', desc: '10 节课加入记忆计划' },
+    { id: 'wrong-master', cat: 'skill', icon: '💡', name: '难题变朋友', desc: '3 道错题变成熟练题' },
+    { id: 'book-done', cat: 'skill', icon: '🎓', name: '通关一本书', desc: '一整本书的课都学完啦' },
+    { id: 'day4', cat: 'fun', icon: '🎈', name: '一日四连', desc: '一天里收获 4 项学习' },
+    { id: 'explorer', cat: 'fun', icon: '🧭', name: '四站探险家', desc: '四个板块都留下足迹' }
+];
+
+// 英语打卡的 4 个子标签（顺序 / 显隐可自定义，配置存在 d.tabCfg）
+// v20261106z：换成更轻松好玩的名字；tabCfg 只存 id，老数据无需迁移就会自动用新名字
+const EC_SUBTABS = [
+    { id: 'ec-books', name: '主线任务', icon: '📚' },
+    { id: 'ec-review', name: '记忆巩固', icon: '⏰' },
+    { id: 'ec-wrong', name: '查漏补缺', icon: '📕' },
+    { id: 'ec-achieve', name: '荣誉战绩', icon: '🏆' }
+];
+// 子标签配置：order=[id...]（未列出的按默认顺序追加）；hidden=[id...]；at=最后修改时间（跨设备取新）
+function ecTabCfgGet() {
+    const d = ecData();
+    if (!d.tabCfg || typeof d.tabCfg !== 'object') d.tabCfg = { order: [], hidden: [], at: 0 };
+    const c = d.tabCfg;
+    if (!Array.isArray(c.order)) c.order = [];
+    if (!Array.isArray(c.hidden)) c.hidden = [];
+    if (typeof c.at !== 'number') c.at = 0;
+    // v20261106t：刷题子标签由「查漏补缺」取代——沿用原排序位置，隐藏状态不迁移（新模块默认可见）
+    if (c.order.includes('ec-quiz')) c.order = c.order.map(id => id === 'ec-quiz' ? 'ec-wrong' : id);
+    if (c.hidden.includes('ec-quiz')) c.hidden = c.hidden.filter(id => id !== 'ec-quiz');
+    // 只保留仍然存在的标签 id（后期增删标签不会残留脏数据）
+    const ids = EC_SUBTABS.map(t => t.id);
+    c.order = c.order.filter(id => ids.includes(id));
+    c.hidden = c.hidden.filter(id => ids.includes(id));
+    return c;
+}
+// 按用户顺序排好的全部标签（含被隐藏的）——配置面板用它，保证隐藏项也能调顺序
+function ecTabCfgAll() {
+    const c = ecTabCfgGet();
+    const map = new Map(EC_SUBTABS.map(t => [t.id, t]));
+    const out = [];
+    c.order.forEach(id => { const t = map.get(id); if (t) { out.push(t); map.delete(id); } });
+    EC_SUBTABS.forEach(t => { if (map.has(t.id)) out.push(t); });
+    return out;
+}
+// 实际渲染用：排好序 + 剔除隐藏项；保底至少留一个（全隐藏则回退到主线任务）
+function ecTabCfgVisible() {
+    const c = ecTabCfgGet();
+    const vis = ecTabCfgAll().filter(t => !c.hidden.includes(t.id));
+    return vis.length ? vis : [EC_SUBTABS[0]];
+}
+function ecTabCfgTouch() {
+    const c = ecTabCfgGet();
+    c.at = Date.now();
+    return c;
+}
+// 勾选 = 显示 / 取消勾选 = 隐藏（数据不删，随时可再打开）
+function ecTabCfgToggleShow(id) {
+    const c = ecTabCfgTouch();
+    const visCount = ecTabCfgVisible().length;
+    const hidden = c.hidden.includes(id);
+    if (!hidden && visCount <= 1) { toast('至少保留一个子标签显示'); return; }
+    c.hidden = hidden ? c.hidden.filter(x => x !== id) : c.hidden.concat(id);
+    // 刚隐藏掉当前所在标签 → 跳到第一个可见标签，避免停在空页面
+    const st = state.currentSubTab || (state.currentSubTab = {});
+    if (!hidden && st.engcheck === id) {
+        st.engcheck = ecTabCfgVisible()[0].id;
+    }
+    ecAfterAction(hidden ? '已显示子标签' : '已隐藏子标签（随时可再打开）');
+}
+// ▲▼ 调整排列顺序（第 1 个标签就是进英语打卡默认打开的页面）
+// 只在「可见」标签之间交换：隐藏项不参与，避免点了 ▲ 却看不见任何变化
+function ecTabCfgMove(id, dir) {
+    const c = ecTabCfgTouch();
+    const vis = ecTabCfgVisible().map(t => t.id);
+    const i = vis.indexOf(id);
+    if (i < 0) return;
+    const j = i + (dir === 'up' ? -1 : 1);
+    if (j < 0 || j >= vis.length) return;
+    const tmp = vis[i]; vis[i] = vis[j]; vis[j] = tmp;
+    // order = 调整后的可见顺序 + 其余（隐藏项按原相对顺序跟在后面）
+    const rest = ecTabCfgAll().map(t => t.id).filter(x => !vis.includes(x));
+    c.order = vis.concat(rest);
+    ecAfterAction('已调整子标签顺序');
+}
+// 配置面板（参考「子标签显示设置」：勾选显示 + ▲▼ 排序）
+function ecTabCfgHTML() {
+    const c = ecTabCfgGet();
+    const visIds = ecTabCfgVisible().map(t => t.id);
+    const rows = ecTabCfgAll().map(t => {
+        const on = !c.hidden.includes(t.id);
+        const vi = visIds.indexOf(t.id);
+        const upDis = !on || vi <= 0;
+        const downDis = !on || vi < 0 || vi >= visIds.length - 1;
+        return `
+        <div class="ec-tabcfg-row${on ? '' : ' ec-tabcfg-off'}">
+            <label class="ec-tabcfg-name">
+                <input type="checkbox" ${on ? 'checked' : ''} data-action="ec-tabcfg-show" data-tab="${t.id}">
+                <span class="ec-tabcfg-ico">${t.icon}</span>
+                <span>${t.name}</span>
+            </label>
+            <span class="ec-tabcfg-arrows">
+                <button class="ec-edit-btn" data-action="ec-tabcfg-up" data-tab="${t.id}" title="${on ? '上移' : '隐藏的标签不参与排序'}"${upDis ? ' disabled' : ''}>▲</button>
+                <button class="ec-edit-btn" data-action="ec-tabcfg-down" data-tab="${t.id}" title="${on ? '下移' : '隐藏的标签不参与排序'}"${downDis ? ' disabled' : ''}>▼</button>
+            </span>
+        </div>`;
+    }).join('');
+    return `
+    <div class="ec-tabcfg">
+        <div class="ec-tabcfg-head">
+            <span class="ec-tabcfg-title">⚙️ 子标签显示设置</span>
+        </div>
+        <div class="ec-tabcfg-tip">勾选 = 显示；取消勾选 = 隐藏（数据不会删除，随时可再打开）　▲▼ = 调整标签排列顺序，<b>排第一的就是进英语打卡默认打开的页面</b></div>
+        ${rows}
+    </div>`;
+}
+
+// 打开「子标签显示设置」弹窗（不再内联展开，点 ⚙️ 才弹出，关掉不影响主界面）
+function ecOpenTabCfg() {
+    uiModal({ title: '⚙️ 子标签显示设置', html: ecTabCfgHTML(), okText: '完成' });
+}
+
+// 弹窗开着时，设置项变动后重绘弹窗内容（主界面会随 ecAfterAction 重渲染，但弹窗是独立浮层需单独刷新）
+function ecTabCfgRefreshIfModal() {
+    const modal = document.getElementById('uiModal');
+    if (!modal || !modal.style || modal.style.display !== 'flex') return;
+    const msg = document.getElementById('uiModalMsg');
+    if (msg && msg.querySelector('.ec-tabcfg')) msg.innerHTML = ecTabCfgHTML();
+}
+
+// ---------- 数据 ----------
+function ecData() {
+    let d = state.data.engcheck;
+    if (!d || typeof d !== 'object') { d = {}; state.data.engcheck = d; }
+    if (!Array.isArray(d.books)) d.books = [];
+    if (!Array.isArray(d.lessons)) d.lessons = [];
+    if (!d.tasks || typeof d.tasks !== 'object') d.tasks = {};
+    if (!d.tombTasks || typeof d.tombTasks !== 'object') d.tombTasks = {}; // 任务定义删除墓碑（bookId|taskId → ts）
+    if (!d.fsrs || typeof d.fsrs !== 'object') d.fsrs = {};
+    if (!d.achievements || typeof d.achievements !== 'object') d.achievements = {};
+    if (!d.days || typeof d.days !== 'object') d.days = {};
+    // 老书补默认任务模板（v20261025c 起每本书可自定义打卡任务）
+    d.books.forEach(b => { if (!b || !Array.isArray(b.tasks) || !b.tasks.length) b.tasks = ecCloneDefaultTasks(); });
+    // 旧版 tasks 记录 {startedAt, reviews} → 新版 { at }
+    Object.keys(d.tasks).forEach(k => {
+        const rec = d.tasks[k];
+        if (rec && rec.startedAt && !rec.at) d.tasks[k] = { at: rec.startedAt };
+    });
+    if (typeof d.score !== 'number') {
+        // 继承原探索英语的历史积分（保留之前的学习积累）
+        let legacy = 0;
+        try { legacy = parseInt(localStorage.getItem('engPlay_score')) || 0; } catch (e) { /* ignore */ }
+        d.score = legacy;
+    }
+    if (typeof d.streak !== 'number') d.streak = 0;
+    if (typeof d.bestStreak !== 'number') d.bestStreak = 0;
+    if (typeof d.lastStudyDate !== 'string') d.lastStudyDate = '';
+    // 刷题模块已下线（v20261106t 起由「查漏补缺」取代）：清理旧 quiz 数据，避免云端旧快照再把它带回来
+    if (d.quiz) delete d.quiz;
+    return d;
+}
+function ecBookById(id) { return ecData().books.find(b => b.id === id) || null; }
+function ecLessonById(id) { return ecData().lessons.find(l => l.id === id) || null; }
+function ecLessonsOf(bookId) {
+    return ecData().lessons.filter(l => l.bookId === bookId).sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+function ecTaskKey(lessonId, taskId) { return lessonId + '|' + taskId; }
+function ecGetTask(lessonId, taskId) { return ecData().tasks[ecTaskKey(lessonId, taskId)] || null; }
+// 每本书独立的打卡任务模板（老书自动补默认 5 项）
+function ecBookTasks(bookId) {
+    const b = ecBookById(bookId);
+    if (b && Array.isArray(b.tasks) && b.tasks.length) return b.tasks;
+    return EC_TASKS;
+}
+// 由课程反查任务定义（用于取名称/积分）
+function ecFindTaskDef(lessonId, taskId) {
+    const l = ecLessonById(lessonId);
+    const defs = l ? ecBookTasks(l.bookId) : EC_TASKS;
+    return defs.find(t => t.id === taskId) || null;
+}
+
+// ---------- 等级 / 积分 / 连续学习 ----------
+function ecGetLevel(score) { return Math.min(Math.floor((score || 0) / 10) + 1, 1999); }
+function ecLevelSymbols(level) {
+    if (level <= 0) return '⚓';
+    let galaxyCount = 0;
+    let remaining = level;
+    if (level >= 500) {
+        galaxyCount = Math.floor((level - 500) / 500) + 1;
+        remaining = level - galaxyCount * 500;
+        if (remaining < 0) { remaining = level; galaxyCount = 0; }
+    }
+    const symbols = [];
+    for (let i = 0; i < galaxyCount; i++) symbols.push('🌌');
+    const tiers = [
+        { symbol: '🌍', value: 256 }, { symbol: '🌊', value: 64 }, { symbol: '⛵', value: 16 },
+        { symbol: '🧭', value: 4 }, { symbol: '⚓', value: 1 }
+    ];
+    for (const tier of tiers) {
+        const count = Math.floor(remaining / tier.value);
+        remaining = remaining % tier.value;
+        for (let i = 0; i < count; i++) symbols.push(tier.symbol);
+    }
+    if (symbols.length === 0) symbols.push('⚓');
+    return symbols.join(' ');
+}
+function ecAddScore(n) {
+    const d = ecData();
+    d.score = Math.max(0, (d.score || 0) + n);
+}
+function ecLogStudy() {
+    const d = ecData();
+    const day = today();
+    d.days[day] = (d.days[day] || 0) + 1;
+    if (d.lastStudyDate !== day) {
+        const y = new Date(); y.setDate(y.getDate() - 1);
+        d.streak = (d.lastStudyDate === dateStr(y)) ? (d.streak || 0) + 1 : 1;
+        if (d.streak > (d.bestStreak || 0)) d.bestStreak = d.streak;
+        d.lastStudyDate = day;
+    }
+}
+function ecUnlock(id) {
+    const d = ecData();
+    if (d.achievements[id]) return false;
+    d.achievements[id] = now();
+    return true;
+}
+function ecLessonsFullyDone() {
+    const d = ecData();
+    return d.lessons.filter(l => {
+        const defs = ecBookTasks(l.bookId);
+        return defs.length > 0 && defs.every(t => d.tasks[ecTaskKey(l.id, t.id)]);
+    }).length;
+}
+function ecReciteMasteredCount() {
+    const d = ecData();
+    return Object.keys(d.fsrs).filter(k => d.fsrs[k] && d.fsrs[k].s >= EC_FSRS.masteredS).length;
+}
+function ecCheckAchievements() {
+    const d = ecData();
+    const newly = [];
+    const w = ecWbData();
+    const taskCnt = Object.keys(d.tasks).length;
+    const recCnt = Object.keys(d.fsrs).length;
+    const masteredRec = ecReciteMasteredCount();
+    const masteredWrong = ecWbStats().mastered;
+    const studyDays = Object.keys(d.days).length;
+    const bestDay = Math.max(0, ...Object.values(d.days).map(Number).filter(n => !isNaN(n)));
+    const bookDone = d.books.some(b => {
+        const ls = ecLessonsOf(b.id);
+        if (!ls.length) return false;
+        const defs = ecBookTasks(b.id);
+        return defs.length > 0 && ls.every(l => defs.every(t => d.tasks[ecTaskKey(l.id, t.id)]));
+    });
+    const tryUnlock = (id, cond) => { if (cond && ecUnlock(id)) newly.push(id); };
+    // 原有 8 枚：id 与口径全部保留，老用户已点亮的不会丢
+    tryUnlock('first-book', d.books.length > 0);
+    tryUnlock('first-task', taskCnt > 0);
+    tryUnlock('first-recite', recCnt > 0);
+    tryUnlock('streak7', (d.streak || 0) >= 7);
+    tryUnlock('points100', (d.score || 0) >= 100);
+    tryUnlock('points500', (d.score || 0) >= 500);
+    tryUnlock('lesson-all', ecLessonsFullyDone() >= 1);
+    tryUnlock('recite-master', masteredRec >= 3);
+    // 新增 14 枚：更多元的鼓励维度
+    tryUnlock('wrong-first', w.items.length > 0);
+    tryUnlock('task10', taskCnt >= 10);
+    tryUnlock('task50', taskCnt >= 50);
+    tryUnlock('wrong10', w.items.length >= 10);
+    tryUnlock('points1000', (d.score || 0) >= 1000);
+    tryUnlock('streak3', (d.streak || 0) >= 3);
+    tryUnlock('streak30', (d.streak || 0) >= 30);
+    tryUnlock('week7', studyDays >= 7);
+    tryUnlock('master10', masteredRec >= 10);
+    tryUnlock('recite10', recCnt >= 10);
+    tryUnlock('wrong-master', masteredWrong >= 3);
+    tryUnlock('book-done', bookDone);
+    tryUnlock('day4', bestDay >= 4);
+    tryUnlock('explorer', d.books.length > 0 && recCnt > 0 && w.items.length > 0 && Object.keys(d.achievements).length >= 3);
+    if (newly.length) {
+        const names = newly.map(id => (EC_ACHIEVEMENTS.find(a => a.id === id) || {}).name).filter(Boolean);
+        const shown = names.slice(0, 3).join('、');
+        toast('🎉 点亮新徽章：' + shown + (names.length > 3 ? ` 等 ${names.length} 枚` : '') + '，好棒呀！');
+    }
+}
+// 完成一次学习动作后的统一收尾：积分/连续/成就/保存/同步/重绘
+function ecAfterAction(msg) {
+    // 标记本地修改时间：云端同步拉取时若本地更新，整组保留本地，防止旧快照冲掉刚做的打卡/新增
+    try { ecData().updatedAt = now(); } catch (e) { /* ignore */ }
+    ecCheckAchievements();
+    saveState(); queueSync(); render();
+    if (msg) toast(msg);
+}
+// 轻量收尾：打时间戳 + 保存同步 + 成就检查，不弹 toast（收藏/标记掌握等频繁小操作用，渲染由调用方负责）
+function ecAfterActionSilent() {
+    try { ecData().updatedAt = now(); } catch (e) { /* ignore */ }
+    ecCheckAchievements();
+    saveState(); queueSync();
+}
+
+// 英语打卡同步合并（_syncFromCloudCore 拉取后调用）。
+// 墓碑机制——两类删除操作跨设备生效（否则并集逻辑会把删掉的记录「复活」）：
+// ① 取消完成/删任务定义 → tombs[key] = ts（键级墓碑，见 ecTomb）
+// ② 学习记录清零 → clearedAt / fsrsClearedAt = ts（全局时间分界线，见 ecClearRecords）
+// - 任一端清零过：以清零较新一端为基底，另一端只并入清零时点之后的新记录，旧记录全丢弃
+// - 无清零：按 updatedAt 定权威端；对端「本地没有的 tasks 键」并入（手机打卡电脑端刷新也有），
+//   但本地删过的键（墓碑）不并入（取消完成跨设备生效，不会被云端旧记录复活）
+// 子标签显示设置跨设备合并：整组按 at 取较新的一端（顺序/显隐是一组原子配置，不做逐项并集）
+function ecMergeTabCfg(a, b) {
+    const A = (a && typeof a === 'object') ? a : null;
+    const B = (b && typeof b === 'object') ? b : null;
+    if (!A) return B || undefined;
+    if (!B) return A;
+    return (Number(B.at) || 0) > (Number(A.at) || 0) ? B : A;
+}
+function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
+    if (!localEc) return cloudEc;
+    if (!cloudEc) return localEc;
+    const taskCut = Math.max(Number(localEc.clearedAt) || 0, Number(cloudEc.clearedAt) || 0);
+    const fsrsCut = Math.max(Number(localEc.fsrsClearedAt) || 0, Number(cloudEc.fsrsClearedAt) || 0);
+    const byId = (arr) => { const m = new Map(); (arr || []).forEach(x => { if (x && x.id != null) m.set(x.id, x); }); return m; };
+    // tasks 合并：两端键并集，同键取 at 较新者；满足以下之一则丢弃：
+    // ① cut 之前的旧记录（清零分界线前）② 墓碑删除过（取消完成，墓碑时间 ≥ 记录时间）
+    // 墓碑两端并集（同键取较新）——否则本地（lose）刚写的「取消完成」墓碑会丢，取消不生效
+    const mergeTasks = (win, lose, cut) => {
+        const out = {};
+        const tombs = { ...(win.tombs || {}) };
+        Object.keys(lose.tombs || {}).forEach(k => {
+            const t = Number(lose.tombs[k]) || 0;
+            if (t > (Number(tombs[k]) || 0)) tombs[k] = t;
+        });
+        const put = (k, r) => {
+            if (!r) return;
+            const at = Number(r.at) || 0;
+            if (cut && at < cut) return;
+            const t = Number(tombs[k]) || 0;
+            if (t && t >= at) return;
+            if (!out[k] || (Number(out[k].at) || 0) < at) out[k] = r;
+        };
+        Object.keys(win.tasks || {}).forEach(k => put(k, win.tasks[k]));
+        Object.keys(lose.tasks || {}).forEach(k => put(k, lose.tasks[k]));
+        // 清理失效墓碑（对应记录已不存在于任何一端，墓碑没必要保留）
+        Object.keys(tombs).forEach(k => { if (out[k] === undefined) delete tombs[k]; });
+        return { tasks: out, tombs };
+    };
+    const mergeFsrs = (win, lose, cut) => {
+        // 同一课两端都有 FSRS 记录时，按「最近一次复习时间 last」取较新者。
+        // 此前是无条件用权威端覆盖：若权威端恰好是另一台设备的旧进度，
+        // 手机上刚复习完的课文会被退回成上次的状态（用户感知：背了等于没背）。
+        const out = {};
+        const A = win.fsrs || {}, B = lose.fsrs || {};
+        const keys = new Set([...Object.keys(A), ...Object.keys(B)]);
+        keys.forEach(k => {
+            const a = A[k], b = B[k];
+            let pick = a;
+            if (!pick) pick = b;
+            else if (b && (Number(b.last) || 0) > (Number(pick.last) || 0)) pick = b;
+            if (!pick) return;
+            if (cut && (Number(pick.last) || 0) < cut) return;
+            out[k] = pick;
+        });
+        return out;
+    };
+    const mergeCatalog = (win, lose) => {
+        const bMap = byId(win.books), lMap = byId(win.lessons);
+        // 任务定义删除墓碑（bookId|taskId → ts）：两端并集，同键取较新
+        const tombTasks = { ...(win.tombTasks || {}) };
+        Object.keys(lose.tombTasks || {}).forEach(k => {
+            const t = Number(lose.tombTasks[k]) || 0;
+            if (t > (Number(tombTasks[k]) || 0)) tombTasks[k] = t;
+        });
+        (lose.books || []).forEach(b => {
+            if (!b || b.id == null) return;
+            const mine = bMap.get(b.id);
+            if (!mine) { bMap.set(b.id, b); return; }
+            // 任务定义按 id 并集：一端新增的打卡任务不能被另一端旧书快照顶掉
+            //（用户反馈「新增打卡项目，打卡后又自动合并回未完成」的根因：整本 book 用 win 覆盖，新任务定义丢失）
+            const winTasks = Array.isArray(mine.tasks) ? mine.tasks : [];
+            const seen = new Set(winTasks.map(t => t && t.id));
+            const extra = (Array.isArray(b.tasks) ? b.tasks : []).filter(t => t && t.id != null && !seen.has(t.id));
+            if (extra.length) bMap.set(b.id, Object.assign({}, mine, { tasks: winTasks.concat(extra) }));
+        });
+        // 剔除已删除的任务定义（墓碑命中）；并清理失效墓碑
+        Array.from(bMap.keys()).forEach(bid => {
+            const bk = bMap.get(bid);
+            if (!bk || !Array.isArray(bk.tasks)) return;
+            const kept = bk.tasks.filter(t => !(t && t.id != null && (Number(tombTasks[bid + '|' + t.id]) || 0)));
+            if (kept.length !== bk.tasks.length) bMap.set(bid, Object.assign({}, bk, { tasks: kept }));
+        });
+        Object.keys(tombTasks).forEach(k => {
+            const bid = k.slice(0, k.indexOf('|'));
+            const bk = bMap.get(bid);
+            const still = bk && Array.isArray(bk.tasks) && bk.tasks.some(t => t && t.id != null && bid + '|' + t.id === k);
+            if (!still) delete tombTasks[k];
+        });
+        (lose.lessons || []).forEach(l => {
+            if (!l || l.id == null) return;
+            const mine = lMap.get(l.id);
+            if (!mine) { lMap.set(l.id, l); return; }
+            // 课文（中文 zh / 英文 en）各自按时间戳新者胜：一端导入课文后合并，不被对端旧课时快照顶掉
+            let merged = mine;
+            [['zh', 'zhAt'], ['en', 'enAt']].forEach(pair => {
+                const k = pair[0], ak = pair[1];
+                const a = Number(merged[ak]) || 0, b = Number(l[ak]) || 0;
+                if (b > a && (l[k] || '') !== (merged[k] || '')) merged = Object.assign({}, merged, { [k]: l[k], [ak]: l[ak] });
+            });
+            if (merged !== mine) lMap.set(l.id, merged);
+        });
+        return { books: Array.from(bMap.values()), lessons: Array.from(lMap.values()), tombTasks };
+    };
+    const newerAt = (localEcAt && cloudEcAt && String(localEcAt) > String(cloudEcAt)) ? localEcAt : (cloudEcAt || localEcAt || '');
+
+    if (taskCut || fsrsCut) {
+        // ---- 分支 A：任一端清零过 ----
+        // 权威端 = 清零较新的一端（tasks/fsrs 分别可能在不同端清零，取清零总和较新方近似）
+        const localClearSum = (Number(localEc.clearedAt) || 0) + (Number(localEc.fsrsClearedAt) || 0);
+        const cloudClearSum = (Number(cloudEc.clearedAt) || 0) + (Number(cloudEc.fsrsClearedAt) || 0);
+        const win = localClearSum >= cloudClearSum ? localEc : cloudEc;
+        const lose = win === localEc ? cloudEc : localEc;
+        const merged = { ...win };
+        const tk = mergeTasks(win, lose, taskCut);
+        merged.tasks = tk.tasks;
+        merged.tombs = tk.tombs;
+        merged.fsrs = mergeFsrs(win, lose, fsrsCut);
+        Object.assign(merged, mergeCatalog(win, lose));
+        merged.clearedAt = taskCut;
+        merged.fsrsClearedAt = fsrsCut;
+        merged.wrongbk = ecMergeWrong(win.wrongbk, lose.wrongbk); // 错题集跨设备合并（墓碑+清零分界线+FSRS 取新）
+        merged.updatedAt = newerAt;
+        return merged;
+    }
+    // ---- 分支 B/C：无清零，按 updatedAt 定权威端 + 墓碑保护删除 ----
+    const localWin = !!(localEcAt && (!cloudEcAt || String(localEcAt) >= String(cloudEcAt)));
+    const win = localWin ? localEc : cloudEc;
+    const lose = localWin ? cloudEc : localEc;
+    const merged = { ...win };
+    const tk = mergeTasks(win, lose, 0);
+    merged.tasks = tk.tasks;
+    merged.tombs = tk.tombs;
+    merged.fsrs = mergeFsrs(win, lose, 0);
+    Object.assign(merged, mergeCatalog(win, lose));
+    // 本地刚操作过（可能刚取消完成扣了分）→ 标量以本地为准，防对端旧快照把分数顶回去；
+    // 云端权威 → score 取大者防倒退（对端加分不许丢）
+    merged.score = localWin ? (win.score || 0) : Math.max(win.score || 0, lose.score || 0);
+    merged.achievements = { ...(lose.achievements || {}), ...(win.achievements || {}) };
+    merged.streak = Math.max(win.streak || 0, lose.streak || 0);
+    merged.bestStreak = Math.max(win.bestStreak || 0, lose.bestStreak || 0);
+    merged.days = { ...(lose.days || {}), ...(win.days || {}) };
+    if ((lose.lastStudyDate || '') > (win.lastStudyDate || '')) merged.lastStudyDate = lose.lastStudyDate;
+    merged.wrongbk = ecMergeWrong(win.wrongbk, lose.wrongbk); // 错题集跨设备合并（墓碑+清零分界线+FSRS 取新）
+    merged.tabCfg = ecMergeTabCfg(win.tabCfg, lose.tabCfg); // 子标签显示设置：按修改时间取新
+    merged.updatedAt = newerAt;
+    return merged;
+}
+// 键级墓碑：记录「这个 tasks 键被我删了」。跨设备合并时，若对端还留着该键的旧记录，
+// 只要墓碑时间 ≥ 记录时间就判定为「删除」而非「对端新增」，不并入——取消完成据此跨设备生效。
+function ecTomb(key) {
+    const d = ecData();
+    d.tombs = d.tombs || {};
+    d.tombs[key] = Date.now();
+}
+
+// ---------- FSRS 简化版（整篇课文背书） ----------
+// 可提取性 R = (1 + t/9S)^-1（t=S 天时 R=0.9，正好是目标留存）
+function ecRetrievability(s, elapsedDays) {
+    return 1 / (1 + Math.max(0, elapsedDays) / (9 * Math.max(0.3, s)));
+}
+function ecFsrsLearn(nowTs) {
+    return { s: EC_FSRS.s0, d: EC_FSRS.d0, n: 0, lapses: 0, last: nowTs, due: nowTs + EC_FSRS.s0 * 86400000, grade: 0 };
+}
+// 复习打分：grade 1=Again 2=Hard 3=Good 4=Easy
+function ecFsrsReview(rec, grade, nowTs) {
+    const s = Math.max(0.3, rec.s || EC_FSRS.s0);
+    const d = Math.min(10, Math.max(1, rec.d || EC_FSRS.d0));
+    const elapsedDays = rec.last ? Math.max(0, (nowTs - rec.last) / 86400000) : 0;
+    const R = ecRetrievability(s, elapsedDays);
+    let s2, d2;
+    if (grade === 1) {
+        // Again：稳定性大幅回落，难度上升，很短间隔再来
+        s2 = Math.max(0.3, s * 0.5);
+        d2 = Math.min(10, d + 0.7);
+        rec.lapses++;
+    } else {
+        // 准时复习 R≈0.9 → 全额增长；拖得越久 R 越低 → 增长越少（迟到宽容）
+        const rFactor = Math.max(0, (R - 0.35) / 0.55);
+        if (grade === 2) { s2 = s * (1 + 0.4 * rFactor); d2 = Math.min(10, d + 0.15); }
+        else if (grade === 3) { s2 = s * (1 + 1.0 * rFactor); d2 = d; }
+        else { s2 = s * (1 + 1.8 * rFactor); d2 = Math.max(1, d - 0.2); }
+        // 难度调制：难的课增长慢（D=5 ×1.0，D=8 ×0.85，D=2 ×1.15）
+        s2 *= (1.25 - 0.05 * d);
+    }
+    rec.s = Math.min(EC_FSRS.maxInterval, Math.max(0.3, s2));
+    rec.d = Math.min(10, Math.max(1, d2));
+    rec.n++;
+    rec.last = nowTs;
+    rec.grade = grade;
+    rec.due = nowTs + rec.s * 86400000;
+    return rec;
+}
+// 背诵状态：new / due / waiting / mastered
+function ecReciteStatus(rec, nowTs) {
+    if (!rec || !rec.last) return 'new';
+    if ((rec.s || 0) >= EC_FSRS.masteredS) return 'mastered';
+    if (nowTs >= (rec.due || 0)) return 'due';
+    return 'waiting';
+}
+
+// ---------- 展示工具 ----------
+function ecFmtDT(ts) {
+    const d = new Date(ts);
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function ecRelText(ts) {
+    const diff = ts - Date.now();
+    const abs = Math.abs(diff);
+    let s;
+    if (abs < 3600000) s = Math.max(1, Math.floor(abs / 60000)) + '分钟';
+    else if (abs < 86400000) s = Math.floor(abs / 3600000) + '小时';
+    else s = Math.floor(abs / 86400000) + '天';
+    return diff < 0 ? ('随时可以温习 · ' + s + '前到点') : (s + '后');
+}
+// 完成时间/复习时间展示：10-25 14:32 周六（精确到分钟 + 星期几）
+function ecFmtWeek(ts) {
+    const d = new Date(ts);
+    const p = n => String(n).padStart(2, '0');
+    const wk = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()];
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())} 周${wk}`;
+}
+function ecSDays(s) {
+    if (s >= 30) return (s / 30).toFixed(1).replace(/\.0$/, '') + ' 个月';
+    return (Math.round(s * 10) / 10) + ' 天';
+}
+function ecLessonProgress(lessonId) {
+    const l = ecLessonById(lessonId);
+    const defs = l ? ecBookTasks(l.bookId) : EC_TASKS;
+    const done = defs.filter(t => ecGetTask(lessonId, t.id)).length;
+    return { done, total: defs.length };
+}
+
+// ---------- 统计 ----------
+function ecGlobalStats() {
+    const d = ecData();
+    const nowTs = Date.now();
+    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+    const dayStartMs = dayStart.getTime();
+    let due = 0, overdue = 0, todayDone = 0, mastered = 0;
+    Object.keys(d.fsrs).forEach(k => {
+        const rec = d.fsrs[k];
+        if (!rec || !rec.last) return;
+        if ((rec.s || 0) >= EC_FSRS.masteredS) { mastered++; return; }
+        if (nowTs >= (rec.due || 0)) { due++; if ((rec.due || 0) < dayStartMs) overdue++; }
+    });
+    Object.keys(d.tasks).forEach(k => {
+        const rec = d.tasks[k];
+        if (rec && rec.at && rec.at >= dayStartMs) todayDone++;
+    });
+    const wc = ecWbCounts(ecWbData().items);
+    return { due, overdue, todayDone, mastered, wrongDue: wc.due, wrongMastered: wc.mastered };
+}
+function ecDueRecites() {
+    const d = ecData();
+    const nowTs = Date.now();
+    const list = [];
+    d.books.forEach(b => ecLessonsOf(b.id).forEach(l => {
+        const rec = d.fsrs[l.id];
+        if (!rec || !rec.last) return;
+        if ((rec.s || 0) >= EC_FSRS.masteredS) return;
+        if (nowTs >= (rec.due || 0)) list.push({ book: b, lesson: l, rec });
+    }));
+    list.sort((a, b) => (a.rec.due || 0) - (b.rec.due || 0));
+    return list;
+}
+function ecBookStats(bookId) {
+    const lessons = ecLessonsOf(bookId);
+    const d = ecData();
+    const defs = ecBookTasks(bookId);
+    let tasksDone = 0, taskTotal = lessons.length * defs.length, recited = 0, mastered = 0;
+    lessons.forEach(l => {
+        defs.forEach(t => { if (d.tasks[ecTaskKey(l.id, t.id)]) tasksDone++; });
+        const rec = d.fsrs[l.id];
+        if (rec && rec.last) { recited++; if ((rec.s || 0) >= EC_FSRS.masteredS) mastered++; }
+    });
+    const wc = ecWbCounts(ecWbItemsOfBook(bookId));
+    return { lessons: lessons.length, tasksDone, taskTotal, recited, mastered,
+        wrongTotal: wc.total, wrongDue: wc.due, wrongMastered: wc.mastered };
+}
+
+// ---------- 操作 ----------
+function ecNextOrder(arr) {
+    return arr.reduce((m, x) => Math.max(m, x.order || 0), 0) + 1;
+}
+async function ecAddBook() {
+    const input = document.getElementById('ecBookNameInput');
+    const name = (input && input.value ? input.value : '').trim();
+    if (!name) { toast('请输入书本名称'); return; }
+    const d = ecData();
+    if (d.books.some(b => b.name === name)) { toast('这本书已在书单里'); return; }
+    d.books.push({ id: uuid(), name, order: ecNextOrder(d.books), createdAt: now(), tasks: ecCloneDefaultTasks() });
+    if (input) input.value = '';
+    ecAfterAction('📚 已添加《' + name + '》，去添加课程吧');
+}
+// 批量新增书单：每行一个书名
+async function ecBatchBooks() {
+    const ta = document.getElementById('ecBookBatchNames');
+    const names = ((ta && ta.value) || '').split('\n').map(s => s.trim()).filter(Boolean);
+    if (!names.length) { toast('请先输入书名，每行一个'); return; }
+    if (names.length > 50) { toast('一次最多添加 50 本，请分批'); return; }
+    const d = ecData();
+    const exist = new Set(d.books.map(b => b.name));
+    let added = 0, skipped = 0;
+    names.forEach(name => {
+        const n = name.slice(0, 30);
+        if (exist.has(n)) { skipped++; return; }
+        d.books.push({ id: uuid(), name: n, order: ecNextOrder(d.books), createdAt: now(), tasks: ecCloneDefaultTasks() });
+        exist.add(n);
+        added++;
+    });
+    if (ta) ta.value = '';
+    ecAfterAction(added ? `✅ 已添加 ${added} 本书${skipped ? `（${skipped} 个重名已跳过）` : ''}` : '都已存在，没有新增');
+}
+async function ecRenameBook(id) {
+    const book = ecBookById(id);
+    if (!book) return;
+    const name = await uiPrompt('重命名书单', book.name, { title: '✏️ 重命名' });
+    if (name == null) return;
+    const v = String(name).trim();
+    if (!v) { toast('名称不能为空'); return; }
+    book.name = v;
+    ecAfterAction('已重命名');
+}
+// 无确认删除（内部使用；调用方需自行确认）
+function ecRemoveBook(id) {
+    const d = ecData();
+    const lessonIds = d.lessons.filter(l => l.bookId === id).map(l => l.id);
+    d.lessons = d.lessons.filter(l => l.bookId !== id);
+    lessonIds.forEach(lid => {
+        Object.keys(d.tasks).forEach(k => { if (k.startsWith(lid + '|')) delete d.tasks[k]; });
+        delete d.fsrs[lid];
+    });
+    d.books = d.books.filter(b => b.id !== id);
+    if (state._ecBookId === id) { state._ecBookId = null; state._ecLessonId = null; }
+    if (state._ecEditBookId === id) state._ecEditBookId = null;
+    if (state._ecBookSel) delete state._ecBookSel[id];
+}
+async function ecDeleteBook(id) {
+    const book = ecBookById(id);
+    if (!book) return;
+    const cnt = ecLessonsOf(id).length;
+    const ok = await uiConfirm(`将删除《${book.name}》及其 ${cnt} 节课程的全部打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
+    if (!ok) return;
+    ecRemoveBook(id);
+    ecAfterAction('🗑️ 已删除《' + book.name + '》');
+}
+// ---------- 书单：批量删除模式 ----------
+function ecBookSelMode(on) {
+    state._ecBookSelMode = on === undefined ? !state._ecBookSelMode : !!on;
+    state._ecBookSel = {};
+    render();
+}
+function ecBookSelToggle(id) {
+    const sel = state._ecBookSel || (state._ecBookSel = {});
+    sel[id] = !sel[id];
+    render();
+}
+function ecBookSelAll() {
+    const sel = state._ecBookSel || (state._ecBookSel = {});
+    const all = ecData().books;
+    const allOn = all.length > 0 && all.every(b => sel[b.id]);
+    all.forEach(b => { sel[b.id] = !allOn; });
+    render();
+}
+async function ecDelSelBooks() {
+    const sel = state._ecBookSel || {};
+    const ids = Object.keys(sel).filter(k => sel[k] && ecBookById(k));
+    if (!ids.length) { toast('还没有选择任何书'); return; }
+    const names = ids.map(id => (ecBookById(id) || {}).name).filter(Boolean);
+    const ok = await uiConfirm(`将删除 ${ids.length} 本书（${names.join('、')}）及其全部课程和打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '全部删除' });
+    if (!ok) return;
+    ids.forEach(id => ecRemoveBook(id));
+    state._ecBookSel = {};
+    state._ecBookSelMode = false;
+    ecAfterAction(`🗑️ 已删除 ${ids.length} 本书`);
+}
+async function ecAddLesson() {
+    const bookId = state._ecBookId;
+    const input = document.getElementById('ecLessonNameInput');
+    const noteInput = document.getElementById('ecLessonNoteInput');
+    const name = (input && input.value ? input.value : '').trim();
+    const note = (noteInput && noteInput.value ? noteInput.value : '').trim().slice(0, 200);
+    if (!bookId) return;
+    if (!name) { toast('请输入课程名称，如 Lesson 1'); return; }
+    const d = ecData();
+    if (d.lessons.some(l => l.bookId === bookId && l.name === name)) { toast('该课程已存在'); return; }
+    d.lessons.push({ id: uuid(), bookId, name, note, order: ecNextOrder(d.lessons), createdAt: now() });
+    if (input) input.value = '';
+    if (noteInput) noteInput.value = '';
+    ecAfterAction(note ? `✅ 已添加「${name}」和语法要点` : '✅ 已添加「' + name + '」');
+}
+async function ecBatchLessons() {
+    const bookId = state._ecBookId;
+    if (!bookId) return;
+    const prefix = (document.getElementById('ecBatchPrefix') || {}).value || '';
+    const from = parseInt((document.getElementById('ecBatchFrom') || {}).value, 10);
+    const to = parseInt((document.getElementById('ecBatchTo') || {}).value, 10);
+    if (isNaN(from) || isNaN(to)) { toast('请输入起始和结束编号'); return; }
+    if (from < 1 || to < from) { toast('编号范围不正确（起始至少为 1，结束不小于起始）'); return; }
+    if (to - from + 1 > 500) { toast('一次最多生成 500 节，请分批'); return; }
+    const d = ecData();
+    const existNames = new Set(d.lessons.filter(l => l.bookId === bookId).map(l => l.name));
+    let added = 0;
+    for (let i = from; i <= to; i++) {
+        const name = (prefix.trim() ? prefix.trim() + ' ' : '') + i;
+        if (existNames.has(name)) continue;
+        d.lessons.push({ id: uuid(), bookId, name, order: ecNextOrder(d.lessons), createdAt: now() });
+        existNames.add(name);
+        added++;
+    }
+    ecAfterAction(added ? `✅ 已批量生成 ${added} 节课程` : '这些课程都已存在，没有新增');
+}
+// 批量导入名称：每行一个课程名；支持「课程名 || 语法要点」一行带备注
+async function ecImportLessons() {
+    const bookId = state._ecBookId;
+    if (!bookId) return;
+    const ta = document.getElementById('ecImportNames');
+    const raw = (ta && ta.value ? ta.value : '');
+    const names = raw.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!names.length) { toast('请先粘贴课程名称，每行一个'); return; }
+    if (names.length > 500) { toast('一次最多导入 500 节，请分批'); return; }
+    const d = ecData();
+    const existNames = new Set(d.lessons.filter(l => l.bookId === bookId).map(l => l.name));
+    let added = 0, skipped = 0;
+    names.forEach(line => {
+        const idx = line.indexOf('||');
+        const n = (idx >= 0 ? line.slice(0, idx) : line).trim().slice(0, 60);
+        const note = idx >= 0 ? line.slice(idx + 2).trim().slice(0, 200) : '';
+        if (!n) return;
+        if (existNames.has(n)) { skipped++; return; }
+        d.lessons.push({ id: uuid(), bookId, name: n, note, order: ecNextOrder(d.lessons), createdAt: now() });
+        existNames.add(n);
+        added++;
+    });
+    if (ta) ta.value = '';
+    ecAfterAction(added ? `✅ 已导入 ${added} 节课${skipped ? `（${skipped} 个重名已跳过）` : ''}` : '都已存在，没有新增');
+}
+// 编辑课程的语法要点 / 备注（多行弹窗）
+function ecEditLessonNote(id) {
+    const lesson = ecLessonById(id);
+    if (!lesson) return;
+    uiModal({
+        title: '📝 语法要点 / 备注',
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">显示在「${escapeHtml(lesson.name)}」目录下方的灰色小字，例如：be 动词（am/is/are）；含 be 动词的一般疑问句；Yes/No 回答</div>
+               <textarea id="ecNoteTA" rows="3" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.6" placeholder="语法：be 动词（am/is/are）；一般疑问句；Yes/No 回答">${escapeHtml(lesson.note || '')}</textarea>`,
+        getValue: () => {
+            const v = (document.getElementById('ecNoteTA') || {}).value || '';
+            return v.trim().slice(0, 200);
+        },
+        okText: '保存'
+    }).then(v => {
+        if (v == null) return;
+        lesson.note = v;
+        state._ecEditLessonId = null;
+        ecAfterAction(v ? '已保存语法要点' : '已清空语法要点');
+    });
+}
+// 导入 / 编辑中文课文（背诵板块：看中文说英文自检）
+// 中英文课文编辑：一个弹窗里同时维护「中文」「英文」两份原文
+// 中文用来做「看中文说英文」自检，英文用来对照原文核对发音/表达
+function ecEditLessonZh(id) {
+    const lesson = ecLessonById(id);
+    if (!lesson) return;
+    const taStyle = 'width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.7';
+    uiModal({
+        title: '📝 中英文课文 · ' + lesson.name,
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">两栏都可以填，也可以只填一栏（建议一句一行）。背诵板块里会显示「🇨🇳 中文」「🇬🇧 英文」两个按钮，<b>平时默认隐藏</b>，需要对照时再点开。</div>
+               <div style="font-size:12px;font-weight:700;color:var(--text);margin:8px 0 4px">🇨🇳 中文课文（看中文说英文用）</div>
+               <textarea id="ecZhTA" rows="8" style="${taStyle}" placeholder="例如：&#10;你的新连衣裙是什么颜色的？&#10;是绿色的。">${escapeHtml(lesson.zh || '')}</textarea>
+               <div style="font-size:12px;font-weight:700;color:var(--text);margin:12px 0 4px">🇬🇧 英文原文（对照核对用）</div>
+               <textarea id="ecEnTA" rows="8" style="${taStyle}" placeholder="例如：&#10;What colour's your new dress?&#10;It's green.">${escapeHtml(lesson.en || '')}</textarea>
+               <div style="font-size:12px;color:var(--text-secondary);margin-top:6px">保存后自动云同步到其他设备。</div>`,
+        getValue: () => {
+            const zh = ((document.getElementById('ecZhTA') || {}).value || '').trim().slice(0, 8000);
+            const en = ((document.getElementById('ecEnTA') || {}).value || '').trim().slice(0, 8000);
+            return { zh, en };
+        },
+        okText: '保存'
+    }).then(v => {
+        if (v == null) return;
+        const now = Date.now();
+        const zh = typeof v === 'string' ? v : (v.zh || '');
+        const en = typeof v === 'string' ? '' : (v.en || '');
+        const zhChanged = (zh || '') !== (lesson.zh || '');
+        const enChanged = (en || '') !== (lesson.en || '');
+        lesson.zh = zh;
+        if (zhChanged || !lesson.zhAt) lesson.zhAt = now;
+        lesson.en = en;
+        if (enChanged || !lesson.enAt) lesson.enAt = now;
+        // 新保存的课文默认展开显示一次（用户刚导入，一定想看），之后按按钮自己控
+        state._ecTxt = state._ecTxt || {};
+        const cur = state._ecTxt[id] || {};
+        state._ecTxt[id] = { zh: !!zh && (zhChanged || !!cur.zh), en: !!en && (enChanged || !!cur.en) };
+        const bits = [];
+        if (zh) bits.push('中文');
+        if (en) bits.push('英文');
+        ecAfterAction(bits.length ? `已保存课文（${bits.join(' + ')}），背诵板块可用按钮随时展开对照` : '已清空中文和英文课文');
+    });
+}
+// 提取标题中的课次编号序列（如 "L1、L2 Excuse me!" → [1,2]，"Lesson 3" → [3]，"第113课" → [113]）。
+// 有 L/Lesson/Unit/课/第 前缀编号时优先用；没有则回退行首数字连写（"1、2 Excuse me!" → [1,2]）
+function ecZhTitleNums(s) {
+    const str = String(s || '');
+    let m = str.toLowerCase().match(/(?:l|lesson|unit|课|第)\s*[0-9]{1,3}/g) || [];
+    if (!m.length) {
+        const head = str.match(/^[ \t　]*[0-9]{1,3}(?:[ \t　]*[、，,&\/\-~～至到][ \t　]*[0-9]{1,3})*/);
+        if (head) m = head[0].match(/[0-9]{1,3}/g) || [];
+    }
+    return m.map(x => parseInt(String(x).replace(/[^0-9]/g, ''), 10)).filter(n => n > 0);
+}
+// 解析整本中文课文，两种模式：
+// ① 分割线模式（推荐）：单元之间用单独一行的「//」分隔，每个单元第一行 = 课时标题，其余行 = 中文；
+// ② 标题行模式（兼容旧用法）：以「课时名」整行作为分段起点，其下内容归入该课（不依赖空行）。
+// 标题匹配层层放宽（抗 TXT 空格/标点差异）：精确 → 课次编号（优先，文字差异不影响）→ 去标点归一化 → 去标点前缀
+// opts.lang：'mix' 中英一起（默认，按【中文】/【英文】标记分栏）｜'zh' 只取中文｜'en' 只取英文
+// 三种模式吃的是**同一份文本**：只导中文时英文段被自动跳过，只导英文时中文段被跳过，互相不覆盖
+function ecBatchZhParse(text, lessonNames, opts) {
+    const lang = ((opts || {}).lang || 'mix');
+    const norm = (s) => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
+    const strip = (s) => norm(s).replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
+    const names = (lessonNames || []);
+    const byNorm = {}, byStrip = {}, byNums = {};
+    names.forEach(n => {
+        byNorm[norm(n)] = n; byStrip[strip(n)] = n;
+        const nums = ecZhTitleNums(n);
+        if (nums.length) byNums[nums.join(',')] = n;
+    });
+    const hitOf = (t) => {
+        let hit = byNorm[norm(t)];
+        if (!hit) {
+            // 编号优先：标题里课次编号序列一致即直接命中（文字部分差异不影响）——
+            // "L1, L2 打招呼" ↔ 课时名 "L1、L2 Excuse me!" 也算同一课
+            const nums = ecZhTitleNums(t);
+            if (nums.length) hit = byNums[nums.join(',')];
+        }
+        if (!hit) hit = byStrip[strip(t)];
+        if (!hit) {
+            const st = strip(t);
+            if (st.length >= 3) {
+                for (const nm of names) {
+                    const ns = strip(nm);
+                    if (ns.startsWith(st) || st.startsWith(ns)) { hit = nm; break; }
+                }
+            }
+        }
+        return hit;
+    };
+    const sepRe = /^\s*(?:\/\/+|／／+)\s*$/;
+    // 语言分段标记（单独一行）：【英文】/ EN: / 【中文】/ ZH: —— 一个单元里可同时给中文和英文
+    const enMark = /^[【\[（(]?\s*(?:en|eng|english|英文|英语|原文)\s*[】\]）)]?\s*[:：]?$/i;
+    const zhMark = /^[【\[（(]?\s*(?:zh|cn|chinese|中文|译文|翻译)\s*[】\]）)]?\s*[:：]?$/i;
+    // 把一个单元的行按语言标记切开：
+    // - lang='mix'：无标记全当中文（兼容旧用法），有标记就分栏
+    // - lang='zh' ：默认中文，遇到【英文】标记后面那段直接丢弃（不污染中文）
+    // - lang='en' ：默认英文，遇到【中文】标记后面那段直接丢弃
+    const splitLang = (arr) => {
+        const zh = [], en = [];
+        let curLang = lang === 'en' ? 'en' : 'zh';
+        const onEn = lang === 'zh' ? 'skip' : 'en';
+        const onZh = lang === 'en' ? 'skip' : 'zh';
+        arr.forEach(t => {
+            if (enMark.test(t)) { curLang = onEn; return; }
+            if (zhMark.test(t)) { curLang = onZh; return; }
+            if (curLang === 'skip') return;
+            (curLang === 'en' ? en : zh).push(t);
+        });
+        return { zh: zh.join('\n').trim(), en: en.join('\n').trim() };
+    };
+    const lines = String(text || '').split('\n');
+    const useSep = lines.some(l => sepRe.test(l));
+    const map = {}, mapEn = {}, matched = {}, unknownTitles = [];
+    if (useSep) {
+        // ---- 分割线模式：// 行切单元，单元首行 = 标题 ----
+        let title = null, buf = [];
+        const flushUnit = () => {
+            if (title == null) return;
+            const hit = hitOf(title);
+            if (hit) {
+                const lz = splitLang(buf);
+                if (lz.zh) map[hit] = lz.zh;
+                if (lz.en) mapEn[hit] = lz.en;
+                matched[hit] = true;
+            } else unknownTitles.push(title);
+            title = null; buf = [];
+        };
+        for (let raw of lines) {
+            const t = raw.replace(/\r$/, '').trim();
+            if (sepRe.test(t)) { flushUnit(); continue; }
+            if (title == null) { if (t) title = t; continue; }
+            if (t) buf.push(t);
+        }
+        flushUnit();
+    } else {
+        // ---- 标题行模式：课时名整行 = 分段起点 ----
+        let cur = null, curBuf = [];
+        const flush = () => {
+            if (cur && curBuf.length) {
+                const lz = splitLang(curBuf);
+                if (lz.zh) map[cur] = lz.zh;
+                if (lz.en) mapEn[cur] = lz.en;
+            }
+            curBuf = [];
+        };
+        for (let raw of lines) {
+            const t = raw.replace(/\r$/, '').trim();
+            if (!t) continue; // 空行忽略，不影响分段
+            const hit = hitOf(t);
+            if (hit) { flush(); cur = hit; matched[hit] = true; }
+            else if (cur) { curBuf.push(t); }
+            // 首个标题之前出现的内容：无归属，忽略
+        }
+        flush();
+    }
+    const unmatched = names.filter(n => !matched[n]);
+    return { map, mapEn, unmatched, unknownTitles, mode: useSep ? 'sep' : 'title', lang };
+}
+// 整本批量导入课文（中文 / 英文 / 中英一起，按课时名自动匹配）
+// lang: 'mix' 中英一起（默认）｜'zh' 只导中文｜'en' 只导英文
+function ecBatchZhImport(bookId, lang) {
+    const book = ecBookById(bookId);
+    if (!book) return;
+    const lessons = ecLessonsOf(bookId);
+    if (!lessons.length) { toast('这本书还没有课程，先添加课程再批量导入课文'); return; }
+    const L = (lang === 'zh' || lang === 'en') ? lang : 'mix';
+    const namesList = lessons.map(l => `<li>${escapeHtml(l.name)}</li>`).join('');
+    const langPick = `
+        <div class="ec-lang-pick">
+            <label class="ec-lang-opt${L === 'mix' ? ' on' : ''}"><input type="radio" name="ecBatchLang" value="mix"${L === 'mix' ? ' checked' : ''}><span>🇨🇳🇬🇧 中英一起</span></label>
+            <label class="ec-lang-opt${L === 'zh' ? ' on' : ''}"><input type="radio" name="ecBatchLang" value="zh"${L === 'zh' ? ' checked' : ''}><span>🇨🇳 只导中文</span></label>
+            <label class="ec-lang-opt${L === 'en' ? ' on' : ''}"><input type="radio" name="ecBatchLang" value="en"${L === 'en' ? ' checked' : ''}><span>🇬🇧 只导英文</span></label>
+        </div>
+        <div class="ec-lang-hint">三种模式用的是<b>同一份文本</b>：选「只导中文」时英文段自动跳过，选「只导英文」时中文段自动跳过，<b>都不会覆盖另一种语言</b>。所以可以一次导全，也可以分两次单独导。</div>`;
+    const title = L === 'zh' ? '📥 批量导入中文课文 · ' : (L === 'en' ? '📥 批量导入英文课文 · ' : '📥 批量导入课文 · ');
+    uiModal({
+        title: title + book.name,
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">一次性粘贴整本：<b>推荐用「//」作为单元分割线</b>——每个单元之间单独一行写「//」，单元<b>第一行写课时标题</b>（如 L1、L2 Excuse me!）。<br>中英分开写在同一个单元里时，单独一行写「【中文】」「【英文】」分栏；<b>不写标记就按上面的模式全部当作中文（或英文）</b>。没有「//」也能用：直接以课时名整行作为分段起点。匹配已做<b>去标点/空格归一化 + 课次编号兜底</b>（L15 ↔ L15、L16）。点「导入」后先显示<b>匹配预览</b>，确认后才写入。</div>
+               ${langPick}
+               <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:13px">👀 本书现有课时名（对照用，标题不必完全一致）</summary><ul style="columns:2;font-size:12px;color:var(--text-secondary);margin:6px 0;padding-left:16px">${namesList}</ul></details>
+               <textarea id="ecBatchZhTA" rows="12" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;line-height:1.7" placeholder="L1、L2 Excuse me!&#10;【中文】&#10;对不起！&#10;这是您的手提包吗？&#10;【英文】&#10;Excuse me!&#10;Is this your handbag?&#10;//&#10;L3、L4 Sorry, sir.&#10;【中文】&#10;请把我的大衣和伞拿给我。&#10;【英文】&#10;My coat and my umbrella please.&#10;//&#10;……"></textarea>`,
+        getValue: () => {
+            let useL = L;
+            try {
+                const el2 = document.querySelector('input[name="ecBatchLang"]:checked');
+                if (el2 && el2.value) useL = el2.value;
+            } catch (err) { /* 拿不到选择控件时用默认模式 */ }
+            return {
+                text: (document.getElementById('ecBatchZhTA') || {}).value || '',
+                lang: useL
+            };
+        },
+        okText: '导入'
+    }).then(async v => {
+        if (v == null) return;
+        const t = typeof v === 'string' ? v : (v.text || '');
+        const useLang = (typeof v === 'string' ? 'mix' : (v.lang || 'mix'));
+        const names = lessons.map(l => l.name);
+        const r = ecBatchZhParse(t, names, { lang: useLang });
+        const cnt = Object.keys(r.map).length + Object.keys(r.mapEn).length;
+        if (!cnt) {
+            toast(useLang === 'en' ? '没有匹配到任何英文课文，请核对粘贴内容里的课时标题与本书是否一致' : '没有匹配到任何课时，请核对粘贴里的课时名与本书是否一致');
+            return;
+        }
+        // 预览确认：先告诉用户会写入哪些课、哪些没匹配上，确认才写入（防止错并）
+        const zhCnt = Object.keys(r.map).length, enCnt = Object.keys(r.mapEn || {}).length;
+        const totalLines = Object.values(r.map).reduce((s, v2) => s + v2.split('\n').filter(Boolean).length, 0)
+            + Object.values(r.mapEn || {}).reduce((s, v2) => s + v2.split('\n').filter(Boolean).length, 0);
+        const shown = names.filter(n => r.map[n] != null || (r.mapEn || {})[n] != null).slice(0, 12).join('、');
+        const more = Math.max(zhCnt, enCnt) > 12 ? ` 等 ${Math.max(zhCnt, enCnt)} 课` : '';
+        const head = useLang === 'zh' ? `解析完成：中文 ${zhCnt} 课（共 ${totalLines} 行）`
+            : (useLang === 'en' ? `解析完成：英文 ${enCnt} 课（共 ${totalLines} 行）`
+                : `解析完成：中文 ${zhCnt} 课、英文 ${enCnt} 课（共 ${totalLines} 行）`);
+        const un = r.unmatched.length ? `\n未匹配 ${r.unmatched.length} 课：${r.unmatched.slice(0, 15).join('、')}${r.unmatched.length > 15 ? ' 等' : ''}（这些课保持原样）` : '';
+        const unk = (r.unknownTitles && r.unknownTitles.length) ? `\n⚠️ TXT 里 ${r.unknownTitles.length} 个标题没对上课时：${r.unknownTitles.slice(0, 10).join(' ｜ ')}${r.unknownTitles.length > 10 ? ' 等' : ''}（请对照上方课时名修正标题）` : '';
+        const okGo = await uiConfirm(`${head}。已匹配：${shown}${more}。${un}${unk}\n确认导入吗？`, { title: '📥 导入预览', okText: '导入' });
+        if (!okGo) return;
+        const now = Date.now();
+        lessons.forEach(l => {
+            if (r.map[l.name] != null) { l.zh = r.map[l.name]; l.zhAt = now; }
+            const en = (r.mapEn || {})[l.name];
+            if (en != null) { l.en = en; l.enAt = now; }
+        });
+        state._ecTxt = {};
+        const extra = r.unmatched.length ? `；未匹配 ${r.unmatched.length} 课：${r.unmatched.join('、')}` : '';
+        const extra2 = (r.unknownTitles && r.unknownTitles.length) ? `；TXT 标题未对上 ${r.unknownTitles.length} 个` : '';
+        const langName = useLang === 'zh' ? '中文' : (useLang === 'en' ? '英文' : '中文');
+        ecAfterAction(useLang === 'mix'
+            ? `已导入中文 ${zhCnt} 课、英文 ${enCnt} 课${extra}${extra2}`
+            : `已导入${langName} ${useLang === 'en' ? enCnt : zhCnt} 课（另一种语言保持原样）${extra}${extra2}`);
+    });
+}
+// 清空课文（中文 + 英文；bookId 为空 = 全部书）；时间戳更新保证跨设备合并时「清空」生效
+async function ecClearZh(bookId) {
+    const d = ecData();
+    const lessons = bookId ? ecLessonsOf(bookId) : d.lessons;
+    const n = lessons.filter(l => l.zh || l.en).length;
+    if (!n) { toast('没有可清空的课文'); return; }
+    const scope = bookId ? `本书（${(ecBookById(bookId) || {}).name || ''}）` : '所有书';
+    const okGo = await uiConfirm(`将清空${scope}的 ${n} 课课文（中文和英文都清，课程目录/打卡/背诵记录不受影响），且跨设备同步。确定吗？`, { isDanger: true, okText: '清空' });
+    if (!okGo) return;
+    const now = Date.now();
+    lessons.forEach(l => {
+        if (l.zh) { l.zh = ''; l.zhAt = now; }
+        if (l.en) { l.en = ''; l.enAt = now; }
+    });
+    state._ecTxt = {};
+    ecAfterAction(`已清空${scope}的 ${n} 课课文`);
+}
+async function ecRenameLesson(id) {
+    const lesson = ecLessonById(id);
+    if (!lesson) return;
+    const name = await uiPrompt('重命名课程', lesson.name, { title: '✏️ 重命名课程' });
+    if (name == null) return;
+    const v = String(name).trim();
+    if (!v) { toast('名称不能为空'); return; }
+    lesson.name = v;
+    state._ecEditLessonId = null;
+    ecAfterAction('已重命名');
+}
+// 无确认删除（内部使用；调用方需自行确认）
+function ecRemoveLesson(id) {
+    const d = ecData();
+    d.lessons = d.lessons.filter(l => l.id !== id);
+    Object.keys(d.tasks).forEach(k => { if (k.startsWith(id + '|')) delete d.tasks[k]; });
+    delete d.fsrs[id];
+    if (state._ecLessonId === id) state._ecLessonId = null;
+    if (state._ecEditLessonId === id) state._ecEditLessonId = null;
+    if (state._ecEarlyId === id) state._ecEarlyId = null;
+    if (state._ecLessonSel) delete state._ecLessonSel[id];
+}
+async function ecDeleteLesson(id) {
+    const lesson = ecLessonById(id);
+    if (!lesson) return;
+    const ok = await uiConfirm(`将删除「${lesson.name}」及其全部打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
+    if (!ok) return;
+    ecRemoveLesson(id);
+    ecAfterAction('🗑️ 已删除「' + lesson.name + '」');
+}
+// ---------- 课程：批量删除模式 ----------
+function ecLessonSelMode(on) {
+    state._ecLessonSelMode = on === undefined ? !state._ecLessonSelMode : !!on;
+    state._ecLessonSel = {};
+    render();
+}
+function ecLessonSelToggle(id) {
+    const sel = state._ecLessonSel || (state._ecLessonSel = {});
+    sel[id] = !sel[id];
+    render();
+}
+function ecLessonSelAll() {
+    const sel = state._ecLessonSel || (state._ecLessonSel = {});
+    const all = ecLessonsOf(state._ecBookId);
+    const allOn = all.length > 0 && all.every(l => sel[l.id]);
+    all.forEach(l => { sel[l.id] = !allOn; });
+    render();
+}
+async function ecDelSelLessons() {
+    const sel = state._ecLessonSel || {};
+    const ids = Object.keys(sel).filter(k => sel[k] && ecLessonById(k));
+    if (!ids.length) { toast('还没有选择任何课程'); return; }
+    const names = ids.map(id => (ecLessonById(id) || {}).name).filter(Boolean);
+    const ok = await uiConfirm(`将删除 ${ids.length} 节课（${names.join('、')}）及其全部打卡记录，且跨设备同步。确定吗？`, { isDanger: true, okText: '全部删除' });
+    if (!ok) return;
+    ids.forEach(id => ecRemoveLesson(id));
+    state._ecLessonSel = {};
+    state._ecLessonSelMode = false;
+    ecAfterAction(`🗑️ 已删除 ${ids.length} 节课`);
+}
+// ---------- 每本书自定义打卡任务 ----------
+function ecAddTaskToBook() {
+    const bookId = state._ecEditBookId;
+    const book = ecBookById(bookId);
+    if (!book) { toast('请先点书单里的 ✏️ 编辑按钮'); return; }
+    const name = ((document.getElementById('ecNewTaskName') || {}).value || '').trim();
+    if (!name) { toast('请输入任务名称'); return; }
+    const group = (document.getElementById('ecNewTaskGroup') || {}).value === 'output' ? 'output' : 'input';
+    const icon = ((document.getElementById('ecNewTaskIcon') || {}).value || '').trim() || (group === 'input' ? '🎧' : '🗣️');
+    const desc = ((document.getElementById('ecNewTaskDesc') || {}).value || '').trim();
+    if (!Array.isArray(book.tasks)) book.tasks = ecCloneDefaultTasks();
+    if (book.tasks.some(t => t.name === name)) { toast('这本书已有同名任务'); return; }
+    if (book.tasks.length >= 12) { toast('每本书最多 12 个打卡任务'); return; }
+    book.tasks.push({
+        id: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        group, icon: icon.slice(0, 4), name: name.slice(0, 20), desc: desc.slice(0, 60), points: 2
+    });
+    ecAfterAction('✅ 已添加任务「' + name.slice(0, 20) + '」');
+}
+// 编辑任务（名称 + 说明双字段；说明显示在任务名下方）
+function ecRenameBookTask(bookId, taskId) {
+    const book = ecBookById(bookId);
+    if (!book || !Array.isArray(book.tasks)) return;
+    const def = book.tasks.find(t => t && t.id === taskId);
+    if (!def) return;
+    uiModal({
+        title: '✏️ 编辑任务',
+        html: `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">任务名称</div>
+               <input type="text" id="ecTaskNameIn" class="input" style="width:100%;box-sizing:border-box" maxlength="20" value="${escapeHtml(def.name)}">
+               <div style="font-size:13px;color:var(--text-secondary);margin:10px 0 6px">说明（显示在任务名下方）</div>
+               <textarea id="ecTaskDescIn" rows="3" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;line-height:1.6" maxlength="60" placeholder="如：听课文录音→逐句跟读、标记重点">${escapeHtml(def.desc || '')}</textarea>`,
+        getValue: () => {
+            const name = ((document.getElementById('ecTaskNameIn') || {}).value || '').trim();
+            if (!name) { toast('任务名称不能为空'); return null; }
+            const desc = ((document.getElementById('ecTaskDescIn') || {}).value || '').trim();
+            return { name: name.slice(0, 20), desc: desc.slice(0, 60) };
+        },
+        okText: '保存'
+    }).then(v => {
+        if (!v) return;
+        def.name = v.name;
+        def.desc = v.desc;
+        ecAfterAction('✅ 已保存任务「' + v.name + '」');
+    });
+}
+// 任务排序（在本书任务列表内上移/下移；数组顺序 = 课程页显示顺序）
+function ecMoveBookTask(bookId, taskId, dir) {
+    const book = ecBookById(bookId);
+    if (!book || !Array.isArray(book.tasks) || book.tasks.length < 2) return;
+    const i = book.tasks.findIndex(t => t && t.id === taskId);
+    const j = i + (Number(dir) >= 0 ? 1 : -1);
+    if (i < 0 || j < 0 || j >= book.tasks.length) return;
+    const tmp = book.tasks[i];
+    book.tasks[i] = book.tasks[j];
+    book.tasks[j] = tmp;
+    ecAfterAction(Number(dir) >= 0 ? '⬇️ 已下移「' + book.tasks[j].name + '」' : '⬆️ 已上移「' + book.tasks[i].name + '」');
+}
+async function ecDelBookTask(bookId, taskId) {
+    const book = ecBookById(bookId);
+    const def = book ? ecBookTasks(bookId).find(t => t.id === taskId) : null;
+    if (!book || !def) return;
+    const d = ecData();
+    const cnt = d.lessons.filter(l => l.bookId === bookId && d.tasks[ecTaskKey(l.id, taskId)]).length;
+    const ok = await uiConfirm(`将删除《${book.name}》的任务「${def.name}」及 ${cnt} 条完成记录（积分不扣回），且跨设备同步。确定吗？`, { isDanger: true, okText: '删除' });
+    if (!ok) return;
+    book.tasks = (Array.isArray(book.tasks) ? book.tasks : ecCloneDefaultTasks()).filter(t => t.id !== taskId);
+    // 任务定义删除墓碑：否则合并时会被另一端旧书快照并集「复活」
+    d.tombTasks = d.tombTasks || {};
+    d.tombTasks[bookId + '|' + taskId] = Date.now();
+    d.lessons.forEach(l => { if (l.bookId === bookId) { const k = ecTaskKey(l.id, taskId); delete d.tasks[k]; ecTomb(k); } });
+    ecAfterAction('🗑️ 已删除任务「' + def.name + '」');
+}
+// 普通任务打卡（完成/取消完成，可反复）
+function ecToggleTask(lessonId, taskId) {
+    const d = ecData();
+    const key = ecTaskKey(lessonId, taskId);
+    const taskDef = ecFindTaskDef(lessonId, taskId);
+    const pts = taskDef ? (taskDef.points || 2) : 2;
+    if (d.tasks[key]) {
+        delete d.tasks[key];
+        ecTomb(key); // 键级墓碑：取消完成要能跨设备生效，不被云端旧记录并集复活
+        ecAddScore(-pts);
+        ecAfterAction('已取消「' + (taskDef ? taskDef.name : '') + '」');
+    } else {
+        d.tasks[key] = { at: Date.now() };
+        ecAddScore(pts);
+        ecLogStudy();
+        ecAfterAction('🎯 「' + (taskDef ? taskDef.name : '') + '」完成！+' + pts + ' 分');
+    }
+}
+// epochMs → datetime-local 输入框值（本地时区 YYYY-MM-DDTHH:mm）
+function ecToLocalInput(ts) {
+    const d = new Date(ts || Date.now());
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// 修改某个任务的完成时间：默认就是系统打卡时间，之前学过的课可补录实际日期（不能晚于现在）
+async function ecEditTaskTime(lessonId, taskId) {
+    const rec = ecGetTask(lessonId, taskId);
+    if (!rec) return;
+    const taskDef = ecFindTaskDef(lessonId, taskId);
+    const name = taskDef ? taskDef.name : '任务';
+    const v = await uiModal({
+        title: '🕐 修改完成时间',
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin-bottom:8px">「${escapeHtml(name)}」的完成时间。之前就学过的课，可以改成实际学习的日期；不改就是当前的系统打卡时间。</div>
+               <input type="datetime-local" id="ecTaskTimeInput" value="${ecToLocalInput(rec.at)}" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px">
+               <div class="ec-hint" style="margin-top:6px">不能晚于当前时间；保存后跨设备同步。</div>`,
+        getValue: () => {
+            const el = document.getElementById('ecTaskTimeInput');
+            const raw = (el && el.value) || '';
+            if (!raw) { toast('请选择完成时间'); return null; }
+            let ts = new Date(raw).getTime();
+            if (isNaN(ts)) { toast('时间格式不正确'); return null; }
+            if (ts > Date.now()) ts = Date.now();
+            return ts;
+        },
+        okText: '保存'
+    });
+    if (v == null) return;
+    rec.at = v;
+    ecAfterAction('🕐 完成时间已更新为 ' + ecFmtWeek(v));
+}
+// 学习记录清零（测试期重来用）：清任务完成记录 + 背诵记录，书单/课程目录保留；
+// 可选连积分/连续学习/成就一起清零。逐个取消完成太麻烦时的批量重置。
+async function ecClearRecords() {
+    const d = ecData();
+    const taskCnt = Object.keys(d.tasks).length;
+    const fsrsCnt = Object.keys(d.fsrs).length;
+    if (!taskCnt && !fsrsCnt && !(d.score || 0)) { toast('当前没有学习记录'); return; }
+    const v = await uiModal({
+        title: '🧹 学习记录清零',
+        isDanger: true,
+        html: `<div style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin-bottom:10px">把<b>任务完成记录（${taskCnt} 条）</b>和<b>背诵复习记录（${fsrsCnt} 条）</b>清空，所有课程回到「未开始」状态；<b>书单和课程目录会保留</b>，不用重新建。<b style="color:var(--text)">清零后会自动同步到其他设备</b>（手机/电脑刷新后都会归零）。</div>
+               <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600;padding:9px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="ecClrTasks" checked> 清零任务完成记录（${taskCnt} 条）</label>
+               <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600;padding:9px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="ecClrFsrs" checked> 清零背诵复习记录（${fsrsCnt} 条）</label>
+               <label style="display:flex;gap:8px;align-items:center;font-size:14px;font-weight:600;padding:9px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer"><input type="checkbox" id="ecClrAll"> 连积分 / 连续学习 / 成就一起清零（当前 ${d.score || 0} 分）</label>`,
+        getValue: () => ({
+            tasks: !!(document.getElementById('ecClrTasks') || {}).checked,
+            fsrs: !!(document.getElementById('ecClrFsrs') || {}).checked,
+            all: !!(document.getElementById('ecClrAll') || {}).checked
+        }),
+        okText: '确认清零'
+    });
+    if (v == null) return;
+    if (!v.tasks && !v.fsrs && !v.all) { toast('没有选择要清零的内容'); return; }
+    // 全局时间分界线（墓碑）：合并时另一端早于该时点的旧记录一律丢弃，
+    // 否则并集逻辑会把清零前的旧记录「复活」→ 一端清零、另一端刷新后还在。
+    if (v.tasks) { d.tasks = {}; d.clearedAt = Date.now(); }
+    if (v.fsrs) { d.fsrs = {}; d.fsrsClearedAt = Date.now(); }
+    if (v.all) {
+        d.score = 0; d.streak = 0; d.bestStreak = 0;
+        d.days = {}; d.achievements = {}; d.lastStudyDate = '';
+    }
+    ecAfterAction('🧹 学习记录已清零，书单目录保留');
+}
+
+// ==================== 查漏补缺：分书本 / 分课时 + FSRS 间隔复习 + 与书本学习联动 ====================
+// 数据结构（state.data.engcheck.wrongbk，随 engcheck 云同步）：
+//   items: [{ id, bookId, lessonId, lesson, point, mine, right, why, order, createdAt, updatedAt }]
+//     bookId/lessonId 直接引用书单目录（books / lessons）；lesson 保留原文本，未归类时作为兜底显示
+//     point=核心知识点 mine=你当时的答案 right=正确答案 why=大白话原因 order=课时内排序
+//   fsrs / tombs / clearedAt / updatedAt：FSRS 记录、删除墓碑、清零分界线、最近修改时间
+//   autoTask / autoTaskAt：查漏补缺自评后是否自动完成该课「练题」任务（默认开，可关，跨设备按 at 取新）
+const EC_WB_GRADES = [
+    { id: 1, name: 'Again', label: '又错了', desc: '还是想错 / 完全没印象', cls: 'g-again' },
+    { id: 2, name: 'Hard', label: '很勉强', desc: '想起来了，但磕磕绊绊', cls: 'g-hard' },
+    { id: 3, name: 'Good', label: '答对了', desc: '能说出正确答案（首选）', cls: 'g-good' },
+    { id: 4, name: 'Easy', label: '秒答', desc: '脱口而出，完全掌握', cls: 'g-easy' }
+];
+const EC_WRONG_SUBTABS = [
+    { id: 'overview', name: '📊 概览' },
+    { id: 'due', name: '⏰ 可以回顾' },
+    { id: 'books', name: '🗂️ 错题本' },
+    { id: 'all', name: '📚 全部错题' },
+    { id: 'mastered', name: '🏆 已掌握' }
+];
+const EC_WB_UNASSIGNED = '__unassigned__';
+// ---------- v20261106v：逐词比对（相同正常显示，只有不同 / 错误处打灰色底纹） ----------
+// 思路：把两句话切成「词 + 空白」token，用最长公共子序列对齐；
+// 落在公共子序列里的原样输出，落在两侧的连续差异段合成一个灰底 span。
+function ecWbTokenize(s) {
+    const parts = String(s == null ? '' : s).match(/\s+|[^\s]+/g) || [];
+    const out = [];
+    parts.forEach(p => {
+        if (/^\s+$/.test(p)) { out.push(p); return; }
+        // 中文没有空格，按字切才能只给不同的那几个字打底纹
+        if (/[\u3400-\u9fff]/.test(p)) out.push(...(p.match(/[\u3400-\u9fff]|[^\u3400-\u9fff]+/g) || [p]));
+        else out.push(p);
+    });
+    return out;
+}
+function ecWbTokKey(t) { return /^\s+$/.test(t) ? ' ' : t; }
+// 连续灰底合成一块；夹在两块灰底中间的空格也并进去（is taking 一整块）；首尾空白移出灰底
+function ecWbMergeSegs(arr) {
+    const out = [];
+    for (let i = 0; i < arr.length; i++) {
+        const seg = arr[i], last = out[out.length - 1];
+        if (last && last.d === 1 && seg.d === 1) { last.t += seg.t; continue; }
+        if (last && last.d === 1 && seg.d === 0 && /^\s+$/.test(seg.t) && arr[i + 1] && arr[i + 1].d === 1) {
+            last.t += seg.t; continue;
+        }
+        out.push({ d: seg.d, t: seg.t });
+    }
+    const trimmed = [];
+    out.forEach(seg => {
+        if (seg.d !== 1) { trimmed.push(seg); return; }
+        const m = String(seg.t).match(/^(\s*)([\s\S]*?)(\s*)$/);
+        if (!m) { trimmed.push(seg); return; }
+        if (m[1]) trimmed.push({ d: 0, t: m[1] });
+        if (m[2]) trimmed.push({ d: 1, t: m[2] });
+        if (m[3]) trimmed.push({ d: 0, t: m[3] });
+    });
+    const joined = [];
+    trimmed.forEach(seg => {
+        const last = joined[joined.length - 1];
+        if (last && last.d === seg.d) last.t += seg.t;
+        else joined.push({ d: seg.d, t: seg.t });
+    });
+    return joined;
+}
+function ecWbDiffSides(a, b) {
+    const A = ecWbTokenize(a), B = ecWbTokenize(b);
+    if (!A.length && !B.length) return { mine: [], right: [] };
+    // 超长文本退化为整段对比，避免 O(n*m) 卡住页面
+    if (A.length * B.length > 60000) {
+        return { mine: ecWbMergeSegs([{ d: 1, t: A.join('') }]), right: ecWbMergeSegs([{ d: 1, t: B.join('') }]) };
+    }
+    const n = A.length, m = B.length;
+    const dp = [];
+    for (let i = 0; i <= n; i++) dp.push(new Uint16Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) {
+        for (let j = m - 1; j >= 0; j--) {
+            dp[i][j] = ecWbTokKey(A[i]) === ecWbTokKey(B[j])
+                ? dp[i + 1][j + 1] + 1
+                : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+    }
+    const mine = [], right = [];
+    const push = (arr, d, t) => {
+        if (!t) return;
+        const last = arr[arr.length - 1];
+        if (last && last.d === d) last.t += t;   // 连续差异合成一整块灰底（如 is taking）
+        else arr.push({ d: d, t: t });
+    };
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+        if (ecWbTokKey(A[i]) === ecWbTokKey(B[j])) { push(mine, 0, A[i]); push(right, 0, B[j]); i++; j++; }
+        else if (dp[i + 1][j] >= dp[i][j + 1]) { push(mine, 1, A[i]); i++; }
+        else { push(right, 1, B[j]); j++; }
+    }
+    while (i < n) push(mine, 1, A[i++]);
+    while (j < m) push(right, 1, B[j++]);
+    return { mine: ecWbMergeSegs(mine), right: ecWbMergeSegs(right) };
+}
+function ecWbSegsHTML(segs) {
+    return segs.map(s => s.d ? `<span class="ec-wb-diff">${escapeHtml(s.t)}</span>` : escapeHtml(s.t)).join('');
+}
+function ecWbDiffWords(sides) {
+    const out = [];
+    [sides.mine, sides.right].forEach(arr => arr.forEach(s => {
+        if (!s.d) return;
+        String(s.t).split(/\s+/).forEach(w => {
+            const c = w.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[^\p{L}\p{N}]+$/u, '');
+            if (c && c.length <= 24) out.push(c);
+        });
+    }));
+    return Array.from(new Set(out));
+}
+// 表格里用 [[ ]] 手动圈出的错误点：完全按用户标的位置打灰底，不再自动 diff
+function ecWbHasMark(s) { return /\[\[[\s\S]*?\]\]/.test(String(s == null ? '' : s)); }
+function ecWbMarkHTML(s) {
+    return String(s == null ? '' : s).split(/\[\[([\s\S]*?)\]\]/g)
+        .map((part, i) => i % 2 === 1 ? `<span class="ec-wb-diff">${escapeHtml(part)}</span>` : escapeHtml(part)).join('');
+}
+function ecWbMarkWords(s) {
+    const out = [];
+    String(s == null ? '' : s).replace(/\[\[([\s\S]*?)\]\]/g, (m, w) => { if (w) out.push(String(w).trim()); return m; });
+    return out;
+}
+function ecWbCompareHTML(mine, right) {
+    if (ecWbHasMark(mine) || ecWbHasMark(right)) {
+        return {
+            mine: ecWbMarkHTML(mine), right: ecWbMarkHTML(right),
+            words: Array.from(new Set(ecWbMarkWords(mine).concat(ecWbMarkWords(right))))
+        };
+    }
+    const sides = ecWbDiffSides(mine, right);
+    return { mine: ecWbSegsHTML(sides.mine), right: ecWbSegsHTML(sides.right), words: ecWbDiffWords(sides) };
+}
+function ecWbReEsc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+// 大白话解析：[[词]] 手动标记 + 两处答案的差异词自动加灰底
+function ecWbWhyHTML(why, words) {
+    const raw = String(why == null ? '' : why);
+    if (!raw) return '';
+    const auto = (words || []).filter(w => w && w.length <= 24).slice(0, 12);
+    const re = auto.length
+        ? new RegExp('(^|[^A-Za-z0-9])(' + auto.map(ecWbReEsc).join('|') + ')(?=$|[^A-Za-z0-9])', 'gi')
+        : null;
+    return raw.split(/\[\[([\s\S]*?)\]\]/g).map((p, i) => {
+        if (i % 2 === 1) return `<span class="ec-wb-diff">${escapeHtml(p)}</span>`;
+        const t = escapeHtml(p);
+        if (!re) return t;
+        re.lastIndex = 0;
+        return t.replace(re, (m, pre, w) => pre + '<span class="ec-wb-diff">' + w + '</span>');
+    }).join('');
+}
+
+// ---------- v20261106v：可识别的导入模板 ----------
+// 五列 Tab 分隔：课时 | 知识点 | 我的答案 | 正确答案 | 大白话原因
+// 原因里 [[词]] 会加灰底；不写也会自动高亮两处答案里不一样的词。
+const EC_WB_TEMPLATE = [
+    '课时\t知识点\t题目\t我的答案\t正确答案\t大白话原因',
+    'L1-L2\t物主代词\t中译英: 那是她的伞。\tThat is [[her\'s]] umbrella.\tThat is [[her]] umbrella.\t绝对没有 her\'s 这个词！形容词性物主代词 her 后面必须加名词。',
+    'L23-L24\t名词替代词\t填空: Give me some glasses. – Which [[______]]?\tWhich [[one]]?\tWhich [[ones]]?\t前面是复数（glasses），提问和替代必须用复数 ones。',
+    'L25-L26\tThere be 否定\t改错: There don\'t have any food.\tThere [[don\'t have]] any food.\tThere [[isn\'t]] any food.\t表达「某地没有某物」，地道英语用 There isn\'t / aren\'t，绝不用 don\'t have。',
+    'L25-L26\t不可数名词\t中译英: 瓶子里有一些水。\tThere [[are]] some water in the bottle.\tThere [[is]] some water in the bottle.\twater 是不可数名词，永远配 is，别被 some 骗了。',
+    'L25-L28\tsome/any\t中译英: 客厅里有一些杂志吗？\tAre there [[some]] magazines in the living room?\tAre there [[any]] magazines in the living room?\t一般疑问句和否定句里，统统把 some 变成 any。',
+    'L27-L28\tThere be 简答\t简答: Are there any pictures on the wall?\tYes, [[they are]].\tYes, [[there are]].\t简答要沿用 there be 的 there，不能用 they。'
+].join('\n');
+function ecWbTemplateCSV() {
+    const q = s => '"' + String(s).replace(/"/g, '""') + '"';
+    return '\ufeff' + EC_WB_TEMPLATE.split('\n').map(l => l.split('\t').map(q).join(',')).join('\r\n');
+}
+function ecWbFillTemplate() {
+    const box = document.getElementById('ecWbImportBox');
+    if (!box) return;
+    box.value = EC_WB_TEMPLATE;
+    box.focus();
+    if (box.setSelectionRange) box.setSelectionRange(0, 0);
+    toast('模板已填入，把示例改成自己的错题，再点「解析导入」');
+}
+function ecWbCopyTemplate() {
+    const fallback = () => {
+        const ta = document.createElement('textarea');
+        ta.value = EC_WB_TEMPLATE;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        let done = false;
+        try { done = document.execCommand('copy'); } catch (e) { done = false; }
+        document.body.removeChild(ta);
+        toast(done ? '模板已复制，粘到 Excel / WPS 里填就行' : '复制失败，请点「填入模板」再长按复制');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(EC_WB_TEMPLATE).then(
+            () => toast('模板已复制，粘到 Excel / WPS 里填就行'), fallback
+        );
+    } else fallback();
+}
+function ecWbDownloadTemplate() {
+    try {
+        const blob = new Blob([ecWbTemplateCSV()], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = '错题导入模板.csv';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        toast('CSV 模板已下载，用 Excel / WPS 打开填写');
+    } catch (e) { toast('下载失败，请用「填入模板」或「复制模板」'); }
+}
+
+
+// ---------- 数据 / 旧数据迁移 ----------
+function ecWbData() {
+    const d = ecData();
+    if (!d.wrongbk || typeof d.wrongbk !== 'object') d.wrongbk = { items: [], fsrs: {}, tombs: {}, clearedAt: 0, updatedAt: 0 };
+    const w = d.wrongbk;
+    if (!Array.isArray(w.items)) w.items = [];
+    if (!w.fsrs || typeof w.fsrs !== 'object') w.fsrs = {};
+    if (!w.tombs || typeof w.tombs !== 'object') w.tombs = {};
+    if (typeof w.clearedAt !== 'number') w.clearedAt = 0;
+    if (typeof w.updatedAt !== 'number') w.updatedAt = 0;
+    if (typeof w.autoTask !== 'boolean') w.autoTask = true;
+    if (typeof w.autoTaskAt !== 'number') w.autoTaskAt = 0;
+    ecWbMigrate(w);
+    return w;
+}
+function ecWbBookOf(it) { return it && it.bookId ? ecBookById(it.bookId) : null; }
+function ecWbLessonOf(it) { return it && it.lessonId ? ecLessonById(it.lessonId) : null; }
+function ecWbLessonName(it) {
+    const l = ecWbLessonOf(it);
+    if (l) return l.name;
+    return (it && it.lesson) ? String(it.lesson) : '未标课时';
+}
+function ecWbBookName(it) {
+    const b = ecWbBookOf(it);
+    if (b) return b.name;
+    const l = ecWbLessonOf(it);
+    if (l) { const b2 = ecBookById(l.bookId); if (b2) return b2.name; }
+    return '未归类';
+}
+function ecWbLocationText(it) {
+    return ecWbBookName(it) + (ecWbLessonOf(it) || (it && it.lesson) ? ' › ' + ecWbLessonName(it) : '');
+}
+// 用课时文字匹配书单目录：先名称包含，再课次编号（L31、L32 / 第 5 课 / Unit 3 都能对上）
+function ecWbMatchLesson(text, bookId) {
+    const s = String(text || '').trim();
+    if (!s) return null;
+    const d = ecData();
+    const books = bookId ? d.books.filter(b => b.id === bookId) : d.books;
+    const norm = x => String(x || '').toLowerCase().replace(/[\s，,、·：:]/g, '');
+    for (const b of books) {
+        for (const l of ecLessonsOf(b.id)) {
+            const a = norm(l.name), c = norm(s);
+            if (a && c && (a === c || a.indexOf(c) >= 0 || c.indexOf(a) >= 0)) return { bookId: b.id, lessonId: l.id };
+        }
+    }
+    const nums = ecZhTitleNums(s);
+    if (nums.length) {
+        for (const b of books) {
+            for (const l of ecLessonsOf(b.id)) {
+                if (ecZhTitleNums(l.name).some(n => nums.indexOf(n) >= 0)) return { bookId: b.id, lessonId: l.id };
+            }
+        }
+    }
+    return null;
+}
+// v20261106u：老错题只有 lesson 文本 → 自动认领到书单课时；认领结果参与跨端合并（时间戳要让绑定版本胜出）
+function ecWbMigrate(w) {
+    const ts = Date.now();
+    let changed = false;
+    w.items.forEach((it, i) => {
+        if (!it || typeof it !== 'object') return;
+        if (it.bookId === undefined || it.lessonId === undefined) {
+            const hit = ecWbMatchLesson(it.lesson || '');
+            it.bookId = hit ? hit.bookId : '';
+            it.lessonId = hit ? hit.lessonId : '';
+            it.updatedAt = Math.max(Number(it.updatedAt) || 0, ts + i);
+            changed = true;
+        }
+        if (typeof it.order !== 'number') it.order = Number(it.createdAt) || (ts + i);
+    });
+    if (changed) w.updatedAt = Math.max(Number(w.updatedAt) || 0, ts);
+}
+function ecWbTouch() { ecWbData().updatedAt = Date.now(); }
+function ecWbById(id) { return ecWbData().items.find(it => it.id === id) || null; }
+function ecWbStatusOf(id, nowTs) { return ecReciteStatus(ecWbData().fsrs[id], nowTs); }
+function ecWbFingerprint(it) { return [it.point, it.mine, it.right].map(s => String(s || '').trim()).join('|'); }
+function ecWbItemsOfBook(bookId) {
+    return ecWbData().items.filter(it => bookId === EC_WB_UNASSIGNED ? !it.bookId : it.bookId === bookId);
+}
+function ecWbItemsOfLesson(lessonId) { return ecWbData().items.filter(it => it.lessonId === lessonId); }
+function ecWbCounts(list) {
+    const nowTs = Date.now();
+    const c = { total: list.length, due: 0, mastered: 0, waiting: 0 };
+    list.forEach(it => {
+        const s = ecWbStatusOf(it.id, nowTs);
+        if (s === 'mastered') c.mastered++;
+        else if (s === 'waiting') c.waiting++;
+        else c.due++;
+    });
+    return c;
+}
+function ecWbStats() {
+    const w = ecWbData();
+    const today0 = new Date().setHours(0, 0, 0, 0);
+    const st = ecWbCounts(w.items);
+    st.overdue = 0;
+    w.items.forEach(it => {
+        const s = ecWbStatusOf(it.id, Date.now());
+        const rec = w.fsrs[it.id];
+        // 只有真正复习过（有 last）且已过期的才算逾期；新收录 / FSRS 记录缺失的旧题只算可以回顾
+        if (rec && rec.last && s !== 'mastered' && s !== 'waiting' && (Number(rec.due) || 0) < today0) st.overdue++;
+    });
+    return st;
+}
+function ecWbDueItems() {
+    const w = ecWbData();
+    const nowTs = Date.now();
+    return w.items.filter(it => {
+        const s = ecWbStatusOf(it.id, nowTs);
+        return s === 'due' || s === 'new';
+    }).sort((a, b) => (Number((w.fsrs[a.id] || {}).due) || 0) - (Number((w.fsrs[b.id] || {}).due) || 0));
+}
+// 按 scope（bookId / lessonId / 未归类）或顶部筛选条件过滤可以回顾队列
+function ecWbDueIn(scope) {
+    const s = scope || {};
+    return ecWbDueItems().filter(it => {
+        if (s.lessonId && it.lessonId !== s.lessonId) return false;
+        if (s.bookId === EC_WB_UNASSIGNED) return !it.bookId;
+        if (s.bookId && it.bookId !== s.bookId) return false;
+        return true;
+    });
+}
+function ecWbFilterScope() {
+    return { lessonId: state._wbFilterLessonId || '', bookId: state._wbFilterBookId || '' };
+}
+function ecWbFilteredDueItems() { return ecWbDueIn(ecWbFilterScope()); }
+function ecWbAutoTaskOn() { return ecWbData().autoTask !== false; }
+
+// ---------- 归属选择（书本 › 课时 一次选完，避免两级联动弹窗） ----------
+function ecWbScopeHTML(sel) {
+    const d = ecData();
+    let html = `<option value="">未归类（不挂到任何书 / 课）</option>`;
+    d.books.forEach(b => {
+        const ls = ecLessonsOf(b.id);
+        if (!ls.length) return;
+        html += `<optgroup label="${escapeHtml(b.name)}">` + ls.map(l =>
+            `<option value="${l.id}"${sel === l.id ? ' selected' : ''}>${escapeHtml(l.name)}</option>`).join('') + `</optgroup>`;
+    });
+    return html;
+}
+function ecWbScopeOfValue(v) {
+    const l = v ? ecLessonById(v) : null;
+    return l ? { bookId: l.bookId, lessonId: l.id } : { bookId: '', lessonId: '' };
+}
+function ecWbScopeSelectHTML(id, sel, label) {
+    return `<div class="ec-wb-field"><label>${label}</label><select id="${id}" class="ec-wb-select">${ecWbScopeHTML(sel)}</select></div>`;
+}
+// 一行导入文本里的课时列优先按目录名匹配；匹配不到就用弹窗选的课；再不行保留文本、未归类
+function ecWbAssign(list, fallback) {
+    const f = fallback || { bookId: '', lessonId: '' };
+    return list.map(it => {
+        const hit = ecWbMatchLesson(it.lesson || '', f.bookId || '');
+        const scope = hit || f;
+        return Object.assign({}, it, { bookId: scope.bookId || '', lessonId: scope.lessonId || '' });
+    });
+}
+
+// ---------- 导入解析：Tab（Excel / WPS 直接粘贴）、||、单竖线 ----------
+// 列序：课时 | 知识点 | 我的答案 | 正确答案 | 大白话原因（可只给 3 列：知识点|我的答案|正确答案）
+function ecWbParse(text) {
+    const items = [], errors = [];
+    const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+    const looksLesson = s => /^(L\s*\d|U\s*\d|Unit\s*\d|Lesson\s*\d|第\s*\d+\s*课|\d+\s*[-~至]\s*\d+\s*课?)/i.test(String(s || '').trim());
+    let firstSeen = false;
+    let hasQuestion = false; // 表头里出现「题目」→ 六列格式
+    let lastWasFull = false; // 上一行是完整行时，允许「大白话原因」换行续写
+    lines.forEach((raw, i) => {
+        const line = raw.trim();
+        if (!line) return;
+        const sep = line.indexOf('\t') >= 0 ? '\t' : (line.indexOf('||') >= 0 ? '||' : (line.indexOf('|') >= 0 ? '|' : '\t'));
+        const cols = line.split(sep === '||' ? /\|\|/ : sep).map(s => s.trim());
+        if (!firstSeen) {
+            firstSeen = true;
+            const joined = cols.join(' ');
+            if (/正确答案/.test(joined) && /课时|知识点|我的答案/.test(joined)) {
+                hasQuestion = /题目|题干/.test(joined);
+                return;
+            }
+            hasQuestion = cols.length >= 6; // 没表头但第一行就是六列
+        }
+        if (cols.length < 3) {
+            // 大白话解析换行：接到上一行原因后面（表格单元格里换行也不会丢）
+            if (lastWasFull && items.length) { items[items.length - 1].why += '\n' + line; return; }
+            lastWasFull = false;
+            errors.push(`第 ${i + 1} 行：列数不足（至少 3 列）`); return;
+        }
+        let lesson = '', point = '', question = '', mine = '', right = '', why = '';
+        if (cols.length >= 6) { lesson = cols[0]; point = cols[1]; question = cols[2]; mine = cols[3]; right = cols[4]; why = cols[5]; }
+        else if (hasQuestion && cols.length === 5 && looksLesson(cols[0])) { lesson = cols[0]; point = cols[1]; question = cols[2]; mine = cols[3]; right = cols[4]; }
+        else if (hasQuestion && cols.length === 5) { point = cols[0]; question = cols[1]; mine = cols[2]; right = cols[3]; why = cols[4]; }
+        else if (cols.length >= 5) { lesson = cols[0]; point = cols[1]; mine = cols[2]; right = cols[3]; why = cols[4]; }
+        else if (cols.length === 4 && looksLesson(cols[0])) { lesson = cols[0]; point = cols[1]; mine = cols[2]; right = cols[3]; }
+        else if (cols.length === 4) { point = cols[0]; mine = cols[1]; right = cols[2]; why = cols[3]; }
+        else { point = cols[0]; mine = cols[1]; right = cols[2]; }
+        if (!point || !mine || !right) { errors.push(`第 ${i + 1} 行：知识点/我的答案/正确答案不能为空`); return; }
+        items.push({ lesson, point, question, mine, right, why });
+        lastWasFull = cols.length >= 5 && !!why;
+    });
+    return { items, errors };
+}
+
+// 批量入库：指纹去重；每题建 FSRS 且立即可复习；带书本/课时归属
+function ecWbAddItems(list) {
+    const w = ecWbData();
+    const seen = new Set(w.items.map(ecWbFingerprint));
+    const fresh = [];
+    list.forEach(it => {
+        const fp = ecWbFingerprint(it);
+        if (seen.has(fp)) return;
+        seen.add(fp);
+        fresh.push(it);
+    });
+    const nowTs = Date.now();
+    fresh.forEach((it, i) => {
+        const id = uuid();
+        w.items.push({
+            id, bookId: it.bookId || '', lessonId: it.lessonId || '', lesson: it.lesson || '',
+            point: it.point, question: it.question || '', mine: it.mine, right: it.right, why: it.why || '',
+            order: nowTs + i, createdAt: nowTs + i, updatedAt: nowTs + i
+        });
+        const rec = ecFsrsLearn(nowTs);
+        rec.due = nowTs; // 刚做错的题立即可复习
+        w.fsrs[id] = rec;
+    });
+    // 收录错题本身不计分（一次粘贴几十题会稀释积分），只在真正复习自评时给分
+    if (fresh.length) { ecWbTouch(); ecLogStudy(); }
+    return fresh.length;
+}
+
+// ---------- 导入 / 添加 / 编辑 / 删除 / 批量 / 排序 / 备份 ----------
+async function ecWbImportOpen(defaultLessonId, prefill) {
+    const p = uiModal({
+        title: '📥 批量导入错题',
+        html: '<div class="ec-hint">六列 <b>Tab 分隔</b>（直接从 Excel / WPS 复制粘贴）：<b>课时 | 知识点 | 题目 | 我的答案 | 正确答案 | 大白话原因</b>。表头可留可删，旧五列格式照样认；重复题自动跳过。答案里用 <b>[[词]]</b> 圈出的错误点会直接打灰底，不写则自动逐词比对高亮。</div>'
+            + '<div class="ec-wb-tplbar"><button type="button" class="btn btn-sm btn-secondary" id="ecWbTplFill">📋 填入模板</button><button type="button" class="btn btn-sm btn-secondary" id="ecWbTplCopy">📋 复制模板</button><button type="button" class="btn btn-sm btn-secondary" id="ecWbTplDown">⬇️ CSV 模板</button></div>'
+            + ecWbScopeSelectHTML('ecWbScopeSel', defaultLessonId || '', '📚 归到哪本书 / 哪一课（表里写了课时会自动对上目录）')
+            + `<textarea id="ecWbImportBox" class="ec-wb-textarea" placeholder="点上面「填入模板」看示例，或直接粘贴五列表格">${prefill ? escapeHtml(EC_WB_TEMPLATE) : ''}</textarea>`,
+        getValue: () => {
+            const box = document.getElementById('ecWbImportBox');
+            const sel = document.getElementById('ecWbScopeSel');
+            return { text: box ? box.value : '', scope: sel ? sel.value : '' };
+        },
+        okText: '解析导入'
+    });
+    // uiModal 的 DOM 同步写入，弹窗内按钮直接绑 onclick，避免和全局动作委托打架
+    const bindTpl = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
+    bindTpl('ecWbTplFill', ecWbFillTemplate);
+    bindTpl('ecWbTplCopy', ecWbCopyTemplate);
+    bindTpl('ecWbTplDown', ecWbDownloadTemplate);
+    const v = await p;
+    if (!v || typeof v !== 'object') return;
+    const r = ecWbParse(v.text);
+    if (!r.items.length) { toast(r.errors.length ? '没有可导入的行：' + r.errors[0] : '内容为空，先去表格里复制'); return; }
+    const scope = ecWbScopeOfValue(v.scope);
+    const list = ecWbAssign(r.items, scope);
+    const w = ecWbData();
+    const seen = new Set(w.items.map(ecWbFingerprint));
+    const freshN = list.filter(it => !seen.has(ecWbFingerprint(it))).length;
+    if (!freshN) { toast('这些错题都已在错题集里，没有新增'); return; }
+    const scopeName = scope.lessonId ? ecWbLessonName({ lessonId: scope.lessonId }) : '未归类';
+    const ok = await uiConfirm(`解析出 ${r.items.length} 行：新增 ${freshN} 题，重复 ${r.items.length - freshN} 题自动跳过${r.errors.length ? `，另有 ${r.errors.length} 行无法识别已跳过` : ''}。\n\n归属：${scopeName}${scope.lessonId ? '（表里写了课时的行会优先按课时名自动对上）' : ''}\n\n确认导入？`);
+    if (!ok) return;
+    const n = ecWbAddItems(list);
+    ecAfterAction(`📥 已导入 ${n} 道错题到「${scopeName}」，今天就能复习`);
+}
+
+function ecWbFormHTML(it) {
+    const escQ = s => escapeHtml(s || '').replace(/"/g, '&quot;');
+    const field = (label, id, ph, val, multi) => `<div class="ec-wb-field"><label>${label}</label>`
+        + (multi
+            ? `<textarea id="${id}" class="ec-wb-input ec-wb-input-multi" placeholder="${ph}">${escQ(val)}</textarea>`
+            : `<input id="${id}" class="ec-wb-input" placeholder="${ph}" value="${escQ(val)}">`)
+        + '</div>';
+    return ecWbScopeSelectHTML('ecWbF0', it.lessonId || '', '📚 归到哪本书 / 哪一课')
+        + field('🗓️ 课时', 'ecWbF1', '如 L23-L24（可留空）', it.lesson)
+        + field('🎯 知识点 *', 'ecWbF2', '如 名词替代词 / There be 否定', it.point)
+        + field('📝 题目 / 题干', 'ecWbF3', '如 中译英：那是她的伞。 / 填空：Give me some glasses. – Which ____?', it.question, true)
+        + field('✍️ 我的答案 *', 'ecWbF4', '当时写错的答案，可用 [[词]] 圈出错误点', it.mine, true)
+        + field('✅ 正确答案 *', 'ecWbF5', '正确写法，可用 [[词]] 圈出关键处', it.right, true)
+        + field('💡 大白话原因', 'ecWbF6', '为什么错，可用 [[词]] 给重点词加灰底', it.why, true);
+}
+function ecWbFormValue() {
+    const val = i => { const el = document.getElementById('ecWbF' + i); return el ? String(el.value || '').trim() : ''; };
+    return { scope: val(0), lesson: val(1), point: val(2), question: val(3), mine: val(4), right: val(5), why: val(6) };
+}
+function ecWbApplyForm(item, v, defaultLessonId) {
+    const scope = ecWbScopeOfValue(v.scope || defaultLessonId || '');
+    let lessonText = v.lesson || '';
+    // 选了课时但没填备注时，把课时名写进 lesson，导出备份/未归类兜底都更清楚
+    if (!lessonText && scope.lessonId) { const l = ecLessonById(scope.lessonId); lessonText = l ? l.name : ''; }
+    return Object.assign({}, item, {
+        bookId: scope.bookId, lessonId: scope.lessonId, lesson: lessonText,
+        point: v.point, question: v.question || '', mine: v.mine, right: v.right, why: v.why, updatedAt: Date.now()
+    });
+}
+async function ecWbAddSingle(defaultLessonId) {
+    const v = await uiModal({
+        title: '➕ 记一道错题',
+        html: ecWbFormHTML({ lessonId: defaultLessonId || '' }),
+        getValue: ecWbFormValue, okText: '加入错题集'
+    });
+    if (!v || typeof v !== 'object') return;
+    if (!v.point || !v.mine || !v.right) { toast('知识点、我的答案、正确答案必填'); return; }
+    const n = ecWbAddItems([ecWbApplyForm({}, v, defaultLessonId)]);
+    ecAfterAction(n ? '➕ 已加入错题集（今天就能复习）' : '这道题已在错题集里（知识点+答案相同）');
+}
+async function ecWbEdit(id) {
+    const item = ecWbById(id);
+    if (!item) return;
+    const v = await uiModal({ title: '✏️ 编辑错题', html: ecWbFormHTML(item), getValue: ecWbFormValue, okText: '保存' });
+    if (!v || typeof v !== 'object') return;
+    if (!v.point || !v.mine || !v.right) { toast('知识点、我的答案、正确答案必填'); return; }
+    Object.assign(item, ecWbApplyForm(item, v));
+    ecWbTouch();
+    ecAfterAction('✏️ 已保存修改（归属也更新了）');
+}
+async function ecWbDel(id) {
+    const item = ecWbById(id);
+    if (!item) return;
+    const ok = await uiConfirm(`删除这道错题？\n\n「${item.point}」\n删除后不可恢复`, { isDanger: true });
+    if (!ok) return;
+    ecWbRemoveIds([id]);
+    ecAfterAction('🗑️ 已删除');
+}
+function ecWbRemoveIds(ids) {
+    const w = ecWbData();
+    const set = new Set(ids);
+    const ts = Date.now();
+    w.items = w.items.filter(it => !set.has(it.id));
+    ids.forEach(id => { delete w.fsrs[id]; w.tombs[id] = ts; });
+    ecWbTouch();
+}
+async function ecWbClear() {
+    const w = ecWbData();
+    if (!w.items.length) { toast('错题集已经是空的'); return; }
+    const ok = await uiConfirm(`清空全部 ${w.items.length} 道错题？\n\n删除后不可恢复，建议先「导出备份」。`, { isDanger: true });
+    if (!ok) return;
+    w.items = [];
+    w.fsrs = {};
+    w.clearedAt = Date.now();
+    ecWbTouch();
+    ecAfterAction('🧹 错题集已清空');
+}
+async function ecWbExport() {
+    const w = ecWbData();
+    if (!w.items.length) { toast('错题集是空的，没有可导出的内容'); return; }
+    const payload = w.items.map(it => ({ book: ecWbBookName(it), lesson: ecWbLessonName(it), point: it.point, question: it.question || '', mine: it.mine, right: it.right, why: it.why }));
+    await uiModal({
+        title: `📤 导出错题集（${w.items.length} 题）`,
+        html: '<div class="ec-hint">长按全选复制，粘贴到备忘录 / 微信文件传输助手保存；换设备时用「导入备份」粘贴回来（会按书本/课时名自动认领）。</div>'
+            + `<textarea id="ecWbExportBox" class="ec-wb-textarea" readonly>${escapeHtml(JSON.stringify(payload, null, 1))}</textarea>`,
+        okText: '关闭'
+    });
+}
+async function ecWbImportJSON() {
+    const v = await uiModal({
+        title: '📥 导入备份',
+        html: '<div class="ec-hint">粘贴之前「导出备份」的内容（JSON）或六列表格文本；会自动按书本/课时名认领。</div>'
+            + '<textarea id="ecWbImportBox" class="ec-wb-textarea" placeholder=\'[{"lesson":"L23-24","point":"名词替代词","mine":"Which one?","right":"Which ones?"}]\'></textarea>',
+        getValue: () => { const el = document.getElementById('ecWbImportBox'); return el ? el.value : ''; },
+        okText: '导入'
+    });
+    if (!v) return;
+    let list = [];
+    const s = String(v).trim();
+    if (s.charAt(0) === '[') {
+        try {
+            const arr = JSON.parse(s);
+            if (!Array.isArray(arr)) throw new Error('not array');
+            list = arr.filter(o => o && o.point && o.mine && o.right).map(o => ({
+                lesson: String(o.lesson || ''), point: String(o.point), question: String(o.question || ''), mine: String(o.mine), right: String(o.right), why: String(o.why || '')
+            }));
+        } catch (e) { toast('JSON 格式不对，导入失败'); return; }
+    } else list = ecWbParse(s).items;
+    if (!list.length) { toast('没有可导入的错题（每条需要知识点/我的答案/正确答案）'); return; }
+    const n = ecWbAddItems(ecWbAssign(list, { bookId: '', lessonId: '' }));
+    ecAfterAction(n ? `📥 导入 ${n} 道错题（重复已自动跳过）` : '这些错题都已在错题集里');
+}
+
+// ---------- 批量选择 / 批量移动 / 课时内排序 ----------
+function ecWbSelIds() { const s = state._wbSel || {}; return Object.keys(s).filter(k => s[k]); }
+function ecWbSelMode(on) { state._wbSelMode = typeof on === 'boolean' ? on : !state._wbSelMode; state._wbSel = {}; render(); }
+function ecWbSelToggle(id) { state._wbSel = state._wbSel || {}; state._wbSel[id] = !state._wbSel[id]; render(); }
+function ecWbSelAll() {
+    state._wbSel = state._wbSel || {};
+    const ids = (state._wbVisibleIds && state._wbVisibleIds.length) ? state._wbVisibleIds : ecWbData().items.map(it => it.id);
+    const all = ids.length > 0 && ids.every(id => state._wbSel[id]);
+    ids.forEach(id => { state._wbSel[id] = !all; });
+    render();
+}
+async function ecWbDelSelected() {
+    const ids = ecWbSelIds();
+    if (!ids.length) { toast('先勾选要删除的错题'); return; }
+    const ok = await uiConfirm(`删除选中的 ${ids.length} 道错题？\n\n删除后不可恢复`, { isDanger: true });
+    if (!ok) return;
+    ecWbRemoveIds(ids);
+    state._wbSel = {}; state._wbSelMode = false;
+    ecAfterAction(`🗑️ 已删除 ${ids.length} 道错题`);
+}
+async function ecWbMoveSelected() {
+    const ids = ecWbSelIds();
+    if (!ids.length) { toast('先勾选要调整的错题'); return; }
+    const v = await uiModal({
+        title: `📦 调整 ${ids.length} 道错题的归属`,
+        html: '<div class="ec-hint">把选中的错题一次性挪到另一本书 / 另一课；选「未归类」则解除书本课时绑定。</div>'
+            + ecWbScopeSelectHTML('ecWbMoveSel', '', '📚 移到'),
+        getValue: () => { const el = document.getElementById('ecWbMoveSel'); return el ? el.value : ''; },
+        okText: '移动'
+    });
+    if (v == null) return;
+    const scope = ecWbScopeOfValue(v);
+    const l = scope.lessonId ? ecLessonById(scope.lessonId) : null;
+    ecWbMoveIds(ids, scope, l ? l.name : '');
+    state._wbSel = {}; state._wbSelMode = false;
+    ecAfterAction(`📦 已把 ${ids.length} 道错题移到「${l ? l.name : '未归类'}」`);
+}
+function ecWbMoveIds(ids, scope, lessonText) {
+    const set = new Set(ids);
+    const ts = Date.now();
+    ecWbData().items.forEach(it => {
+        if (!set.has(it.id)) return;
+        it.bookId = scope.bookId || '';
+        it.lessonId = scope.lessonId || '';
+        if (lessonText) it.lesson = lessonText;
+        it.updatedAt = ts;
+    });
+    ecWbTouch();
+}
+function ecWbMoveItem(id, dir) {
+    const item = ecWbById(id);
+    if (!item) return;
+    const peers = ecWbData().items
+        .filter(it => (it.lessonId || '') === (item.lessonId || '') && (it.bookId || '') === (item.bookId || ''))
+        .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+    const i = peers.findIndex(x => x.id === id);
+    const j = i + (dir === 'up' ? -1 : 1);
+    if (i < 0 || j < 0 || j >= peers.length) { toast(dir === 'up' ? '已经是第一题了' : '已经是最后一题了'); return; }
+    const tmp = peers[i].order;
+    peers[i].order = peers[j].order;
+    peers[j].order = tmp;
+    [peers[i], peers[j]].forEach(x => { x.updatedAt = Date.now(); });
+    ecWbTouch();
+    ecAfterAction('🔀 已调整题目顺序');
+}
+function ecWbToggleAutoTask() {
+    const w = ecWbData();
+    w.autoTask = w.autoTask === false;
+    w.autoTaskAt = Date.now();
+    ecAfterAction(w.autoTask ? '✅ 已开启：复习错题后自动完成该课「练题」任务' : '⏸️ 已关闭：复习错题不再自动打卡任务');
+}
+
+// ---------- 复习也算学习：自评后自动完成该课「练题」任务 ----------
+function ecWbAutoDrill(lessonId, nowTs) {
+    const l = ecLessonById(lessonId);
+    if (!l) return '';
+    const defs = ecBookTasks(l.bookId);
+    const def = defs.find(t => t.id === 'write-drill') || defs.find(t => /练题|习题|做题|刷题|写/.test(String(t.name || ''))) || null;
+    if (!def) return '';
+    const key = ecTaskKey(lessonId, def.id);
+    const d = ecData();
+    if (d.tasks[key]) return '';
+    d.tasks[key] = { at: nowTs, fromWrong: true };
+    ecAddScore(def.points || 2);
+    return def.name;
+}
+
+// ---------- 复习会话（翻面卡片 → 四档自评；可按整本书 / 某一课开练） ----------
+function ecWbStart(id, scope) {
+    let queue;
+    if (scope && (scope.lessonId || scope.bookId)) queue = ecWbDueIn(scope).map(it => it.id);
+    else if (id) {
+        const due = ecWbDueIn(ecWbFilterScope()).map(it => it.id);
+        const at = due.indexOf(id);
+        queue = at >= 0 ? due.slice(at) : [id];
+    } else queue = ecWbFilteredDueItems().map(it => it.id);
+    if (!queue.length) { toast('这个范围暂时没有要回顾的题，换个地方逛逛吧 🌿'); render(); return; }
+    state._wbSession = { queue, idx: 0, revealed: false, graded: 0, autoTasks: [] };
+    render();
+}
+function ecWbStartBook(bookId) {
+    state._wbFilterBookId = ''; state._wbFilterLessonId = '';
+    ecWbStart('', { bookId });
+}
+function ecWbStartLesson(lessonId) {
+    state._wbFilterBookId = ''; state._wbFilterLessonId = '';
+    const l = ecLessonById(lessonId);
+    state.currentSubTab = state.currentSubTab || {};
+    state.currentSubTab.engcheck = 'ec-wrong';
+    state.currentSubTab['ec-wrong-sub'] = 'books';
+    state._wbBookId = l ? l.bookId : '';
+    state._wbLessonId = lessonId;
+    ecWbStart('', { lessonId });
+}
+// 从书单课时详情「查看 / 整理本课错题」直达错题本第三级
+function ecWbGoLesson(lessonId) {
+    const l = ecLessonById(lessonId);
+    state.currentSubTab = state.currentSubTab || {};
+    state.currentSubTab.engcheck = 'ec-wrong';
+    state.currentSubTab['ec-wrong-sub'] = 'books';
+    state._wbBookId = l ? l.bookId : '';
+    state._wbLessonId = lessonId;
+    state._wbSelMode = false; state._wbSel = {};
+    render();
+}
+function ecWbGrade(g) {
+    const s = state._wbSession;
+    if (!s || !s.revealed || !(g >= 1 && g <= 4)) return;
+    const item = ecWbById(s.queue[s.idx]);
+    if (!item) { ecWbExit(); return; }
+    const w = ecWbData();
+    const nowTs = Date.now();
+    let rec = w.fsrs[item.id];
+    if (!rec || !rec.last) rec = w.fsrs[item.id] = ecFsrsLearn(nowTs);
+    ecFsrsReview(rec, g, nowTs);
+    const gain = g === 1 ? 0 : g === 2 ? 1 : g === 3 ? 2 : 3;
+    if (gain) ecAddScore(gain);
+    ecLogStudy();
+    // 联动：查漏补缺算学习 → 自动完成该课「练题」任务（可在课时页取消完成，或在概览关掉开关）
+    if (ecWbAutoTaskOn() && item.lessonId) {
+        const name = ecWbAutoDrill(item.lessonId, nowTs);
+        if (name && s.autoTasks.indexOf(name) < 0) s.autoTasks.push(name);
+    }
+    ecWbTouch();
+    s.graded++;
+    if (s.idx + 1 >= s.queue.length) {
+        state._wbSession = null;
+        const mastered = (rec.s || 0) >= EC_FSRS.masteredS;
+        const autoMsg = s.autoTasks.length ? ` · 已自动完成「${s.autoTasks.join('、')}」任务` : '';
+        ecAfterAction(`✅ 本次复习完成 ${s.graded} 题${mastered ? '，最后这题已掌握 🏆' : ''}${autoMsg}`);
+        return;
+    }
+    s.idx++;
+    s.revealed = false;
+    // 必须走 ecAfterAction（内含 render），否则卡片不翻页，用户会对着上一题继续打分
+    ecAfterAction();
+}
+function ecWbExit() { state._wbSession = null; render(); }
+function ecWbReset(id) {
+    const w = ecWbData();
+    const nowTs = Date.now();
+    const rec = ecFsrsLearn(nowTs);
+    rec.due = nowTs;
+    w.fsrs[id] = rec;
+    ecWbTouch();
+    ecAfterAction('🔁 已移回复习池，现在就可以复习');
+}
+
+// ---------- 渲染：五个三级子导航 ----------
+function ecRenderWrong() {
+    if (state._wbSession) return ecWbSessionHTML();
+    const stats = ecWbStats();
+    const rtabRaw = (state.currentSubTab && state.currentSubTab['ec-wrong-sub']) || '';
+    const rtab = EC_WRONG_SUBTABS.some(t => t.id === rtabRaw) ? rtabRaw : 'overview';
+    const nav = `<div class="card ec-review-subnav"><div class="tab-bar">${EC_WRONG_SUBTABS.map(t => `<button class="tab-btn ${rtab === t.id ? 'active' : ''}" data-action="tab" data-module="ec-wrong-sub" data-tab="${t.id}">${t.name}</button>`).join('')}</div></div>`;
+    let body = '';
+    if (rtab === 'due') body = ecWbDueHTML();
+    else if (rtab === 'books') body = ecWbBooksHTML();
+    else if (rtab === 'all') body = ecWbAllHTML();
+    else if (rtab === 'mastered') body = ecWbMasteredHTML();
+    else body = ecWbOverviewHTML(stats);
+    return `<div class="ec-crumb">英语打卡 › 查漏补缺</div>${nav}${body}`;
+}
+
+function ecWbOverviewHTML(stats) {
+    const due = ecWbFilteredDueItems();
+    const d = ecData();
+    const bookRows = d.books.map(b => {
+        const c = ecWbCounts(ecWbItemsOfBook(b.id));
+        if (!c.total) return '';
+        return `<div class="ec-wb-bookrow">
+            <div class="ec-wb-bookrow-name">📚 ${escapeHtml(b.name)} <span class="ec-wb-mini">共 ${c.total} 题小宝藏 · 已掌握 ${c.mastered}</span></div>
+            <div class="ec-wb-bookrow-ops">${c.due ? `<button class="btn btn-sm btn-primary" data-action="ec-wb-start-book" data-id="${b.id}">▶️ 复习本书（${c.due}）</button>` : '<span class="ec-wb-mini">随时可以逛逛</span>'}<button class="btn btn-sm btn-secondary" data-action="ec-wb-open-book" data-id="${b.id}">查看 ›</button></div>
+        </div>`;
+    }).join('');
+    const un = ecWbCounts(ecWbItemsOfBook(EC_WB_UNASSIGNED));
+    const unRow = un.total ? `<div class="ec-wb-bookrow"><div class="ec-wb-bookrow-name">📥 未归类 <span class="ec-wb-mini">共 ${un.total} 题小宝藏 · 可以回顾 ${un.due}</span></div>
+        <div class="ec-wb-bookrow-ops"><button class="btn btn-sm btn-secondary" data-action="ec-wb-open-book" data-id="${EC_WB_UNASSIGNED}">去整理 ›</button></div></div>` : '';
+    return `
+    <div class="card">
+        <div class="card-header"><div class="card-title">📕 查漏补缺 · 概览</div></div>
+        <div class="ec-stats">
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">可以回顾</div></div>
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.overdue}</div><div class="ec-stat-label">慢慢补</div></div>
+            <div class="ec-stat"><div class="ec-stat-num">${stats.waiting}</div><div class="ec-stat-label">学习中</div></div>
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.mastered}</div><div class="ec-stat-label">已掌握</div></div>
+        </div>
+        <div class="ec-hint">共收录 ${stats.total} 道错题：做错的题按书本 / 课时整理导入，按记忆曲线间隔复习（Again / Hard / Good / Easy 四档自评），稳定性 ≥ 60 天判为已掌握。查漏补缺会计入积分、每日学习与连续天数。</div>
+        <div class="ec-wb-actions">
+            <button class="btn btn-primary" data-action="ec-wb-start" ${due.length ? '' : 'disabled'}>▶️ 开始复习${due.length ? `（${due.length} 题）` : ''}</button>
+            <button class="btn btn-secondary" data-action="ec-wb-import">📥 批量导入</button>
+            <button class="btn btn-secondary" data-action="ec-wb-template">📋 导入模板</button>
+            <button class="btn btn-secondary" data-action="ec-wb-add">➕ 记一道</button>
+        </div>
+        <div class="ec-wb-setting">
+            <div><b>⚙️ 查漏补缺算学习</b><div class="ec-wb-mini">复习自评后，自动完成该课「✍️ 练题」任务并加对应积分；到课时页点「↩️ 取消完成」可撤销。</div></div>
+            <button class="btn btn-sm ${ecWbAutoTaskOn() ? 'btn-primary' : 'btn-secondary'}" data-action="ec-wb-autotask">${ecWbAutoTaskOn() ? '已开启' : '已关闭'}</button>
+        </div>
+    </div>
+    ${bookRows || unRow ? `<div class="card"><div class="card-header"><div class="card-title">📚 按书本看错题</div></div>${bookRows}${unRow}</div>` : ''}
+    ${ecWbCalendarHTML()}`;
+}
+
+function ecWbCalendarHTML() {
+    const w = ecWbData();
+    const DAY = 86400000;
+    const todayStart = new Date().setHours(0, 0, 0, 0);
+    const pool = w.items.map(it => ({ it, rec: w.fsrs[it.id] || {} }))
+        .filter(x => x.rec.last && (x.rec.s || 0) < EC_FSRS.masteredS);
+    const overdue = pool.filter(x => (Number(x.rec.due) || 0) < todayStart);
+    const groups = [];
+    for (let i = 0; i < 7; i++) {
+        const from = todayStart + i * DAY, to = from + DAY;
+        groups.push({ i, from, list: pool.filter(x => (Number(x.rec.due) || 0) >= from && (Number(x.rec.due) || 0) < to) });
+    }
+    const later = pool.filter(x => (Number(x.rec.due) || 0) >= todayStart + 7 * DAY).length;
+    const wk = ['日', '一', '二', '三', '四', '五', '六'];
+    const mmdd = ts => { const d = new Date(ts); return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const chipName = s => { const t = String(s || '').trim(); return t.length > 18 ? t.slice(0, 18) + '…' : t; };
+    const rowHTML = (label, sub, list, cls) => {
+        const chips = list.slice(0, 6).map(x => `<button class="ec-cal-chip" data-action="ec-wb-start-one" data-id="${x.it.id}" title="${escapeHtml(x.it.point)}">${escapeHtml(chipName(x.it.point))}</button>`).join('');
+        const more = list.length > 6 ? `<span class="ec-cal-more">+${list.length - 6}</span>` : '';
+        return `<div class="ec-cal-row${cls ? ' ' + cls : ''}">
+            <div class="ec-cal-day"><span class="ec-cal-label">${label}</span><span class="ec-cal-date">${sub}</span></div>
+            <div class="ec-cal-body">${list.length ? chips + more : '<span class="ec-cal-none">没有要复习的</span>'}</div>
+            <div class="ec-cal-count">${list.length}<span class="ec-cal-unit">题</span></div>
+        </div>`;
+    };
+    const rows = [];
+    if (overdue.length) rows.push(rowHTML('🌿 慢慢补', '随时都行', overdue, 'ec-cal-late'));
+    groups.forEach(g => {
+        const label = g.i === 0 ? '今天' : g.i === 1 ? '明天' : g.i === 2 ? '后天' : `${g.i} 天后`;
+        const dt = new Date(g.from);
+        rows.push(rowHTML(label, `${mmdd(g.from)} 周${wk[dt.getDay()]}`, g.list, g.i === 0 ? 'ec-cal-today' : ''));
+    });
+    const total = groups.reduce((n, g) => n + g.list.length, 0);
+    return `<div class="card ec-cal-card">
+        <div class="card-header"><div class="card-title">📅 接下来 7 天复习预览</div>
+            <span style="font-size:12px;color:var(--text-secondary)">7 天共 ${total} 题${later ? ` · 更远还有 ${later} 题` : ''}</span></div>
+        <div class="ec-cal">${rows.join('')}</div>
+        <div class="ec-hint">只做预览：点考点可直接复习这一题。按实际掌握情况自评（Again / Hard / Good / Easy），间隔会自动重排，直到判定已掌握。</div>
+    </div>`;
+}
+
+// 可以回顾：可按整本书 / 某一课筛选
+function ecWbFilterHTML() {
+    const d = ecData();
+    const fb = state._wbFilterBookId || '', fl = state._wbFilterLessonId || '';
+    let opts = `<option value="">📚 全部书本</option>`;
+    d.books.forEach(b => { opts += `<option value="${b.id}"${fb === b.id ? ' selected' : ''}>${escapeHtml(b.name)}</option>`; });
+    if (ecWbItemsOfBook(EC_WB_UNASSIGNED).length) opts += `<option value="${EC_WB_UNASSIGNED}"${fb === EC_WB_UNASSIGNED ? ' selected' : ''}>📥 未归类</option>`;
+    const lopts = [`<option value="">📖 该书中全部课时</option>`].concat(
+        (fb && fb !== EC_WB_UNASSIGNED ? ecLessonsOf(fb) : []).map(l => `<option value="${l.id}"${fl === l.id ? ' selected' : ''}>${escapeHtml(l.name)}</option>`)
+    ).join('');
+    return `<div class="ec-wb-filter">
+        <select id="ecWbFilterBook" class="ec-wb-select" data-wb-filter="book">${opts}</select>
+        <select id="ecWbFilterLesson" class="ec-wb-select" data-wb-filter="lesson" ${fb && fb !== EC_WB_UNASSIGNED ? '' : 'disabled'}>${lopts}</select>
+    </div>`;
+}
+function ecWbDueHTML() {
+    const w = ecWbData();
+    const due = ecWbFilteredDueItems();
+    const rows = due.map(it => {
+        const rec = w.fsrs[it.id] || {};
+        const fresh = !rec.last;
+        const late = !fresh && (rec.due || 0) < new Date().setHours(0, 0, 0, 0);
+        const meta = fresh ? '现在就能复习 · 还没复习过'
+            : `应复习：${ecFmtWeek(rec.due || 0)}（${ecRelText(rec.due || 0)}） · 已复习 ${rec.n || 0} 次${rec.lapses ? ` · 遗忘 ${rec.lapses} 次` : ''}`;
+        return `<div class="ec-due-row${late ? ' late' : ''}">
+            <div class="ec-due-info">
+                <div class="ec-due-title">📕 ${escapeHtml(it.point)}<span class="ec-due-path">${escapeHtml(ecWbLocationText(it))}</span></div>
+                <div class="ec-wb-line"><span class="ec-wb-tag wrong">✗ 你当时</span><span>${escapeHtml(it.mine)}</span></div>
+                <div class="ec-due-meta">${meta}</div>
+                <div class="ec-due-btns"><button class="btn btn-sm btn-primary" data-action="ec-wb-start-one" data-id="${it.id}">▶️ 复习这题</button></div>
+            </div>
+        </div>`;
+    }).join('');
+    return `<div class="card">
+        <div class="card-header"><div class="card-title">⏰ 可以回顾（${due.length}）</div>
+            ${due.length ? '<button class="btn btn-sm btn-primary" data-action="ec-wb-start">▶️ 全部开始</button>' : ''}</div>
+        ${ecWbFilterHTML()}
+        ${rows || '<div class="ec-hint">这个范围暂时没有到点的题 🎉 换个书本筛选，新导入的宝藏随时能回顾</div>'}
+    </div>`;
+}
+
+// ---------- 错题本三级目录：书本 → 课时 → 错题 ----------
+function ecWbCrumb(parts) {
+    return `<div class="ec-wb-crumb">${parts.map((p, i) => p.action
+        ? `<button class="ec-wb-crumb-btn" data-action="${p.action}" data-id="${p.id || ''}">${escapeHtml(p.name)}</button>${i < parts.length - 1 ? '<span>›</span>' : ''}`
+        : `<span class="ec-wb-crumb-cur">${escapeHtml(p.name)}</span>${i < parts.length - 1 ? '<span>›</span>' : ''}`).join('')}</div>`;
+}
+function ecWbBooksHTML() {
+    if (state._wbLessonId) return ecWbLessonDetailHTML(state._wbLessonId);
+    if (state._wbBookId) return ecWbBookDetailHTML(state._wbBookId);
+    return ecWbBookListHTML();
+}
+function ecWbToolbar(opts) {
+    const o = opts || {};
+    return `<div class="ec-wb-actions ec-wb-toolbar">
+        ${o.back ? `<button class="btn btn-sm btn-secondary" data-action="${o.back.action}" ${o.back.id ? `data-id="${o.back.id}"` : ''}>‹ ${o.back.name}</button>` : ''}
+        <button class="btn btn-sm btn-primary" data-action="ec-wb-import" ${o.lessonId ? `data-lesson="${o.lessonId}"` : ''}>📥 导入错题</button>
+        <button class="btn btn-sm btn-secondary" data-action="ec-wb-add" ${o.lessonId ? `data-lesson="${o.lessonId}"` : ''}>➕ 记一道</button>
+        ${o.items && o.items.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-wb-sel-mode">${state._wbSelMode ? '✕ 退出批量' : '🗑️ 批量管理'}</button>` : ''}
+        <button class="btn btn-sm btn-secondary" data-action="ec-wb-export">📤 导出备份</button>
+        <button class="btn btn-sm btn-secondary" data-action="ec-wb-import-json">📥 导入备份</button>
+        ${o.clear ? '<button class="btn btn-sm btn-danger" data-action="ec-wb-clear">🧹 清空</button>' : ''}
+    </div>`;
+}
+function ecWbBookListHTML() {
+    const d = ecData();
+    const rows = d.books.map(b => {
+        const c = ecWbCounts(ecWbItemsOfBook(b.id));
+        return `<div class="card ec-wb-dir-card" data-action="ec-wb-open-book" data-id="${b.id}">
+            <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📚</span>
+                <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">${escapeHtml(b.name)}</div>
+                <div class="ec-wb-mini">${c.total ? `共 ${c.total} 题小宝藏 · 可以回顾 ${c.due} · 已掌握 ${c.mastered}` : '还没有错题，点进去按课时导入'}</div></div>
+                <span class="ec-book-go">›</span></div>
+            ${c.due ? `<div class="ec-wb-dir-ops"><button class="btn btn-sm btn-primary" data-action="ec-wb-start-book" data-id="${b.id}">▶️ 只复习这本书（${c.due}）</button></div>` : ''}
+        </div>`;
+    }).join('');
+    const un = ecWbCounts(ecWbItemsOfBook(EC_WB_UNASSIGNED));
+    const unCard = un.total ? `<div class="card ec-wb-dir-card" data-action="ec-wb-open-book" data-id="${EC_WB_UNASSIGNED}">
+        <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📥</span>
+            <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">未归类</div>
+            <div class="ec-wb-mini">共 ${un.total} 题小宝藏 · 可以回顾 ${un.due} · 可批量调整到书本 / 课时</div></div>
+            <span class="ec-book-go">›</span></div></div>` : '';
+    return `<div class="card">
+        <div class="card-header"><div class="card-title">📚 错题本 · 按书本整理（${d.books.length} 本）</div></div>
+        ${ecWbCrumb([{ name: '全部书本' }])}
+        <div class="ec-hint">书本和课时直接沿用「主线任务」目录：进书 → 进课 → 看这一课的错题。能批量删除、批量调整归属、课时内排序；导入时选好书和课就自动归位。</div>
+        ${ecWbToolbar({ clear: true })}
+    </div>
+    ${rows}${unCard}${!d.books.length ? '<div class="card ec-empty"><div class="ec-empty-icon">📚</div><div>书单里还没有书</div><div class="ec-hint">先去「主线任务」建书加课，错题就能分书分课整理了</div></div>' : ''}`;
+}
+function ecWbBookDetailHTML(bookId) {
+    const isUn = bookId === EC_WB_UNASSIGNED;
+    const book = isUn ? null : ecBookById(bookId);
+    if (!isUn && !book) { state._wbBookId = null; return ecWbBookListHTML(); }
+    const items = ecWbItemsOfBook(bookId);
+    const c = ecWbCounts(items);
+    const lessonIds = [];
+    items.forEach(it => { if (it.lessonId && lessonIds.indexOf(it.lessonId) < 0) lessonIds.push(it.lessonId); });
+    const lessonRows = lessonIds.map(lid => {
+        const l = ecLessonById(lid);
+        const lc = ecWbCounts(ecWbItemsOfLesson(lid));
+        return `<div class="card ec-wb-dir-card" data-action="ec-wb-open-lesson" data-id="${lid}">
+            <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📖</span>
+                <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">${escapeHtml(l ? l.name : '已删除的课时')}</div>
+                <div class="ec-wb-mini">共 ${lc.total} 题小宝藏 · 可以回顾 ${lc.due} · 已掌握 ${lc.mastered}</div></div>
+                <span class="ec-book-go">›</span></div>
+            ${lc.due ? `<div class="ec-wb-dir-ops"><button class="btn btn-sm btn-primary" data-action="ec-wb-start-lesson" data-id="${lid}">▶️ 只复习这一课（${lc.due}）</button></div>` : ''}
+        </div>`;
+    }).join('');
+    const noLesson = items.filter(it => !it.lessonId);
+    const noLessonCard = noLesson.length ? `<div class="card ec-wb-dir-card" data-action="ec-wb-open-lesson" data-id="${EC_WB_UNASSIGNED}">
+        <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📥</span>
+            <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">未标课时（${noLesson.length}）</div>
+            <div class="ec-wb-mini">${noLesson.filter(it => ecWbStatusOf(it.id, Date.now()) === 'due' || ecWbStatusOf(it.id, Date.now()) === 'new').length} 题可以回顾 · 可批量移动到具体课时</div></div>
+            <span class="ec-book-go">›</span></div></div>` : '';
+    return `<div class="card">
+        <div class="card-header"><div class="card-title">${isUn ? '📥 未归类' : '📚 ' + escapeHtml(book.name)} · 按课时整理</div></div>
+        ${ecWbCrumb([{ name: '全部书本', id: '', action: 'ec-wb-back-books' }, { name: isUn ? '未归类' : book.name }])}
+        <div class="ec-hint">共 ${c.total} 道宝藏 · 可以回顾 ${c.due} · 已掌握 ${c.mastered}。课时来自书单目录，改名 / 增删请到「主线任务」。</div>
+        ${ecWbToolbar({ back: { action: 'ec-wb-back-books', name: '返回书本' }, lessonId: (book && ecLessonsOf(book.id)[0]) ? ecLessonsOf(book.id)[0].id : '' })}
+    </div>
+    ${lessonRows}${noLessonCard}${!items.length ? '<div class="card ec-empty"><div class="ec-empty-icon">📕</div><div>这本书还没有错题</div><div class="ec-hint">点「📥 导入错题」，选好这本书和课时粘贴表格即可</div></div>' : ''}`;
+}
+function ecWbItemHTML(it, opts) {
+    const o = opts || {};
+    const w = ecWbData();
+    const rec = w.fsrs[it.id];
+    const st = ecWbStatusOf(it.id, Date.now());
+    const statusName = { new: '可以回顾', due: '可以回顾', waiting: '学习中', mastered: '已掌握' };
+    const selMode = !!state._wbSelMode;
+    const checked = !!(state._wbSel || {})[it.id];
+    const cmp = ecWbCompareHTML(it.mine, it.right);
+    return `<div class="ec-wb-item${checked ? ' ec-sel' : ''}">
+        ${selMode ? `<div class="ec-sel-cb ec-wb-sel-cb" data-action="ec-wb-sel" data-id="${it.id}">${checked ? '☑️' : '⬜'}</div>` : ''}
+        <div class="ec-wb-item-head">
+            <span class="ec-wb-point">${escapeHtml(it.point)}</span>
+            <span class="ec-wb-status ec-wb-st-${st}">${statusName[st]}</span>
+        </div>
+        ${o.showPath ? `<div class="ec-wb-loc">📚 ${escapeHtml(ecWbLocationText(it))}</div>` : ''}
+        ${it.question ? `<div class="ec-wb-line"><span class="ec-wb-tag">📝 题目</span><span class="ec-wb-line-txt">${ecWbMarkHTML(it.question)}</span></div>` : ''}
+        <div class="ec-wb-line"><span class="ec-wb-tag wrong">✗ 你当时</span><span class="ec-wb-line-txt">${cmp.mine}</span></div>
+        <div class="ec-wb-line"><span class="ec-wb-tag right">✓ 正确</span><span class="ec-wb-line-txt">${cmp.right}</span></div>
+        ${it.why ? `<div class="ec-wb-line"><span class="ec-wb-tag">💡 原因</span><span class="ec-wb-line-txt">${ecWbWhyHTML(it.why, cmp.words)}</span></div>` : ''}
+        <div class="ec-wb-item-foot">
+            <span class="ec-wb-meta">${rec && rec.last ? (st === 'mastered' ? `已掌握 · 复习 ${rec.n} 次` : `下次复习 ${ecFmtWeek(rec.due)} · 已复习 ${rec.n} 次`) : '可以回顾'}</span>
+            <span class="ec-wb-ops">
+                ${st === 'mastered' ? `<button class="ec-edit-btn" data-action="ec-wb-reset" data-id="${it.id}" title="移回复习池">🔁</button>` : `<button class="ec-edit-btn" data-action="ec-wb-start-one" data-id="${it.id}" title="复习这题">▶️</button>`}
+                ${o.sortable ? `<button class="ec-edit-btn" data-action="ec-wb-move-up" data-id="${it.id}" title="上移">▲</button><button class="ec-edit-btn" data-action="ec-wb-move-down" data-id="${it.id}" title="下移">▼</button>` : ''}
+                <button class="ec-edit-btn" data-action="ec-wb-edit" data-id="${it.id}" title="编辑 / 改归属">✏️</button>
+                <button class="ec-edit-btn" data-action="ec-wb-del" data-id="${it.id}" title="删除">🗑️</button>
+            </span>
+        </div>
+    </div>`;
+}
+function ecWbSelBar(ids) {
+    if (!state._wbSelMode) return '';
+    const n = ecWbSelIds().length;
+    return `<div class="ec-sel-bar ec-wb-selbar">
+        <span class="ec-sel-count">已选 ${n} 题</span>
+        <button class="btn btn-sm btn-secondary" data-action="ec-wb-sel-all">全选 / 反选</button>
+        <button class="btn btn-sm btn-secondary" data-action="ec-wb-move-sel" ${n ? '' : 'disabled'}>📦 批量改归属</button>
+        <button class="btn btn-sm btn-danger" data-action="ec-wb-del-sel" ${n ? '' : 'disabled'}>🗑️ 删除所选</button>
+        <span class="ec-wb-selbar-ids" data-wb-ids="${escapeHtml(ids.join(','))}"></span>
+    </div>`;
+}
+function ecWbLessonDetailHTML(lessonId) {
+    const isUn = lessonId === EC_WB_UNASSIGNED;
+    const l = isUn ? null : ecLessonById(lessonId);
+    const bookId = state._wbBookId || (l ? l.bookId : '');
+    const book = bookId && bookId !== EC_WB_UNASSIGNED ? ecBookById(bookId) : null;
+    const items = ecWbData().items.filter(it => isUn
+        ? (!it.lessonId && (it.bookId || '') === (bookId || ''))
+        : it.lessonId === lessonId).sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+    const c = ecWbCounts(items);
+    const name = isUn ? '未标课时' : (l ? l.name : '已删除的课时');
+    state._wbVisibleIds = items.map(it => it.id);
+    const rows = items.map(it => ecWbItemHTML(it, { sortable: true })).join('');
+    return `<div class="card">
+        <div class="card-header"><div class="card-title">📕 ${escapeHtml(name)} · 错题（${items.length}）</div></div>
+        ${ecWbCrumb([
+            { name: '全部书本', id: '', action: 'ec-wb-back-books' },
+            { name: book ? book.name : '未归类', id: bookId, action: 'ec-wb-back-book' },
+            { name }
+        ])}
+        <div class="ec-hint">共 ${c.total} 题小宝藏 · 可以回顾 ${c.due} · 已掌握 ${c.mastered}。用 ▲▼ 调整这一课里的题目顺序；批量勾选后可一次改到别的书 / 课，或删除。</div>
+        ${ecWbToolbar({ back: { action: 'ec-wb-back-book', name: '返回课时' }, lessonId: isUn ? '' : lessonId, items })}
+        ${ecWbSelBar(items.map(it => it.id))}
+        ${c.due ? `<div class="ec-wb-actions"><button class="btn btn-primary" data-action="${isUn ? 'ec-wb-start-unassigned' : 'ec-wb-start-lesson'}" ${isUn ? `data-id="${bookId || ''}"` : `data-id="${lessonId}"`}>▶️ 开始复习${isUn ? '这些未归类题' : '这一课'}（${c.due} 题）</button></div>` : ''}
+    </div>
+    ${rows ? `<div class="card">${rows}</div>` : '<div class="card ec-empty"><div class="ec-empty-icon">📕</div><div>这一课还没有错题</div><div class="ec-hint">点上方「📥 导入错题」粘贴表格，导入后自动归到这一课</div></div>'}`;
+}
+function ecWbAllHTML() {
+    const w = ecWbData();
+    const groups = {};
+    w.items.forEach(it => { const k = ecWbLocationText(it); (groups[k] = groups[k] || []).push(it); });
+    const keys = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true }));
+    const sections = keys.map(k => {
+        const rows = groups[k].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+            .map(it => ecWbItemHTML(it, { showPath: false })).join('');
+        return `<div class="ec-wb-group"><div class="ec-wb-group-title">${escapeHtml(k)}（${groups[k].length}）</div>${rows}</div>`;
+    }).join('');
+    state._wbVisibleIds = w.items.map(it => it.id);
+    return `<div class="card">
+        <div class="card-header"><div class="card-title">📚 全部错题（${w.items.length}）</div></div>
+        ${ecWbToolbar({ clear: true, items: w.items })}
+        ${ecWbSelBar(w.items.map(it => it.id))}
+        <div class="ec-hint">按「书本 › 课时」平铺展示全部错题；想分书分课管理请点「📚 错题本」。</div>
+        ${sections || '<div class="ec-hint">还没有错题。点「📥 导入错题」从 Excel/WPS 粘贴，或「➕ 记一道」手动添加。</div>'}
+    </div>`;
+}
+function ecWbMasteredHTML() {
+    const w = ecWbData();
+    const nowTs = Date.now();
+    const list = w.items.filter(it => ecWbStatusOf(it.id, nowTs) === 'mastered')
+        .sort((a, b) => ((w.fsrs[b.id] || {}).s || 0) - ((w.fsrs[a.id] || {}).s || 0));
+    const rows = list.map(it => {
+        const rec = w.fsrs[it.id] || {};
+        return `<div class="ec-due-row">
+            <div class="ec-due-info">
+                <div class="ec-due-title">🏆 ${escapeHtml(it.point)}<span class="ec-due-path">${escapeHtml(ecWbLocationText(it))}</span></div>
+                <div class="ec-due-meta">稳定性 ${ecSDays(rec.s)} · 复习 ${rec.n || 0} 次 · D=${(Number(rec.d) || 0).toFixed(1)}</div>
+                <div class="ec-due-btns"><button class="btn btn-sm btn-secondary" data-action="ec-wb-reset" data-id="${it.id}">🔁 移回复习池</button></div>
+            </div>
+        </div>`;
+    }).join('');
+    return `<div class="card"><div class="card-header"><div class="card-title">🏆 已掌握（${list.length}）</div></div>
+        ${rows || '<div class="ec-hint">还没有已掌握的错题，坚持复习就会出现在这里</div>'}</div>`;
+}
+function ecWbSessionHTML() {
+    const s = state._wbSession;
+    const item = ecWbById(s.queue[s.idx]);
+    if (!item) { state._wbSession = null; return ecRenderWrong(); }
+    const pct = Math.round((s.idx / s.queue.length) * 100);
+    const cmp = ecWbCompareHTML(item.mine, item.right);
+    const mineRow = `<div class="ec-wb-cmp-row"><span class="ec-wb-cmp-bullet">•</span><span class="ec-wb-cmp-label">你的答案：</span><span class="ec-wb-cmp-text">${cmp.mine}</span></div>`;
+    const rightRow = `<div class="ec-wb-cmp-row"><span class="ec-wb-cmp-bullet">•</span><span class="ec-wb-cmp-label">标准答案：</span><span class="ec-wb-cmp-text">${cmp.right}</span></div>`;
+    return `<div class="card ec-wb-session">
+        <div class="ec-wb-sess-head">
+            <div class="ec-wb-sess-progress">第 ${s.idx + 1} / ${s.queue.length} 题</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-wb-exit">退出</button>
+        </div>
+        <div class="ec-wb-bar"><div class="ec-wb-bar-in" style="width:${pct}%"></div></div>
+        <div class="ec-wb-chips"><span class="ec-wb-chip">📚 ${escapeHtml(ecWbLocationText(item))}</span></div>
+        <div class="ec-wb-block">
+            <div class="ec-wb-block-title">🎯 知识点</div>
+            <div class="ec-wb-point-text">${escapeHtml(item.point)}</div>
+        </div>
+        ${item.question ? `<div class="ec-wb-block"><div class="ec-wb-block-title">📝 题目 / 题干</div><div class="ec-wb-question">${ecWbMarkHTML(item.question)}</div></div>` : ''}
+        <div class="ec-wb-block cmp">
+            <div class="ec-wb-block-title">${s.revealed ? '🔍 逐词核对 · 灰底 = 不一样的地方' : '✍️ 你当时的答案 · 灰底 = 有问题的地方'}</div>
+            <div class="ec-wb-cmp">${mineRow}${s.revealed ? rightRow : ''}</div>
+        </div>
+        ${s.revealed ? `
+        ${item.why ? `<div class="ec-wb-block why"><div class="ec-wb-block-title">💡 大白话解析</div><div class="ec-wb-why">${ecWbWhyHTML(item.why, cmp.words)}</div></div>` : ''}
+        <div class="ec-wb-grade-title">这次能答对吗？</div>
+        <div class="ec-recite-actions">${EC_WB_GRADES.map(g => `<button class="ec-grade-btn ${g.cls}" data-action="ec-wb-grade" data-g="${g.id}" title="${g.desc}">${g.label}</button>`).join('')}</div>
+        ` : `
+        <div class="ec-wb-think">先别看标准答案，心里把灰底的地方改对，再点下方按钮核对</div>
+        <button class="btn btn-primary ec-wb-reveal-btn" data-action="ec-wb-reveal">👀 看标准答案</button>`}
+    </div>`;
+}
+// ---------- 与主线任务联动：课时徽标 / 课时详情卡 / 今日推荐 / 书本统计 ----------
+function ecWbLessonCounts(lessonId) { return ecWbCounts(ecWbItemsOfLesson(lessonId)); }
+function ecWbBadgeHTML(lessonId) {
+    const c = ecWbLessonCounts(lessonId);
+    if (!c.total) return '';
+    return `<span class="ec-wb-badge" title="这一课的错题">📕 ${c.total}${c.due ? ` · 可以回顾 ${c.due}` : ''}</span>`;
+}
+function ecWbLessonCardHTML(lessonId) {
+    const c = ecWbLessonCounts(lessonId);
+    return `<div class="card ec-wb-linkcard">
+        <div class="card-header"><div class="card-title">📕 本课错题 · 也算今天的学习</div></div>
+        <div class="ec-wb-linkstats">${c.total ? `共 <b>${c.total}</b> 题 · 可以回顾 <b>${c.due}</b> 题 · 已掌握 <b>${c.mastered}</b> 题` : '这一课还没有整理过错题'}</div>
+        <div class="ec-wb-actions">
+            ${c.due ? `<button class="btn btn-sm btn-primary" data-action="ec-wb-start-lesson" data-id="${lessonId}">▶️ 复习本课错题（${c.due}）</button>` : ''}
+            <button class="btn btn-sm btn-secondary" data-action="ec-wb-open-wrong-lesson" data-id="${lessonId}">📚 查看 / 整理本课错题</button>
+            <button class="btn btn-sm btn-secondary" data-action="ec-wb-import-lesson" data-id="${lessonId}">📥 导入本课错题</button>
+        </div>
+        <div class="ec-hint">${ecWbAutoTaskOn() ? '复习自评后会自动完成本课的「✍️ 练题」任务并积分' : '当前未开启「复习自动算练题任务」，可在查漏补缺 › 概览里打开'}；任务可在下方点「↩️ 取消完成」撤销。</div>
+    </div>`;
+}
+function ecWbBookDueCount(bookId) { return ecWbCounts(ecWbItemsOfBook(bookId)).due; }
+function ecTodayRecommendWrongHTML(bookId) {
+    const n = ecWbBookDueCount(bookId);
+    if (!n) return '';
+    return `<div class="ec-reco-wrong" data-action="ec-wb-start-book" data-id="${bookId}">📕 这本书藏着 <b>${n}</b> 道小宝藏，随手翻一题就很棒 →</div>`;
+}
+
+// ---------- 错题数据跨设备合并 ----------
+// items 按 id：墓碑优先 + updatedAt 新者胜 + 绑定字段优先保留；fsrs 按 last 新者胜；
+// autoTask 开关按 autoTaskAt 取新；clearedAt 分界线丢弃更早记录
+function ecMergeWrong(a, b) {
+    const A = (a && typeof a === 'object') ? a : {};
+    const B = (b && typeof b === 'object') ? b : {};
+    const cut = Math.max(Number(A.clearedAt) || 0, Number(B.clearedAt) || 0);
+    const tombs = { ...(B.tombs || {}), ...(A.tombs || {}) };
+    const hasBind = x => (x && (x.bookId || x.lessonId)) ? 1 : 0;
+    const map = new Map();
+    const qPool = new Map(); // 旧版本快照没有 question 字段时，用它兜底补回题目
+    (Array.isArray(B.items) ? B.items : []).concat(Array.isArray(A.items) ? A.items : []).forEach(it => {
+        if (!it || !it.id) return;
+        if (typeof it.question === 'string' && it.question) qPool.set(it.id, it.question);
+        if ((Number(it.updatedAt) || 0) < cut) return;
+        const t = Number(tombs[it.id]) || 0;
+        if (t && t >= (Number(it.updatedAt) || 0)) return;
+        const cur = map.get(it.id);
+        if (!cur) { map.set(it.id, it); return; }
+        const diff = (Number(it.updatedAt) || 0) - (Number(cur.updatedAt) || 0);
+        if (diff > 0) {
+            map.set(it.id, hasBind(it) || !hasBind(cur) ? it : Object.assign({}, it, { bookId: cur.bookId, lessonId: cur.lessonId, lesson: cur.lesson || it.lesson }));
+        } else if (diff === 0 && hasBind(it) > hasBind(cur)) {
+            map.set(it.id, it);
+        } else if (hasBind(cur) === 0 && hasBind(it) > 0) {
+            map.set(it.id, Object.assign({}, cur, { bookId: it.bookId, lessonId: it.lessonId }));
+        }
+    });
+    const fsrs = {};
+    [B.fsrs || {}, A.fsrs || {}].forEach(src => {
+        Object.keys(src).forEach(k => {
+            if (!map.has(k)) return;
+            const r = src[k];
+            if (!r || !r.last) return;
+            if ((Number(r.last) || 0) < cut) return;
+            if (!fsrs[k] || (Number(r.last) || 0) >= (Number(fsrs[k].last) || 0)) fsrs[k] = r;
+        });
+    });
+    const useA = (Number(A.autoTaskAt) || 0) >= (Number(B.autoTaskAt) || 0);
+    const autoSrc = useA ? A : B;
+    return {
+        items: Array.from(map.values())
+            .map(it => (typeof it.question === 'undefined' && qPool.has(it.id)) ? Object.assign({}, it, { question: qPool.get(it.id) }) : it)
+            .sort((x, y) => (Number(x.createdAt) || 0) - (Number(y.createdAt) || 0)),
+        fsrs,
+        tombs,
+        clearedAt: cut,
+        updatedAt: Math.max(Number(A.updatedAt) || 0, Number(B.updatedAt) || 0),
+        autoTask: autoSrc.autoTask === false ? false : true,
+        autoTaskAt: Math.max(Number(A.autoTaskAt) || 0, Number(B.autoTaskAt) || 0)
+    };
+}
+
+
+// ---------- 渲染 ----------
+function renderEngCheckPage(tab) {
+    if (tab === 'ec-review') return ecRenderReview();
+    if (tab === 'ec-wrong') return ecRenderWrong();
+    if (tab === 'ec-achieve') return ecRenderAchieve();
+    return ecRenderDrill();
+}
+
+// ==================== v20261106z：轻松学习看板（鼓励式，不制造待办压力） ====================
+// 计数口径全部保留（复习队列 / 错题队列仍按真实数据跑，功能一个不少），
+// 但界面只呈现「收获 / 鼓励 / 进步」，不再把「还差多少、还有多少没做」摆到首屏。
+// 四个板块之间的跳转联动由 ecGo + data-action="ec-go" 统一负责（使用上有联动即可，不占版面）。
+function ecPendingTasks() {
+    const d = ecData();
+    let pending = 0, total = 0;
+    d.books.forEach(b => {
+        const defs = ecBookTasks(b.id);
+        ecLessonsOf(b.id).forEach(l => {
+            defs.forEach(t => { total++; if (!ecGetTask(l.id, t.id)) pending++; });
+        });
+    });
+    return { pending, total, done: total - pending };
+}
+function ecHubCounts() {
+    const d = ecData();
+    const gs = ecGlobalStats();
+    const wb = ecWbStats();
+    const pt = ecPendingTasks();
+    return {
+        tasks: pt.pending, tasksDone: pt.done, tasksTotal: pt.total,
+        reciteDue: gs.due, reciteOverdue: gs.overdue, reciteMastered: gs.mastered,
+        wrongDue: wb.due, wrongOverdue: wb.overdue, wrongMastered: wb.mastered, wrongTotal: wb.total,
+        todayDone: d.days[today()] || 0,
+        achievements: EC_ACHIEVEMENTS.filter(a => d.achievements[a.id]).length,
+        achievementTotal: EC_ACHIEVEMENTS.length,
+        streak: d.streak || 0, score: d.score || 0
+    };
+}
+// 每日一句：按日期确定性抽取，刷新不会乱跳，每天都有新的一小句鼓励
+const EC_CHEERS = [
+    '今天来学一小会儿，就已经很了不起啦 🌱',
+    '不用赶进度，按自己的节奏慢慢长大 🌿',
+    '每一次翻开书，小树都悄悄长高一点 🌳',
+    '学一点是一点，累积起来会很惊人 ✨',
+    '今天也可以只做一件喜欢的小事 🥰',
+    '记住的不只是单词，还有认真生活的你 💛',
+    '慢慢来，比较快 🐢',
+    '允许自己轻松一点，学习本来就该开心 🍀',
+    '你已经在路上了，这比什么都棒 🎈',
+    '会休息的人，也会把知识记得更牢 ☕',
+    '每天一点点，回头看就是一大片森林 🌲',
+    '今天的好奇心，就是明天的小惊喜 🎁',
+    '不跟别人比，只和昨天的自己击个掌 ✋',
+    '哪怕只背了一句话，也值得为自己鼓掌 👏',
+    '错题是宝藏，捡到一颗就赚到一颗 💎',
+    '把学习当成探险，今天想去哪一站？🧭',
+    '你的节奏刚刚好，别急 ☀️',
+    '又见面啦，小树今天也想长高一点点 🌤️'
+];
+function ecDailyCheer() {
+    const t = new Date();
+    const seed = t.getFullYear() * 372 + (t.getMonth() + 1) * 31 + t.getDate();
+    return EC_CHEERS[Math.abs(seed) % EC_CHEERS.length];
+}
+// 一句成长小结：只讲收获，不讲欠账
+function ecHarvestLine(c) {
+    if (c.todayDone > 0) return `今天已经收获 <b>${c.todayDone}</b> 项啦，小树又长高一点点 🌱`;
+    if (c.tasksDone > 0) return `已经攒下 <b>${c.tasksDone}</b> 项学习足迹，随时接着玩 🌿`;
+    return '新的一天，从最想点的那一格开始就好 ✨';
+}
+// 今日邀请：优先级仍沿用原来的口径，但全部换成「想逛就去逛」的语气
+function ecHubAdvice(c) {
+    if (c.wrongOverdue > 0) return { text: '🌿 有几位老朋友想再见一面，去「查漏补缺」随手翻一题吧', to: 'ec-wrong', sub: 'due', btn: '去看看' };
+    if (c.reciteDue > 0) return { text: '🌤️ 有课文正适合温习，合上书试试能想起多少，很好玩', to: 'ec-review', sub: 'due', btn: '去玩玩' };
+    if (c.wrongDue > 0) return { text: '💎 错题本里藏着小宝藏，随手翻一题就有新收获', to: 'ec-wrong', sub: 'due', btn: '去寻宝' };
+    if (c.tasks > 0) return { text: '📚 想学就学一小会儿，翻开一课就很棒', to: 'ec-books', sub: 'books', btn: '去逛逛' };
+    return { text: '🎉 今天想怎么玩都行，去看看攒下的闪光时刻吧', to: 'ec-achieve', sub: '', btn: '看荣誉' };
+}
+// 统一跳转：切子标签 + 落到对应三级页 + 可选书本/课时定位 + 平滑回顶
+function ecGo(to, opts) {
+    const o = opts || {};
+    const st = state.currentSubTab || (state.currentSubTab = {});
+    st.engcheck = to;
+    if (state._wbSession) state._wbSession = null;
+    if (to === 'ec-review') st['ec-review-sub'] = o.sub || 'due';
+    if (to === 'ec-wrong') {
+        st['ec-wrong-sub'] = o.sub || 'due';
+        state._wbFilterBookId = o.book || '';
+        state._wbFilterLessonId = o.lesson || '';
+        state._wbBookId = o.book || null;
+        state._wbLessonId = o.lesson || null;
+        state._wbSelMode = false;
+        state._wbSel = {};
+    }
+    if (to === 'ec-books') {
+        state._ecBookId = o.book || (o.sub === 'books' ? null : state._ecBookId);
+        state._ecLessonId = o.lesson || (o.sub === 'books' ? null : state._ecLessonId);
+    }
+    render();
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { /* ignore */ }
+}
+// 主 Tab 栏：去掉数字待办徽标（99+ / 18 这类数字只会制造压力），保留好玩的悬停提示
+function ecMainTabsHTML(tabs, current, extraHTML) {
+    const HINTS = {
+        'ec-books': '翻开新的一课，就是一次小冒险',
+        'ec-review': '和学过的课文打个招呼',
+        'ec-wrong': '把小坑变成小宝藏',
+        'ec-achieve': '看看攒下的闪光时刻'
+    };
+    // 「📊 学习看板」是固定入口，不参与子标签的隐藏 / 排序设置
+    const hubBtn = `<button class="tab-btn ec-hub-tab ${current === 'ec-hub' ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1" title="学习看板：只放收获和鼓励">📊 <span class="ec-tab-label">学习看板</span></button>`;
+    return `<div class="tab-bar ec-main-tabs">${hubBtn}${tabs.map(t => {
+        return `<button class="tab-btn ${current === t.id ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="${t.id}" data-ec-main="1" title="${HINTS[t.id] || '点一下就来逛逛'}">${t.icon || ''} <span class="ec-tab-label">${t.name}</span></button>`;
+    }).join('')}${extraHTML || ''}</div>`;
+}
+// 四格「成长收成」：全部是正向数字，点任意一格照旧直达对应板块
+function ecHubGridHTML(c) {
+    const cells = [
+        { to: 'ec-books', sub: 'books', icon: '📚', label: '学到的本领', num: c.tasksDone, tone: 'green', hint: `累计 ${c.tasksTotal} 项练习` },
+        { to: 'ec-review', sub: 'due', icon: '⏰', label: '记牢的课文', num: c.reciteMastered, tone: 'ok', hint: '每温习一次都更牢' },
+        { to: 'ec-wrong', sub: 'due', icon: '📕', label: '收集的宝藏', num: c.wrongTotal, tone: 'ok', hint: `${c.wrongMastered} 题变成好朋友` },
+        { to: 'ec-achieve', sub: '', icon: '🏆', label: '今日收获', num: c.todayDone, tone: 'green', hint: `${c.achievements} 枚徽章 · 连续 ${c.streak} 天` }
+    ];
+    return `<div class="ec-hub-grid">${cells.map(x => `
+        <button class="ec-hub-cell ${x.tone}" data-action="ec-go" data-to="${x.to}" data-sub="${x.sub}" title="点击进入「${x.label}」所在板块">
+            <span class="ec-hub-ico">${x.icon}</span>
+            <span class="ec-hub-num">${x.num}</span>
+            <span class="ec-hub-label">${x.label}</span>
+            <span class="ec-hub-hint">${x.hint}</span>
+        </button>`).join('')}</div>`;
+}
+// 今日份鼓励卡
+function ecCheerCardHTML() {
+    return `<div class="ec-cheer-card">
+        <span class="ec-cheer-emoji">🌈</span>
+        <div class="ec-cheer-body">
+            <div class="ec-cheer-title">今日份鼓励 · ${['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期天'][(new Date().getDay() + 6) % 7]}</div>
+            <div class="ec-cheer-text">${ecDailyCheer()}</div>
+        </div>
+        <span class="ec-cheer-spark">✨</span>
+    </div>`;
+}
+// 成就时间戳兼容：老数据是 now() 的 ISO 字符串，新数据可能是毫秒数
+function ecAchTime(v) {
+    if (typeof v === 'number') return v;
+    const t = Date.parse(String(v || ''));
+    return isNaN(t) ? 0 : t;
+}
+// 最近点亮的徽章：把鼓励从「荣誉战绩」搬一部分到学习看板
+function ecRecentBadgesHTML(limit) {
+    const d = ecData();
+    const list = EC_ACHIEVEMENTS.filter(a => d.achievements[a.id])
+        .sort((a, b) => ecAchTime(d.achievements[b.id]) - ecAchTime(d.achievements[a.id]))
+        .slice(0, limit || 3);
+    if (!list.length) return `<div class="ec-badge-empty">第一枚徽章正在路上，慢慢来 🌱</div>`;
+    return `<div class="ec-badge-row">${list.map(a => `<span class="ec-badge-chip" title="${a.name}：${a.desc}"><b>${a.icon}</b>${a.name}</span>`).join('')}</div>`;
+}
+// 学习看板头部：等级 / 积分 / 连续 + 成长能量 + 今日鼓励 + 四格收成 + 今日邀请
+function ecHeaderHTML() {
+    const d = ecData();
+    const lv = ecGetLevel(d.score);
+    const nextLvScore = lv * 10;
+    const pct = Math.min(100, Math.round(((d.score || 0) % 10) / 10 * 100));
+    const c = ecHubCounts();
+    const adv = ecHubAdvice(c);
+    return `
+    <div class="card ec-head ec-hub">
+        <div class="ec-head-main">
+            <div class="ec-head-lv"><span class="ec-head-symbols">${ecLevelSymbols(lv)}</span><span class="ec-head-lvnum">Lv.${lv}</span></div>
+            <div class="ec-head-score">⭐ ${(d.score || 0).toLocaleString()} 分</div>
+        </div>
+        <div class="ec-head-sub">
+            <span>🔥 连续 ${d.streak || 0} 天</span>
+            <span>✨ 再得 ${Math.max(0, nextLvScore - (d.score || 0))} 分升到 Lv.${lv + 1}</span>
+            <span>🏅 ${c.achievements}/${c.achievementTotal} 枚成就徽章</span>
+        </div>
+        <div class="ec-energy-label"><span>🌱 成长能量</span><em>${pct}%</em></div>
+        <div class="ec-bar"><div class="ec-bar-fill" style="width:${pct}%"></div></div>
+        ${ecCheerCardHTML()}
+        <div class="ec-hub-title"><span>🌈 我的成长收成</span><em>点卡片去逛逛</em></div>
+        ${ecHubGridHTML(c)}
+        <div class="ec-hub-advice">
+            <span class="ec-hub-advice-text">${adv.text}</span>
+            <button class="btn btn-sm btn-primary" data-action="ec-go" data-to="${adv.to}" data-sub="${adv.sub}">${adv.btn} ›</button>
+        </div>
+    </div>`;
+}
+// 紧凑状态条：四个学习页共用，一行放「已经收获」，不再显示待办数字
+function ecMiniBarHTML() {
+    const d = ecData();
+    const c = ecHubCounts();
+    const lv = ecGetLevel(d.score);
+    return `<div class="card ec-mini-bar">
+        <span class="ec-mini-lv">Lv.${lv}</span>
+        <span class="ec-mini-item">⭐ ${(d.score || 0).toLocaleString()} 分</span>
+        <span class="ec-mini-item">🔥 连续 ${c.streak} 天</span>
+        <span class="ec-mini-todo ok">${c.todayDone ? `今天已收获 ${c.todayDone} 项 ✨` : '今天从一页开始就很棒 🌱'}</span>
+        <button class="ec-mini-go" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1">📊 学习看板 ›</button>
+    </div>`;
+}
+// 学习看板正文：收获时刻 + 随手一课 + 探险地图（都不带待办数字）
+function ecHubPageHTML() {
+    const c = ecHubCounts();
+    return `<div class="ec-crumb">英语打卡 › 学习看板</div>
+    <div class="card ec-hub-note">这里只放收获和鼓励：想学哪一格就点哪一格，四个板块的功能互相打通，学完回来数字会自己长大 🌱</div>
+    <div class="card ec-harvest-card">
+        <div class="card-header"><div class="card-title">🏅 收获时刻</div><span class="ec-card-note">已点亮 ${c.achievements}/${c.achievementTotal} 枚</span></div>
+        ${ecRecentBadgesHTML(3)}
+        <div class="ec-harvest-line">${ecHarvestLine(c)}</div>
+        <div class="ec-harvest-btns">
+            <button class="btn btn-sm btn-primary" data-action="ec-go" data-to="ec-achieve" data-sub="">看看我的荣誉墙 ›</button>
+            <button class="btn btn-sm btn-secondary" data-action="ec-go" data-to="ec-books" data-sub="books">🎲 随手翻一课</button>
+        </div>
+    </div>
+    ${ecLinkCardHTML('')}`;
+}
+// 探险地图：只在学习看板出现，纯导航不带数字；记忆巩固 / 查漏补缺不再显示联动卡
+function ecLinkCardHTML(current) {
+    const items = [
+        { to: 'ec-books', sub: 'books', icon: '📚', text: '主线任务 · 翻开新的一课' },
+        { to: 'ec-review', sub: 'due', icon: '⏰', text: '记忆巩固 · 和课文打个招呼' },
+        { to: 'ec-wrong', sub: 'due', icon: '📕', text: '查漏补缺 · 把小坑变成宝藏' },
+        { to: 'ec-achieve', sub: '', icon: '🏆', text: '荣誉战绩 · 看看闪光时刻' }
+    ].filter(x => x.to !== current);
+    return `<div class="card ec-link-card">
+        <div class="ec-link-head"><span>🧭 今日探险地图</span><em>想去哪站，点一下就过去</em></div>
+        <div class="ec-link-grid">${items.map(x => `<button class="ec-link-item" data-action="ec-go" data-to="${x.to}" data-sub="${x.sub}"><span class="ec-link-ico">${x.icon}</span><span class="ec-link-text">${x.text}</span><span class="ec-link-go">›</span></button>`).join('')}</div>
+    </div>`;
+}
+// 成就对应的温柔落点，让荣誉墙也能反哺另外几个板块
+function ecAchieveGo(id) {
+    if (id === 'first-recite' || id === 'recite-master' || id === 'recite10' || id === 'master10') return { to: 'ec-review', sub: 'due' };
+    if (id.indexOf('wrong') === 0 || id === 'explorer') return { to: id === 'explorer' ? 'ec-hub' : 'ec-wrong', sub: 'due' };
+    return { to: 'ec-books', sub: 'books' };
+}
+// 未点亮成就的温柔进度：只显示「已经走到哪里」，不催
+function ecAchProgress(a) {
+    const d = ecData();
+    const w = ecWbData();
+    const taskCnt = Object.keys(d.tasks).length;
+    const recCnt = Object.keys(d.fsrs).length;
+    const wrongCnt = w.items.length;
+    const masteredRec = ecReciteMasteredCount();
+    const masteredWrong = ecWbStats().mastered;
+    const table = {
+        streak3: [d.streak || 0, 3, '天'], streak7: [d.streak || 0, 7, '天'], streak30: [d.streak || 0, 30, '天'],
+        task10: [taskCnt, 10, '项'], task50: [taskCnt, 50, '项'],
+        points100: [d.score || 0, 100, '分'], points500: [d.score || 0, 500, '分'], points1000: [d.score || 0, 1000, '分'],
+        recite10: [recCnt, 10, '篇'], 'recite-master': [masteredRec, 3, '篇'], master10: [masteredRec, 10, '篇'],
+        'wrong-first': [wrongCnt, 1, '题'], wrong10: [wrongCnt, 10, '题'], 'wrong-master': [masteredWrong, 3, '题'],
+        week7: [Object.keys(d.days).length, 7, '天'], day4: [Math.max(0, ...Object.values(d.days).map(Number).filter(n => !isNaN(n)), 0), 4, '项']
+    };
+    const p = table[a.id];
+    if (!p) return '<div class="ec-ach-prog-hint">缘分到了自然会遇见 ✨</div>';
+    const cur = Math.min(Number(p[0]) || 0, p[1]);
+    return `<div class="ec-ach-prog"><span>已经走到 ${cur}/${p[1]} ${p[2]}</span><div class="ec-ach-prog-bar"><i style="width:${Math.round(cur / p[1] * 100)}%"></i></div></div>`;
+}
+
+// FSRS 说明卡（替代原艾宾浩斯曲线卡）
+function ecFsrsCard() {
+    const grades = EC_GRADES.map(g => `<span class="ec-grade-chip ${g.cls}">${g.name} · ${g.label}</span>`).join('');
+    return `
+    <div class="card ec-fsrs-card">
+        <div class="card-header"><div class="card-title">🧠 背诵复习 · FSRS 算法</div></div>
+        <div class="ec-fsrs-flow">${grades}</div>
+        <div class="ec-curve-tip">
+            只对「背书」这一项走复习曲线：<b>初学这一课时就可以按流畅度四选一入池</b>（Again/Hard/Good/Easy），
+            到复习时间合上书尝试<b>独立背诵整篇</b>再打一次分 → 系统自动更新难度 D / 稳定性 S → 推算下次复习日期；
+            没到时间觉得遗忘了，也可以提前复习。<br>
+            难得越多刷、越熟越少刷；迟到几天再背也能识别遗忘程度，不会一下子排到几个月后（最大间隔 120 天）。
+        </div>
+    </div>`;
+}
+
+// 书单页：每本书的打卡任务管理面板（✏️ 编辑时展开）
+function ecTaskManageHTML(book) {
+    const tasks = ecBookTasks(book.id);
+    const rows = tasks.map(t => `
+        <div class="ec-tm-row">
+            <span class="ec-tm-icon">${t.icon}</span>
+            <div class="ec-tm-info">
+                <div class="ec-tm-name">${escapeHtml(t.name)}<span class="ec-tm-tag">${t.group === 'input' ? '📥 输入 · 听读' : '📤 输出 · 说写'}</span></div>
+                <div class="ec-tm-desc">${escapeHtml(t.desc || '')}</div>
+            </div>
+            <div class="ec-tm-btns">
+                <button class="btn btn-sm btn-secondary" data-action="ec-task-move" data-book="${book.id}" data-task="${t.id}" data-d="-1" title="上移">▲</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-task-move" data-book="${book.id}" data-task="${t.id}" data-d="1" title="下移">▼</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-rename-task" data-book="${book.id}" data-task="${t.id}" title="编辑名称与说明">✏️</button>
+                <button class="btn btn-sm btn-danger" data-action="ec-del-task" data-book="${book.id}" data-task="${t.id}" title="删除任务">🗑️</button>
+            </div>
+        </div>`).join('');
+    return `
+    <div class="ec-task-man">
+        <div class="ec-tm-title">🎯 打卡任务管理（每本书独立设置，默认 5 项）</div>
+        ${rows || '<div class="ec-hint">这本书还没有任务，在下方添加</div>'}
+        <div class="ec-tm-add">
+            <div class="ec-add-row">
+                <input type="text" class="input" id="ecNewTaskIcon" placeholder="图标" maxlength="4" style="flex:0 0 58px;min-width:0;text-align:center">
+                <input type="text" class="input" id="ecNewTaskName" placeholder="任务名，如：shadowing 影子跟读" maxlength="20">
+                <select class="input" id="ecNewTaskGroup" style="flex:0 0 96px;min-width:0">
+                    <option value="input">📥 输入</option>
+                    <option value="output">📤 输出</option>
+                </select>
+            </div>
+            <div class="ec-add-row">
+                <input type="text" class="input" id="ecNewTaskDesc" placeholder="说明（可选），如：不看文本纯听写" maxlength="60">
+                <button class="btn btn-primary" data-action="ec-add-task">添加任务</button>
+            </div>
+            <div class="ec-hint">输入板块 = 听 · 读，输出板块 = 说 · 写；删除任务会清掉所有课该任务的打卡记录（积分不扣回）。</div>
+        </div>
+    </div>`;
+}
+
+function ecRenderBooks() {
+    const d = ecData();
+    const books = [...d.books].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const selMode = !!state._ecBookSelMode;
+    const sel = state._ecBookSel || {};
+    const selCount = Object.keys(sel).filter(k => sel[k]).length;
+    const list = books.map(b => {
+        const st = ecBookStats(b.id);
+        const pct = st.taskTotal ? Math.round(st.tasksDone / st.taskTotal * 100) : 0;
+        const editing = state._ecEditBookId === b.id;
+        const checked = !!sel[b.id];
+        return `
+        <div class="card ec-book-card${checked ? ' ec-sel' : ''}${selMode ? ' ec-selmode' : ''}">
+            ${selMode ? `<div class="ec-sel-cb" data-action="ec-book-sel" data-id="${b.id}">${checked ? '☑️' : '⬜'}</div>` : ''}
+            <div class="ec-book-main" data-action="ec-open-book" data-id="${b.id}">
+                <div class="ec-book-icon">📚</div>
+                <div class="ec-book-info">
+                    <div class="ec-book-name">${escapeHtml(b.name)}</div>
+                    <div class="ec-book-meta">${st.lessons} 节课 · 任务 ${st.tasksDone}/${st.taskTotal} · 背诵 ${st.recited}/${st.lessons}${st.wrongTotal ? ` · 📕 错题 ${st.wrongTotal}` : ''}</div>
+                    <div class="ec-bar"><div class="ec-bar-fill" style="width:${pct}%"></div></div>
+                </div>
+                <div class="ec-book-side">
+                    <button class="ec-edit-btn" data-action="ec-edit-book" data-id="${b.id}" title="编辑 / 管理打卡任务">✏️</button>
+                    <span class="ec-book-go">›</span>
+                </div>
+            </div>
+            ${editing ? `
+            <div class="ec-row-actions">
+                <button class="btn btn-sm btn-secondary" data-action="ec-rename-book" data-id="${b.id}">✏️ 重命名</button>
+                <button class="btn btn-sm btn-danger" data-action="ec-delete-book" data-id="${b.id}">🗑️ 删除</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-edit-book" data-id="${b.id}">✕ 收起</button>
+            </div>` : ''}
+            ${editing ? ecTaskManageHTML(b) : ''}
+        </div>`;
+    }).join('');
+    const addOpen = !!state._ecAddOpen;
+    const headEdit = !!state._ecHeadEdit || selMode || addOpen; // 管理按钮收起，点 ✏️ 才展开
+    return `
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">📚 我的书单（一级目录）</div>
+            <div class="ec-head-btns">
+                ${headEdit ? `
+                ${books.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-book-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
+                <button class="btn btn-sm btn-secondary" data-action="ec-clear-records" title="清空所有打卡/背诵记录，书单和课程目录保留（测试期重来用）">🧹 清零</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-clear-zh" title="清空所有书的全部课文（中文+英文，目录/打卡/背诵记录不受影响）">🗑️ 课文</button>
+                <button class="btn btn-sm ${addOpen ? 'btn-secondary' : 'btn-primary'}" data-action="ec-toggle-add">${addOpen ? '✕ 收起' : '➕ 新增'}</button>` : ''}
+                <button class="ec-edit-btn${headEdit ? ' ec-edit-on' : ''}" data-action="ec-head-edit" title="${headEdit ? '收起管理按钮' : '展开管理按钮（批量删除 / 清零 / 中文 / 新增）'}">${headEdit ? '✕' : '✏️'}</button>
+            </div>
+        </div>
+        ${addOpen ? `
+        <div class="ec-add-panel">
+            <div class="ec-add-row">
+                <input type="text" class="input" id="ecBookNameInput" placeholder="书本名称，如：新概念英语一" maxlength="30">
+                <button class="btn btn-primary" data-action="ec-add-book">添加</button>
+            </div>
+            <div class="ec-batch">
+                <div class="ec-batch-title">⚡ 批量新增书单（每行一个书名）</div>
+                <div class="ec-add-row" style="align-items:flex-start">
+                    <textarea class="input" id="ecBookBatchNames" rows="3" placeholder="每行一个书名：&#10;新概念英语一&#10;新概念英语二"></textarea>
+                </div>
+                <div class="ec-add-row">
+                    <button class="btn btn-secondary" data-action="ec-batch-books">📥 批量添加</button>
+                    <span class="ec-hint" style="margin:0">重名会自动跳过</span>
+                </div>
+            </div>
+        </div>` : ''}
+        <div class="ec-hint">先建一本书，再在书里添加课程（二级目录）；每节课的打卡任务可以在书的 ✏️ 编辑里单独设置，再加背书复习（三级目录）。</div>
+        ${selMode ? `
+        <div class="ec-sel-bar">
+            <span class="ec-sel-count">已选 ${selCount} 本</span>
+            <button class="btn btn-sm btn-secondary" data-action="ec-sel-all-books">全选 / 反选</button>
+            <button class="btn btn-sm btn-danger" data-action="ec-del-sel-books">删除所选</button>
+        </div>` : ''}
+    </div>
+    ${books.length ? list : `<div class="card ec-empty"><div class="ec-empty-icon">📚</div><div>还没有书单</div><div class="ec-hint">在上方输入书名，或批量粘贴添加第一本书吧</div></div>`}
+    ${ecFsrsCard()}`;
+}
+
+function ecRenderLessons() {
+    const book = ecBookById(state._ecBookId);
+    if (!book) { state._ecBookId = null; return ecRenderBooks(); }
+    const lessons = ecLessonsOf(book.id);
+    const selMode = !!state._ecLessonSelMode;
+    const sel = state._ecLessonSel || {};
+    const selCount = Object.keys(sel).filter(k => sel[k]).length;
+    const list = lessons.map(l => {
+        const pg = ecLessonProgress(l.id);
+        const rec = ecData().fsrs[l.id];
+        const rs = ecReciteStatus(rec, Date.now());
+        const reciteTag = rs === 'new' ? '未背诵' : rs === 'mastered' ? '🏆 已掌握' : rs === 'due' ? '⏰ 待背诵' : `📖 ${ecSDays(rec.s || 0)}后`;
+        const editing = state._ecEditLessonId === l.id;
+        const checked = !!sel[l.id];
+        // 卡片状态：全部完成=淡绿已完成；一项未做=未解锁🔒
+        const allDone = pg.total > 0 && pg.done >= pg.total;
+        const locked = pg.done === 0;
+        return `
+        <div class="card ec-lesson-card${checked ? ' ec-sel' : ''}${selMode ? ' ec-selmode' : ''}${allDone ? ' ec-lesson-done' : ''}">
+            ${selMode ? `<div class="ec-sel-cb" data-action="ec-lesson-sel" data-id="${l.id}">${checked ? '☑️' : '⬜'}</div>` : ''}
+            <div class="ec-lesson-main" data-action="ec-open-lesson" data-id="${l.id}">
+                <div class="ec-lesson-info">
+                    <div class="ec-lesson-name">${locked ? '<span class="ec-lock" title="还没开始这一课">🔒</span>' : ''}${escapeHtml(l.name)}${allDone ? ' <span class="ec-done-flag">✅</span>' : ''}</div>
+                    ${l.note ? `<div class="ec-lesson-note">${escapeHtml(l.note)}</div>` : ''}
+                    <div class="ec-lesson-meta">任务 ${pg.done}/${pg.total}${allDone ? ' · 已完成' : ''} · ${reciteTag}${ecWbBadgeHTML(l.id)}</div>
+                </div>
+                <div class="ec-lesson-side">
+                    <button class="ec-edit-btn" data-action="ec-edit-lesson" data-id="${l.id}" title="编辑">✏️</button>
+                    <span class="ec-book-go">›</span>
+                </div>
+            </div>
+            ${editing ? `
+            <div class="ec-row-actions">
+                <button class="btn btn-sm btn-secondary" data-action="ec-rename-lesson" data-id="${l.id}">✏️ 重命名</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-edit-note" data-id="${l.id}">📝 语法要点</button>
+                <button class="btn btn-sm btn-danger" data-action="ec-delete-lesson" data-id="${l.id}">🗑️ 删除</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-edit-lesson" data-id="${l.id}">✕ 收起</button>
+            </div>` : ''}
+        </div>`;
+    }).join('');
+    const addOpen = !!state._ecAddOpen;
+    const headEdit = !!state._ecHeadEdit || selMode || addOpen; // 管理按钮收起，点 ✏️ 才展开
+    return `
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">📖 ${escapeHtml(book.name)}</div>
+            <div class="ec-head-btns">
+                <button class="btn btn-sm btn-secondary" data-action="ec-back-books">‹ 返回书单</button>
+                ${headEdit ? `
+                ${lessons.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-lesson-sel-mode">${selMode ? '✕ 退出批量' : '🗑️ 批量删除'}</button>` : ''}
+                <button class="btn btn-sm ${addOpen ? 'btn-secondary' : 'btn-primary'}" data-action="ec-toggle-add">${addOpen ? '✕ 收起' : '➕ 新增'}</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-batch-zh" data-book="${book.id}" title="一次粘贴整本书，按课时名自动匹配导入各课课文；可选中英一起 / 只导中文 / 只导英文">📥 导入课文</button>
+                <button class="btn btn-sm btn-secondary" data-action="ec-clear-zh" data-book="${book.id}" title="清空本书全部课文（中文+英文）">🗑️ 课文</button>` : ''}
+                <button class="ec-edit-btn${headEdit ? ' ec-edit-on' : ''}" data-action="ec-head-edit" title="${headEdit ? '收起管理按钮' : '展开管理按钮（批量删除 / 新增 / 导入课文 / 清空课文）'}">${headEdit ? '✕' : '✏️'}</button>
+            </div>
+        </div>
+        ${addOpen ? `
+        <div class="ec-add-panel">
+            <div class="ec-add-row">
+                <input type="text" class="input" id="ecLessonNameInput" placeholder="添加课程，如 Lesson 1" maxlength="40">
+                <button class="btn btn-primary" data-action="ec-add-lesson">添加</button>
+            </div>
+            <div class="ec-add-row">
+                <input type="text" class="input" id="ecLessonNoteInput" placeholder="语法要点（可选），如：be 动词；一般疑问句；Yes/No 回答" maxlength="200">
+            </div>
+            <div class="ec-hint">语法要点会以灰色小字显示在课程名下方；也可以添加后点课程 ✏️ →「📝 语法要点」补写。</div>
+            <div class="ec-batch">
+                <div class="ec-batch-title">⚡ 批量生成（如新概念英语一 144 课）</div>
+                <div class="ec-add-row">
+                    <input type="text" class="input" id="ecBatchPrefix" placeholder="前缀，如 Lesson" maxlength="20" style="flex:1.2;min-width:0">
+                    <input type="number" class="input" id="ecBatchFrom" placeholder="起始" min="1" style="flex:0.8;min-width:64px">
+                    <input type="number" class="input" id="ecBatchTo" placeholder="结束" min="1" style="flex:0.8;min-width:64px">
+                    <button class="btn btn-secondary" data-action="ec-batch-lessons">生成</button>
+                </div>
+                <div class="ec-hint">例：前缀 Lesson + 1 ~ 144 → 生成 Lesson 1 到 Lesson 144；前缀留空则只生成数字。</div>
+            </div>
+            <div class="ec-batch">
+                <div class="ec-batch-title">📋 批量导入名称（每行一个，可直接粘贴整本书的目录）</div>
+                <div class="ec-add-row" style="align-items:flex-start">
+                    <textarea class="input" id="ecImportNames" rows="4" placeholder="每行一个课程名，例如：&#10;Lesson 1 Excuse me&#10;Lesson 2 Is this your&#10;Unit 3 复习课 || 语法：不定冠词 a/an；选择疑问句"></textarea>
+                </div>
+                <div class="ec-add-row">
+                    <button class="btn btn-secondary" data-action="ec-import-lessons">📥 导入</button>
+                    <span class="ec-hint" style="margin:0">支持中英文混排；重名自动跳过；用「||」可同时带语法要点</span>
+                </div>
+            </div>
+        </div>` : ''}
+        ${selMode ? `
+        <div class="ec-sel-bar">
+            <span class="ec-sel-count">已选 ${selCount} 节</span>
+            <button class="btn btn-sm btn-secondary" data-action="ec-sel-all-lessons">全选 / 反选</button>
+            <button class="btn btn-sm btn-danger" data-action="ec-del-sel-lessons">删除所选</button>
+        </div>` : ''}
+    </div>
+    ${ecTodayRecommendHTML(book.id)}
+    ${lessons.length ? list : `<div class="card ec-empty"><div class="ec-empty-icon">📖</div><div>还没有课程</div><div class="ec-hint">用上方表单添加，或批量生成 / 批量导入整本书的课程</div></div>`}`;
+}
+
+// 当日推荐：按顺序找第一个还有未完成任务的课程；全部完成则推送到点的背诵；都没有返回 null
+function ecTodayRecommend(bookId) {
+    const lessons = ecLessonsOf(bookId);
+    const d = ecData();
+    const todo = lessons.find(l => { const pg = ecLessonProgress(l.id); return pg.total > 0 && pg.done < pg.total; });
+    if (todo) return { kind: 'task', lesson: todo, pg: ecLessonProgress(todo.id) };
+    const due = lessons.find(l => {
+        const rec = d.fsrs[l.id];
+        return rec && rec.last && Date.now() >= (rec.due || 0) && (rec.s || 0) < EC_FSRS.masteredS;
+    });
+    if (due) return { kind: 'recite', lesson: due, rec: d.fsrs[due.id] };
+    return null;
+}
+
+function ecTodayRecommendHTML(bookId) {
+    const reco = ecTodayRecommend(bookId);
+    if (!reco) {
+        return `
+    <div class="card ec-reco ec-reco-done">
+        <div class="ec-reco-head">🎉 今日推荐</div>
+        <div class="ec-reco-name">这本书今天收获满满，真棒！</div>
+        <div class="ec-reco-meta">休息一下也很好，或者去「记忆巩固」逛逛下一课</div>
+        ${ecTodayRecommendWrongHTML(bookId)}
+    </div>`;
+    }
+    if (reco.kind === 'task') {
+        return `
+    <div class="card ec-reco" data-action="ec-open-lesson" data-id="${reco.lesson.id}">
+        <div class="ec-reco-head">🎯 今日推荐</div>
+        <div class="ec-reco-name">${escapeHtml(reco.lesson.name)} <span class="ec-reco-tag">任务 ${reco.pg.done}/${reco.pg.total}</span></div>
+        <div class="ec-reco-meta">想从这一课开始？点一下就出发 →</div>
+        ${ecTodayRecommendWrongHTML(bookId)}
+    </div>`;
+    }
+    return `
+    <div class="card ec-reco" data-action="ec-open-lesson" data-id="${reco.lesson.id}">
+        <div class="ec-reco-head">🎯 今日推荐</div>
+        <div class="ec-reco-name">${escapeHtml(reco.lesson.name)} <span class="ec-reco-tag">背诵到点</span></div>
+        <div class="ec-reco-meta">任务都完成了，这一课的背诵${ecRelText(reco.rec.due)}，去合书画背书 →</div>
+        ${ecTodayRecommendWrongHTML(bookId)}
+    </div>`;
+}
+
+// 普通任务行（完成即可，无复习曲线）
+function ecTaskRow(lessonId, taskDef) {
+    const rec = ecGetTask(lessonId, taskDef.id);
+    const done = !!rec;
+    const btn = done
+        ? `<button class="btn btn-sm btn-secondary" data-action="ec-task" data-lesson="${lessonId}" data-task="${taskDef.id}">↩️ 取消完成</button>`
+        : `<button class="btn btn-sm btn-primary" data-action="ec-task" data-lesson="${lessonId}" data-task="${taskDef.id}">🎯 打卡完成</button>`;
+    // 完成时间默认取系统时间；之前就学过的课可点时间补录实际日期（ecEditTaskTime）
+    const timeLine = done && rec.at
+        ? `<button type="button" class="ec-task-time ec-time-edit" data-action="ec-edit-time" data-lesson="${lessonId}" data-task="${taskDef.id}" title="点击修改完成时间（补录之前学过的课）">✅ 完成于 ${ecFmtWeek(rec.at)} ✏️</button>`
+        : '';
+    return `
+    <div class="ec-task${done ? ' ec-task-done' : ''}">
+        <div class="ec-task-head">
+            <span class="ec-task-icon">${taskDef.icon}</span>
+            <span class="ec-task-name">${taskDef.name}</span>
+            ${done ? '<span class="ec-badge ec-badge-ok">已完成 ✅</span>' : `<span class="ec-badge ec-badge-new">未完成 · ${taskDef.points || 2} 分</span>`}
+        </div>
+        <div class="ec-task-desc">${taskDef.desc}</div>
+        ${timeLine}
+        <div class="ec-task-btn">${btn}</div>
+    </div>`;
+}
+
+// 从记忆巩固 / 待背诵清单点课程 → 直接进该课的背诵页面（并滚动定位到背诵板块）
+function ecOpenRecite(lessonId) {
+    const lesson = ecLessonById(lessonId);
+    if (!lesson) return;
+    state.currentSubTab = state.currentSubTab || {};
+    state.currentSubTab['engcheck'] = 'ec-books';
+    state._ecBookId = lesson.bookId;
+    state._ecLessonId = lessonId;
+    state._ecEditBookId = null;
+    state._ecEditLessonId = null;
+    state._ecBookSelMode = false;
+    state._ecLessonSelMode = false;
+    state._ecBookSel = {};
+    state._ecLessonSel = {};
+    state._ecAddOpen = false;
+    state._ecHeadEdit = false;
+    state._ecEarlyId = null;
+    render();
+    try {
+        if (typeof document !== 'undefined' && document.querySelector) {
+            setTimeout(() => {
+                const el = document.querySelector('.ec-group-recite');
+                if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 30);
+        }
+    } catch (err) { /* 滚动定位失败不影响跳转本身 */ }
+}
+
+// 课文对照块：中文 / 英文各自一个按钮，默认全部隐藏（合上书先自己背，需要提示时才点开）
+function ecTxtBlockHTML(lessonId) {
+    const lesson = ecLessonById(lessonId);
+    if (!lesson) return '';
+    const open = (state._ecTxt && state._ecTxt[lessonId]) || {};
+    const lines = (s) => String(s || '').split('\n').map(x => x.trim()).filter(Boolean);
+    const zhLines = lines(lesson.zh), enLines = lines(lesson.en);
+    const hasZh = zhLines.length > 0, hasEn = enLines.length > 0;
+    const langBtn = (lang, label, icon, has) => has
+        ? `<button class="ec-lang-btn${open[lang] ? ' on' : ''}" data-action="ec-txt-toggle" data-lesson="${lessonId}" data-lang="${lang}" title="${open[lang] ? '收起' : '显示'}${label}">${icon} ${label}${open[lang] ? '' : ' 👁'}</button>`
+        : `<button class="ec-lang-btn ec-lang-add" data-action="ec-zh-edit" data-lesson="${lessonId}" title="导入${label}课文">＋${label}</button>`;
+    const parts = [];
+    if (hasZh && open.zh) parts.push(`<div class="ec-zh-text"><div class="ec-txt-label">🇨🇳 中文</div>${zhLines.map(s => `<p>${escapeHtml(s)}</p>`).join('')}</div>`);
+    if (hasEn && open.en) parts.push(`<div class="ec-zh-text ec-txt-en"><div class="ec-txt-label">🇬🇧 英文原文</div>${enLines.map(s => `<p>${escapeHtml(s)}</p>`).join('')}</div>`);
+    let inner;
+    if (parts.length) inner = parts.join('');
+    else if (hasZh || hasEn) inner = `<div class="ec-zh-text ec-zh-off">课文已藏起来 —— 先合上书自己背一遍，需要提示时点上方「🇨🇳 中文」或「🇬🇧 英文」。</div>`;
+    else inner = `<div class="ec-zh-empty" data-action="ec-zh-edit" data-lesson="${lessonId}">还没有导入课文 —— 点这里粘贴本课的<b>中文和英文</b>，背书时看中文说英文，再展开英文核对原文。</div>`;
+    return `
+        <div class="ec-zh-box">
+            <div class="ec-zh-head">
+                <span class="ec-zh-title">📄 课文对照 · 看中文说英文</span>
+                <span class="ec-zh-actions">
+                    ${langBtn('zh', '中文', '🇨🇳', hasZh)}
+                    ${langBtn('en', '英文', '🇬🇧', hasEn)}
+                    <button class="ec-edit-btn" data-action="ec-zh-edit" data-lesson="${lessonId}" title="导入 / 编辑中英文课文">✏️</button>
+                </span>
+            </div>
+            ${inner}
+        </div>`;
+}
+// 背诵面板（FSRS）
+// ===== v20261106t 恢复：背诵四档自评（切除刷题代码时该函数与刷题章节相邻，勿再删） =====
+// 背诵：mode = 'learn'（旧入口，默认 Good 入库）或 1/2/3/4（四档自评；无记录时=初学入池）
+function ecReciteAction(lessonId, mode) {
+    const d = ecData();
+    const nowTs = Date.now();
+    if (mode === 'learn') {
+        if (d.fsrs[lessonId] && d.fsrs[lessonId].last) { toast('这一课已入库'); return; }
+        d.fsrs[lessonId] = ecFsrsLearn(nowTs);
+        ecAddScore(5);
+        ecLogStudy();
+        ecAfterAction('📖 已入库！首次复习安排在 1 天后，+5 分');
+        return;
+    }
+    const grade = parseInt(mode, 10);
+    if (isNaN(grade) || grade < 1 || grade > 4) return;
+    const isFirst = !d.fsrs[lessonId] || !d.fsrs[lessonId].last;
+    if (isFirst) {
+        // 初学四选一：直接入库并按该档首评
+        d.fsrs[lessonId] = ecFsrsLearn(nowTs);
+    }
+    const rec = d.fsrs[lessonId];
+    ecFsrsReview(rec, grade, nowTs);
+    if (isFirst) {
+        ecAddScore(5);
+    } else if (grade === 1) ecAddScore(0);
+    else if (grade === 2) ecAddScore(1);
+    else if (grade === 3) ecAddScore(2);
+    else ecAddScore(3);
+    ecLogStudy();
+    // 收起行内展开并记录即时反馈：用户点完四档必须立刻看到"发生了什么"，
+    // 否则会以为按钮没反应（旧版只弹一个短 toast，行内状态不变，观感像卡住）。
+    state._ecEarlyId = null;
+    const g = EC_GRADES.find(x => x.id === grade);
+    const gain = isFirst ? 5 : (grade === 1 ? 0 : grade === 2 ? 1 : grade === 3 ? 2 : 3);
+    const dueText = rec.s >= EC_FSRS.masteredS
+        ? `🏆 稳定性 ${ecSDays(rec.s)}，已掌握！`
+        : `下次复习 ${ecFmtWeek(rec.due)}（${ecRelText(rec.due)}）`;
+    const feedback = `✅ 已评价「${g ? g.name : ''}」${gain ? ` +${gain} 分` : '（不加分）'} · ${dueText}`;
+    state._ecLastReview = { id: lessonId, text: feedback, at: nowTs };
+    const msg = isFirst
+        ? `🌟 初学自评「${g ? g.name : ''}」已加入复习池，+5 分${rec.s >= EC_FSRS.masteredS ? ' 🏆' : '，下次复习：' + ecRelText(rec.due)}`
+        : feedback;
+    ecAfterAction(msg);
+}
+
+function ecRecitePanel(lessonId) {
+    const d = ecData();
+    const lesson = ecLessonById(lessonId);
+    const rec = d.fsrs[lessonId];
+    const st = ecReciteStatus(rec, Date.now());
+    const rv = state._ecLastReview;
+    const rvHtml = (rv && rv.id === lessonId) ? `<div class="ec-review-feedback">${escapeHtml(rv.text)}</div>` : '';
+    const zhBox = !lesson ? '' : ecTxtBlockHTML(lessonId);
+    let body;
+    if (st === 'new') {
+        body = `
+            <div class="ec-recite-new">
+                <div class="ec-task-desc">初学这一课：跟着书本读顺 / 试着背一遍，按流畅度选一档 → 立即加入 FSRS 复习池（+5 分）。难的课多刷、熟的课少刷；之后随时可以改判。</div>
+                <div class="ec-recite-actions">${EC_GRADES.map(g => `
+                    <button class="ec-grade-btn ${g.cls}" data-action="ec-recite" data-lesson="${lessonId}" data-mode="${g.id}" title="${g.desc}">
+                        <span class="ec-grade-name">${g.name} · ${g.label}</span>
+                        <span class="ec-grade-desc">${g.desc}</span>
+                    </button>`).join('')}</div>
+            </div>`;
+    } else if (st === 'mastered') {
+        body = `
+            <div class="ec-recite-meta">
+                <span class="ec-badge ec-badge-ok">🏆 已掌握</span>
+                <span>稳定性 ${ecSDays(rec.s)} · 成功复习 ${rec.n} 次 · 难度 D=${rec.d.toFixed(1)}</span>
+            </div>
+            <div class="ec-hint">已超过 60 天间隔，这一课背得很牢了。想自检可以随时再背一次。</div>
+            <div class="ec-recite-actions">${EC_GRADES.map(g => `<button class="ec-grade-btn ${g.cls}" data-action="ec-recite" data-lesson="${lessonId}" data-mode="${g.id}" title="${g.desc}">${g.name}</button>`).join('')}</div>`;
+    } else if (st === 'due') {
+        const late = rec.due < new Date().setHours(0, 0, 0, 0);
+        body = `
+            <div class="ec-recite-meta">
+                <span class="ec-badge ${late ? 'ec-badge-late' : 'ec-badge-due'}">${late ? '可以温习 · 慢慢来' : '可以温习'}</span>
+                <span>应复习：${ecFmtDT(rec.due)}（${ecRelText(rec.due)}） · 稳定性 ${ecSDays(rec.s)} · 难度 D=${rec.d.toFixed(1)} · 已成功 ${rec.n} 次</span>
+            </div>
+            <div class="ec-recite-tip">合上书，尝试独立背诵整篇课文，然后按流畅度打分：</div>
+            <div class="ec-recite-actions">${EC_GRADES.map(g => `
+                <button class="ec-grade-btn ${g.cls}" data-action="ec-recite" data-lesson="${lessonId}" data-mode="${g.id}">
+                    <span class="ec-grade-name">${g.name} · ${g.label}</span>
+                    <span class="ec-grade-desc">${g.desc}</span>
+                </button>`).join('')}</div>`;
+    } else {
+        body = `
+            <div class="ec-recite-meta">
+                <span class="ec-badge ec-badge-doing">学习中</span>
+                <span>下次复习：${ecFmtWeek(rec.due)}（${ecRelText(rec.due)}） · 稳定性 ${ecSDays(rec.s)} · 难度 D=${rec.d.toFixed(1)} · 已成功 ${rec.n} 次</span>
+            </div>
+            <div class="ec-hint">还没到复习时间。如果觉得遗忘了，可以直接在下面提前自评打分（系统会按提前量少涨一点）：</div>
+            <div class="ec-recite-actions">${EC_GRADES.map(g => `
+                <button class="ec-grade-btn ${g.cls}" data-action="ec-recite" data-lesson="${lessonId}" data-mode="${g.id}" title="${g.desc}">
+                    <span class="ec-grade-name">${g.name} · ${g.label}</span>
+                    <span class="ec-grade-desc">提前复习</span>
+                </button>`).join('')}</div>`;
+    }
+    return `
+    <div class="card ec-group-recite">
+        <div class="ec-group-head">
+            <span class="ec-group-title">📖 背诵板块 · 整篇课文</span>
+            <span class="ec-group-sub">FSRS 复习曲线</span>
+        </div>
+        <div class="ec-group-body">${zhBox}${body}${rvHtml}</div>
+    </div>`;
+}
+
+function ecRenderLesson() {
+    const lesson = ecLessonById(state._ecLessonId);
+    if (!lesson) { state._ecLessonId = null; return ecRenderLessons(); }
+    const book = ecBookById(lesson.bookId);
+    const bookTasks = ecBookTasks(lesson.bookId);
+    const groups = EC_TASK_GROUPS.map(g => {
+        const defs = bookTasks.filter(t => t.group === g.id);
+        const rows = defs.map(t => ecTaskRow(lesson.id, t)).join('');
+        const body = rows || `<div class="ec-hint" style="padding:12px 16px">这个板块还没有任务。返回书单，点本书的 ✏️ 编辑 →「打卡任务管理」里添加。</div>`;
+        return `
+        <div class="card ${g.cls}">
+            <div class="ec-group-head">
+                <span class="ec-group-title">${g.icon} ${g.name} · ${g.sub}</span>
+                <span class="ec-group-sub">完成即可，不设复习</span>
+            </div>
+            <div class="ec-group-body">${body}</div>
+        </div>`;
+    }).join('');
+    return `
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">${escapeHtml(book ? book.name : '')} › ${escapeHtml(lesson.name)}</div>
+            <button class="btn btn-sm btn-secondary" data-action="ec-back-lessons">‹ 返回课程</button>
+        </div>
+        ${lesson.note ? `<div class="ec-lesson-note ec-lesson-note-lg">${escapeHtml(lesson.note)}</div>` : ''}
+        <div class="ec-hint">三级目录：每节课按「听 / 读 / 说 / 写」打卡，再加一整篇课文背诵（FSRS 复习）。</div>
+    </div>
+    ${ecRecitePanel(lesson.id)}
+    ${ecWbLessonCardHTML(lesson.id)}
+    ${groups}`;
+}
+
+// 复习日历预览：接下来 N 天每天要复几课、分别是哪些（只看排期，不做完整日历）
+// 逾期单独一行最上面（最该处理），最后一行「更远」兜住 7 天以后的课
+function ecReviewCalendarHTML(days) {
+    const N = days || 7;
+    const d = ecData();
+    const DAY = 86400000;
+    const todayStart = new Date().setHours(0, 0, 0, 0);
+    const items = [];
+    d.books.forEach(b => ecLessonsOf(b.id).forEach(l => {
+        const rec = d.fsrs[l.id];
+        if (!rec || !rec.last) return;
+        items.push({ lesson: l, book: b, rec, due: Number(rec.due) || 0 });
+    }));
+    items.sort((a, b) => a.due - b.due);
+    const overdue = items.filter(it => it.due < todayStart);
+    const groups = [];
+    for (let i = 0; i < N; i++) {
+        const from = todayStart + i * DAY, to = from + DAY;
+        groups.push({ i, from, list: items.filter(it => it.due >= from && it.due < to) });
+    }
+    const laterCount = items.filter(it => it.due >= todayStart + N * DAY).length;
+    const wk = ['日', '一', '二', '三', '四', '五', '六'];
+    const mmdd = (ts) => {
+        const dt = new Date(ts);
+        return `${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    };
+    const chipName = (name) => {
+        const s = String(name || '').trim();
+        return s.length > 18 ? s.slice(0, 18) + '…' : s;
+    };
+    const rowHTML = (label, sub, list, cls) => {
+        const chips = list.slice(0, 6).map(it =>
+            `<button class="ec-cal-chip" data-action="ec-open-recite" data-lesson="${it.lesson.id}" title="${escapeHtml(it.lesson.name)}（${escapeHtml(it.book.name)}）· ${escapeHtml(ecFmtWeek(it.due))}">${escapeHtml(chipName(it.lesson.name))}</button>`
+        ).join('');
+        const more = list.length > 6 ? `<span class="ec-cal-more">+${list.length - 6}</span>` : '';
+        return `
+        <div class="ec-cal-row${cls ? ' ' + cls : ''}">
+            <div class="ec-cal-day"><span class="ec-cal-label">${label}</span><span class="ec-cal-date">${sub}</span></div>
+            <div class="ec-cal-body">${list.length ? chips + more : '<span class="ec-cal-none">没有要复习的</span>'}</div>
+            <div class="ec-cal-count">${list.length || 0}<span class="ec-cal-unit">课</span></div>
+        </div>`;
+    };
+    const rows = [];
+    if (overdue.length) rows.push(rowHTML('🌿 慢慢补', '随时都行', overdue, 'ec-cal-late'));
+    groups.forEach(g => {
+        const label = g.i === 0 ? '今天' : (g.i === 1 ? '明天' : (g.i === 2 ? '后天' : `${g.i} 天后`));
+        const dt = new Date(g.from);
+        rows.push(rowHTML(label, `${mmdd(g.from)} 周${wk[dt.getDay()]}`, g.list, g.i === 0 ? 'ec-cal-today' : ''));
+    });
+    const soonTotal = groups.reduce((s, g) => s + g.list.length, 0);
+    return `
+    <div class="card ec-cal-card">
+        <div class="card-header">
+            <div class="card-title">📅 接下来 ${N} 天复习预览</div>
+            <span style="font-size:12px;color:var(--text-secondary)">${N} 天共 ${soonTotal} 课${laterCount ? ` · 更远还有 ${laterCount} 课` : ''}</span>
+        </div>
+        <div class="ec-cal">${rows.join('')}</div>
+        <div class="ec-hint">只做预览：点课名可直接进入该课背诵页；「提前复习」请到下方清单里操作。想调整节奏就按实际背诵情况重新自评，间隔会自动重排。</div>
+    </div>`;
+}
+// 记忆巩固内部分层（三级目录）：概览 / 待背诵 / 学习中 / 已掌握
+const EC_REVIEW_SUBTABS = [
+    { id: 'overview', name: '📊 概览', icon: '' },
+    { id: 'due', name: '⏰ 待背诵', icon: '' },
+    { id: 'waiting', name: '📖 学习中', icon: '' },
+    { id: 'mastered', name: '🏆 已掌握', icon: '' }
+];
+
+function ecRenderReview() {
+    const stats = ecGlobalStats();
+    const dueList = ecDueRecites();
+    const earlyId = state._ecEarlyId;
+    const lastRv = state._ecLastReview;
+    const rvFeedback = (lessonId) => (lastRv && lastRv.id === lessonId ? `<div class="ec-review-feedback">${escapeHtml(lastRv.text)}</div>` : '');
+    const gradeMini = (lessonId) => EC_GRADES.map(g => `<button class="ec-grade-btn ${g.cls} ec-grade-mini" data-action="ec-recite" data-lesson="${lessonId}" data-mode="${g.id}" title="${g.desc}">${g.name}</button>`).join('');
+    // ① 待背诵清单（已到时间，含逾期）
+    const dueRows = dueList.map(it => {
+        const late = (it.rec.due || 0) < new Date().setHours(0, 0, 0, 0);
+        return `
+        <div class="ec-due-row${late ? ' late' : ''}">
+            <div class="ec-due-info">
+                <div class="ec-due-title ec-due-click" data-action="ec-open-recite" data-lesson="${it.lesson.id}" title="点击直接进入这一课的背诵页面">📖 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span><span class="ec-due-go">去背诵 ›</span></div>
+                <div class="ec-due-meta">应复习：${ecFmtWeek(it.rec.due)}（${ecRelText(it.rec.due)}） · 稳定性 ${ecSDays(it.rec.s)} · D=${it.rec.d.toFixed(1)} · 已成功 ${it.rec.n} 次</div>
+                ${rvFeedback(it.lesson.id)}
+                <div class="ec-recite-actions ec-recite-inline">${gradeMini(it.lesson.id)}</div>
+            </div>
+        </div>`;
+    }).join('');
+    // ② 学习中（未到复习时间，可提前自评）
+    const d = ecData();
+    const waiting = [];
+    d.books.forEach(b => ecLessonsOf(b.id).forEach(l => {
+        const rec = d.fsrs[l.id];
+        if (!rec || !rec.last) return;
+        if ((rec.s || 0) >= EC_FSRS.masteredS) return;
+        if (Date.now() < (rec.due || 0)) waiting.push({ book: b, lesson: l, rec });
+    }));
+    waiting.sort((a, b) => (a.rec.due || 0) - (b.rec.due || 0));
+    const waitRows = waiting.map(it => `
+        <div class="ec-due-row">
+            <div class="ec-due-info">
+                <div class="ec-due-title ec-due-click" data-action="ec-open-recite" data-lesson="${it.lesson.id}" title="点击直接进入这一课的背诵页面">📖 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span><span class="ec-due-go">去背诵 ›</span></div>
+                <div class="ec-due-meta">下次复习：${ecFmtWeek(it.rec.due)}（${ecRelText(it.rec.due)}） · 稳定性 ${ecSDays(it.rec.s)} · D=${it.rec.d.toFixed(1)} · 已成功 ${it.rec.n} 次</div>
+                ${rvFeedback(it.lesson.id)}
+                ${earlyId === it.lesson.id
+                    ? `<div class="ec-recite-actions ec-recite-inline">${gradeMini(it.lesson.id)}</div>`
+                    : `<div class="ec-due-btns"><button class="btn btn-sm btn-secondary" data-action="ec-early-review" data-lesson="${it.lesson.id}">⚡ 提前复习（觉得遗忘了就点这里）</button></div>`}
+            </div>
+        </div>`).join('');
+    // ③ 已掌握
+    const mastered = [];
+    d.books.forEach(b => ecLessonsOf(b.id).forEach(l => {
+        const rec = d.fsrs[l.id];
+        if (rec && rec.last && (rec.s || 0) >= EC_FSRS.masteredS) mastered.push({ book: b, lesson: l, rec });
+    }));
+    mastered.sort((a, b) => (b.rec.s || 0) - (a.rec.s || 0));
+    const masterRows = mastered.map(it => `
+        <div class="ec-due-row">
+            <div class="ec-due-info">
+                <div class="ec-due-title ec-due-click" data-action="ec-open-recite" data-lesson="${it.lesson.id}" title="点击直接进入这一课的背诵页面">🏆 ${escapeHtml(it.lesson.name)}<span class="ec-due-path">${escapeHtml(it.book.name)}</span><span class="ec-due-go">去背诵 ›</span></div>
+                <div class="ec-due-meta">稳定性 ${ecSDays(it.rec.s)} · 成功复习 ${it.rec.n} 次 · D=${it.rec.d.toFixed(1)}${earlyId === it.lesson.id ? '' : ''}</div>
+                ${rvFeedback(it.lesson.id)}
+                ${earlyId === it.lesson.id
+                    ? `<div class="ec-recite-actions ec-recite-inline">${gradeMini(it.lesson.id)}</div>`
+                    : `<div class="ec-due-btns"><button class="btn btn-sm btn-secondary" data-action="ec-early-review" data-lesson="${it.lesson.id}">🔁 再背一次自检</button></div>`}
+            </div>
+        </div>`).join('');
+    const rtabRaw = (state.currentSubTab && state.currentSubTab['ec-review-sub']) || '';
+    const rtab = EC_REVIEW_SUBTABS.some(t => t.id === rtabRaw) ? rtabRaw : 'overview';
+    const nav = `<div class="card ec-review-subnav"><div class="tab-bar">${EC_REVIEW_SUBTABS.map(t => `<button class="tab-btn ${rtab === t.id ? 'active' : ''}" data-action="tab" data-module="ec-review-sub" data-tab="${t.id}">${t.name}</button>`).join('')}</div></div>`;
+    let body = '';
+    if (rtab === 'overview') {
+        body = `
+        <div class="card">
+            <div class="card-header"><div class="card-title">⏰ 记忆巩固 · 概览</div></div>
+            <div class="ec-stats">
+                <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${stats.due}</div><div class="ec-stat-label">可以温习</div></div>
+                <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.overdue}</div><div class="ec-stat-label">慢慢补</div></div>
+                <div class="ec-stat"><div class="ec-stat-num">${waiting.length}</div><div class="ec-stat-label">学习中</div></div>
+                <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.mastered}</div><div class="ec-stat-label">已掌握</div></div>
+            </div>
+            <div class="ec-hint">在池课程共 ${dueList.length + waiting.length + mastered.length} 节：初学四选一入池后，到这里看每节课的下次复习时间；觉得遗忘了可以提前复习。</div>
+        </div>
+        ${ecReviewCalendarHTML(7)}
+        ${ecFsrsCard()}`;
+    } else if (rtab === 'due') {
+        body = `
+        <div class="card">
+            <div class="card-header"><div class="card-title">⏰ 待背诵清单</div><span style="font-size:12px;color:var(--text-secondary)">点课程名 → 直接进背诵页</span></div>
+            ${dueList.length ? dueRows : `<div class="ec-empty"><div class="ec-empty-icon">🎉</div><div>当前没有到点的课文</div><div class="ec-hint">去「主线任务」学新课，或看看「学习中」</div></div>`}
+        </div>`;
+    } else if (rtab === 'waiting') {
+        body = `
+        <div class="card">
+            <div class="card-header"><div class="card-title">📖 学习中（未到复习时间）</div><span style="font-size:12px;color:var(--text-secondary)">可提前自评</span></div>
+            ${waiting.length ? waitRows : `<div class="ec-empty"><div class="ec-empty-icon">🌱</div><div>还没有在学的课文</div><div class="ec-hint">学新课时选一档难度，就会加入这里</div></div>`}
+        </div>`;
+    } else { // mastered
+        body = mastered.length ? `
+        <div class="card">
+            <div class="card-header"><div class="card-title">🏆 已掌握</div><span style="font-size:12px;color:var(--text-secondary)">稳定性 ≥ 60 天</span></div>
+            ${masterRows}
+        </div>` : `
+        <div class="ec-empty"><div class="ec-empty-icon">🌟</div><div>还没有已掌握的课文</div><div class="ec-hint">稳定性达到 60 天后会出现在这里</div></div>`;
+    }
+    return `
+    <div class="ec-crumb">英语打卡 › 记忆巩固</div>
+    ${nav}
+    ${body}`;
+}
+
+// 荣誉战绩 Tab
+// 荣誉战绩 Tab：只讲收获，不讲欠账；成就按五大类分组，未点亮也带温柔进度
+function ecRenderAchieve() {
+    const d = ecData();
+    const c = ecHubCounts();
+    const unlocked = EC_ACHIEVEMENTS.filter(a => d.achievements[a.id]);
+    const locked = EC_ACHIEVEMENTS.filter(a => !d.achievements[a.id]);
+    const achCard = (a, on) => {
+        const g = ecAchieveGo(a.id);
+        const cat = EC_ACH_CATS.find(x => x.id === a.cat);
+        return `
+        <div class="ec-ach-item${on ? ' ec-ach-on' : ' ec-ach-soon'} cat-${a.cat}">
+            <span class="ec-ach-icon">${on ? a.icon : '🌱'}</span>
+            <div class="ec-ach-info">
+                <div class="ec-ach-name">${a.name}${on ? '<span class="ec-ach-tag">已点亮</span>' : `<span class="ec-ach-cat">${cat ? cat.name : ''}</span>`}</div>
+                <div class="ec-ach-desc">${a.desc}</div>
+                ${on ? `<div class="ec-ach-date">${ecFmtDT(ecAchTime(d.achievements[a.id]) || Date.now())} 收下 ✨</div>` : ecAchProgress(a)}
+            </div>
+            ${on ? '<span class="ec-ach-star">⭐</span>' : `<button class="ec-ach-go" data-action="ec-go" data-to="${g.to}" data-sub="${g.sub}" title="去这个板块逛逛">去看看 ›</button>`}
+        </div>`;
+    };
+    const groupByCat = (list, on) => EC_ACH_CATS.map(cat => {
+        const arr = list.filter(a => a.cat === cat.id);
+        if (!arr.length) return '';
+        return `<div class="ec-ach-cat-label">${cat.name}<span>${arr.length} 枚</span></div><div class="ec-ach-grid">${arr.map(a => achCard(a, on)).join('')}</div>`;
+    }).join('');
+    // 最近 7 天学习热力：按当天完成项数分深浅，不再只是「亮 / 不亮」
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+        const dt = new Date(); dt.setDate(dt.getDate() - i);
+        const key = dateStr(dt);
+        const cnt = d.days[key] || 0;
+        days.push({ key, cnt, label: (dt.getMonth() + 1) + '/' + dt.getDate(), level: cnt >= 5 ? 3 : cnt >= 3 ? 2 : cnt >= 1 ? 1 : 0 });
+    }
+    const weekTotal = days.reduce((s, x) => s + x.cnt, 0);
+    const strip = days.map(x => `
+        <div class="ec-day lv${x.level}${x.cnt ? ' on' : ''}" title="${x.key}：收获 ${x.cnt} 项">
+            <span class="ec-day-dot">${x.cnt || ''}</span>
+            <span class="ec-day-label">${x.label}</span>
+        </div>`).join('');
+    const studyDays = Object.keys(d.days).length;
+    const wc = ecWbCounts(ecWbData().items);
+    const achPct = Math.round(c.achievements / c.achievementTotal * 100);
+    return `
+    <div class="card">
+        <div class="card-header"><div class="card-title">📊 学习数据</div><span class="ec-card-note">累计</span></div>
+        <div class="ec-stats">
+            <div class="ec-stat"><div class="ec-stat-num">${(d.score || 0).toLocaleString()}</div><div class="ec-stat-label">总积分</div></div>
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-due">${d.streak || 0}</div><div class="ec-stat-label">连续天数</div></div>
+            <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${d.bestStreak || 0}</div><div class="ec-stat-label">最长连续</div></div>
+            <div class="ec-stat"><div class="ec-stat-num">${studyDays}</div><div class="ec-stat-label">学习天数</div></div>
+        </div>
+        <div class="ec-wb-achstats">📕 错题小宝藏：共 <b>${wc.total}</b> 题 · 可以回顾 <b>${wc.due}</b> · 已经记牢 <b>${wc.mastered}</b>（复习错题也算今天的学习）</div>
+        <div class="ec-day-strip">${strip}</div>
+        <div class="ec-hint">最近 7 天共收获 <b>${weekTotal}</b> 项 · 颜色越深，那天越尽兴；来过的日子都会亮起来 ✨</div>
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">🎡 四个板块的收获</div><span class="ec-card-note">点卡片直达</span></div>
+        <div class="ec-mod-stats">
+            <button class="ec-mod-stat" data-action="ec-go" data-to="ec-books" data-sub="books">
+                <span class="ec-mod-ico">📚</span><span class="ec-mod-name">主线任务</span>
+                <span class="ec-mod-num">${c.tasksDone}<i>/${c.tasksTotal}</i></span>
+                <span class="ec-mod-sub">学到的本领 · 每课都算数</span>
+            </button>
+            <button class="ec-mod-stat" data-action="ec-go" data-to="ec-review" data-sub="due">
+                <span class="ec-mod-ico">⏰</span><span class="ec-mod-name">记忆巩固</span>
+                <span class="ec-mod-num">${c.reciteMastered}<i> 篇记牢</i></span>
+                <span class="ec-mod-sub">已经牢牢记住啦 🌿</span>
+            </button>
+            <button class="ec-mod-stat" data-action="ec-go" data-to="ec-wrong" data-sub="due">
+                <span class="ec-mod-ico">📕</span><span class="ec-mod-name">查漏补缺</span>
+                <span class="ec-mod-num">${c.wrongTotal}<i> 题小宝藏</i></span>
+                <span class="ec-mod-sub">${c.wrongMastered} 题变成好朋友 💎</span>
+            </button>
+            <button class="ec-mod-stat" data-action="ec-go" data-to="ec-achieve" data-sub="">
+                <span class="ec-mod-ico">🏆</span><span class="ec-mod-name">荣誉战绩</span>
+                <span class="ec-mod-num">${c.achievements}<i>/${c.achievementTotal}</i></span>
+                <span class="ec-mod-sub">已点亮 · 今日 ${c.todayDone} 项</span>
+            </button>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header"><div class="card-title">🏆 荣誉墙</div><span class="ec-card-note">已点亮 ${c.achievements}/${c.achievementTotal} 枚</span></div>
+        <div class="ec-ach-progress"><div class="ec-ach-progress-fill" style="width:${achPct}%"></div></div>
+        <div class="ec-harvest-line">${ecHarvestLine(c)}</div>
+        ${unlocked.length ? `<div class="ec-ach-group-title">✨ 已点亮（${unlocked.length}）· 每一枚都是认真走过的路</div>${groupByCat(unlocked, true)}` : '<div class="ec-hint">第一枚徽章正在路上，随便逛逛就会遇见 🌱</div>'}
+        ${locked.length ? `<div class="ec-ach-group-title">🌱 即将点亮（${locked.length}）· 不急，慢慢来就好</div>${groupByCat(locked, false)}` : '<div class="ec-hint">全部徽章都点亮啦，太厉害了 🎉</div>'}
+    </div>`;
+}
+
+// 书单/课程/任务 三级视图分发（书单 Tab 内下钻）
+function ecRenderDrill() {
+    if (state._ecLessonId && ecLessonById(state._ecLessonId)) return ecRenderLesson();
+    if (state._ecBookId && ecBookById(state._ecBookId)) return ecRenderLessons();
+    return ecRenderBooks();
+}
+
+// ---------- 事件委托 ----------
+document.addEventListener('click', async e => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+    if (!action || action.indexOf('ec-') !== 0) return;
+
+    if (action === 'ec-add-book') { ecAddBook(); return; }
+    if (action === 'ec-batch-books') { ecBatchBooks(); return; }
+    if (action === 'ec-rename-book') { ecRenameBook(el.dataset.id); return; }
+    if (action === 'ec-delete-book') { ecDeleteBook(el.dataset.id); return; }
+    if (action === 'ec-edit-book') { state._ecEditBookId = state._ecEditBookId === el.dataset.id ? null : el.dataset.id; render(); return; }
+    if (action === 'ec-book-sel-mode') { ecBookSelMode(); return; }
+    if (action === 'ec-book-sel') { ecBookSelToggle(el.dataset.id); return; }
+    if (action === 'ec-sel-all-books') { ecBookSelAll(); return; }
+    if (action === 'ec-del-sel-books') { ecDelSelBooks(); return; }
+    if (action === 'ec-add-task') { ecAddTaskToBook(); return; }
+    if (action === 'ec-rename-task') { ecRenameBookTask(el.dataset.book, el.dataset.task); return; }
+    if (action === 'ec-del-task') { ecDelBookTask(el.dataset.book, el.dataset.task); return; }
+    if (action === 'ec-task-move') { ecMoveBookTask(el.dataset.book, el.dataset.task, el.dataset.d); return; }
+    if (action === 'ec-open-book') { state._ecBookId = el.dataset.id; state._ecLessonId = null; state._ecEditBookId = null; state._ecBookSelMode = false; state._ecBookSel = {}; state._ecAddOpen = false; state._ecHeadEdit = false; render(); return; }
+    if (action === 'ec-back-books') { state._ecBookId = null; state._ecLessonSelMode = false; state._ecLessonSel = {}; state._ecAddOpen = false; state._ecHeadEdit = false; render(); return; }
+    if (action === 'ec-head-edit') { state._ecHeadEdit = !state._ecHeadEdit; render(); return; }
+    if (action === 'ec-add-lesson') { ecAddLesson(); return; }
+    if (action === 'ec-batch-lessons') { ecBatchLessons(); return; }
+    if (action === 'ec-import-lessons') { ecImportLessons(); return; }
+    if (action === 'ec-rename-lesson') { ecRenameLesson(el.dataset.id); return; }
+    if (action === 'ec-edit-note') { ecEditLessonNote(el.dataset.id); return; }
+    if (action === 'ec-delete-lesson') { ecDeleteLesson(el.dataset.id); return; }
+    if (action === 'ec-edit-lesson') { state._ecEditLessonId = state._ecEditLessonId === el.dataset.id ? null : el.dataset.id; render(); return; }
+    if (action === 'ec-lesson-sel-mode') { ecLessonSelMode(); return; }
+    if (action === 'ec-lesson-sel') { ecLessonSelToggle(el.dataset.id); return; }
+    if (action === 'ec-sel-all-lessons') { ecLessonSelAll(); return; }
+    if (action === 'ec-del-sel-lessons') { ecDelSelLessons(); return; }
+    if (action === 'ec-open-lesson') { state._ecLessonId = el.dataset.id; state._ecEditLessonId = null; state._ecLessonSelMode = false; state._ecLessonSel = {}; state._ecAddOpen = false; render(); return; }
+    if (action === 'ec-back-lessons') { state._ecLessonId = null; state._ecAddOpen = false; render(); return; }
+    if (action === 'ec-task') { ecToggleTask(el.dataset.lesson, el.dataset.task); return; }
+    if (action === 'ec-edit-time') { ecEditTaskTime(el.dataset.lesson, el.dataset.task); return; }
+    if (action === 'ec-clear-records') { ecClearRecords(); return; }
+    if (action === 'ec-recite') { ecReciteAction(el.dataset.lesson, el.dataset.mode); return; }
+    if (action === 'ec-zh-edit') { ecEditLessonZh(el.dataset.lesson); return; }
+    // 课文对照：中文/英文各自独立展开收起（默认都隐藏）
+    if (action === 'ec-txt-toggle') {
+        const id = el.dataset.lesson, lang = el.dataset.lang === 'en' ? 'en' : 'zh';
+        state._ecTxt = state._ecTxt || {};
+        const cur = state._ecTxt[id] || {};
+        state._ecTxt[id] = { zh: !!cur.zh, en: !!cur.en };
+        state._ecTxt[id][lang] = !cur[lang];
+        render();
+        return;
+    }
+    if (action === 'ec-open-recite') { ecOpenRecite(el.dataset.lesson); return; }
+    if (action === 'ec-batch-zh') { ecBatchZhImport(el.dataset.book, el.dataset.lang || 'mix'); return; }
+    if (action === 'ec-clear-zh') { ecClearZh(el.dataset.book || ''); return; }
+    if (action === 'ec-early-review') { state._ecEarlyId = state._ecEarlyId === el.dataset.lesson ? null : el.dataset.lesson; render(); return; }
+    if (action === 'ec-toggle-add') { state._ecAddOpen = !state._ecAddOpen; render(); return; }
+    // ---------- 英语打卡：子标签显示设置（隐藏 / 排序，弹窗内操作）----------
+    if (action === 'ec-tabcfg-open') { ecOpenTabCfg(); return; }
+    if (action === 'ec-tabcfg-show') { ecTabCfgToggleShow(el.dataset.tab); ecTabCfgRefreshIfModal(); return; }
+    if (action === 'ec-tabcfg-up') { ecTabCfgMove(el.dataset.tab, 'up'); ecTabCfgRefreshIfModal(); return; }
+    if (action === 'ec-tabcfg-down') { ecTabCfgMove(el.dataset.tab, 'down'); ecTabCfgRefreshIfModal(); return; }
+    // ---------- 查漏补缺（分书本 / 分课时 + 学习联动） ----------
+    if (action === 'ec-wb-import') { ecWbImportOpen(el.dataset.lesson || ''); return; }
+    if (action === 'ec-wb-template') { ecWbImportOpen('', true); return; }
+    if (action === 'ec-wb-import-lesson') { ecWbImportOpen(el.dataset.id || ''); return; }
+    if (action === 'ec-wb-import-json') { ecWbImportJSON(); return; }
+    if (action === 'ec-wb-export') { ecWbExport(); return; }
+    if (action === 'ec-wb-add') { ecWbAddSingle(el.dataset.lesson || ''); return; }
+    if (action === 'ec-wb-edit') { ecWbEdit(el.dataset.id); return; }
+    if (action === 'ec-wb-del') { ecWbDel(el.dataset.id); return; }
+    if (action === 'ec-wb-clear') { ecWbClear(); return; }
+    if (action === 'ec-wb-start') { ecWbStart(''); return; }
+    if (action === 'ec-wb-start-one') { ecWbStart(el.dataset.id || ''); return; }
+    if (action === 'ec-wb-start-book') { ecWbStartBook(el.dataset.id || ''); return; }
+    if (action === 'ec-wb-start-lesson') { ecWbStartLesson(el.dataset.id || ''); return; }
+    if (action === 'ec-wb-start-unassigned') { state._wbFilterBookId = ''; state._wbFilterLessonId = ''; ecWbStart('', { bookId: EC_WB_UNASSIGNED }); return; }
+    if (action === 'ec-wb-reveal') { if (state._wbSession) { state._wbSession.revealed = true; render(); } return; }
+    if (action === 'ec-wb-grade') { ecWbGrade(parseInt(el.dataset.g, 10)); return; }
+    if (action === 'ec-wb-exit') { ecWbExit(); return; }
+    if (action === 'ec-wb-reset') { ecWbReset(el.dataset.id); return; }
+    if (action === 'ec-wb-autotask') { ecWbToggleAutoTask(); return; }
+    // 学习驾驶舱 / 板块联动条 / 成就墙的统一跳转
+    if (action === 'ec-go') {
+        ecGo(el.dataset.to || 'ec-books', { sub: el.dataset.sub || '', book: el.dataset.book || '', lesson: el.dataset.lesson || '' });
+        return;
+    }
+    // 错题本三级目录：书本 → 课时 → 错题
+    if (action === 'ec-wb-open-book') {
+        state.currentSubTab = state.currentSubTab || {};
+        state.currentSubTab['ec-wrong-sub'] = 'books';
+        state._wbBookId = el.dataset.id || ''; state._wbLessonId = null;
+        state._wbSelMode = false; state._wbSel = {}; render(); return;
+    }
+    if (action === 'ec-wb-open-lesson') { state._wbLessonId = el.dataset.id || ''; state._wbSelMode = false; state._wbSel = {}; render(); return; }
+    if (action === 'ec-wb-back-books') { state._wbBookId = null; state._wbLessonId = null; state._wbSelMode = false; state._wbSel = {}; render(); return; }
+    if (action === 'ec-wb-back-book') { state._wbLessonId = null; state._wbSelMode = false; state._wbSel = {}; render(); return; }
+    if (action === 'ec-wb-open-wrong-lesson') { ecWbGoLesson(el.dataset.id || ''); return; }
+    // 批量管理：勾选 / 全选 / 批量删除 / 批量改归属 / 课时内排序
+    if (action === 'ec-wb-sel-mode') { ecWbSelMode(); return; }
+    if (action === 'ec-wb-sel') { ecWbSelToggle(el.dataset.id); return; }
+    if (action === 'ec-wb-sel-all') { ecWbSelAll(); return; }
+    if (action === 'ec-wb-del-sel') { ecWbDelSelected(); return; }
+    if (action === 'ec-wb-move-sel') { ecWbMoveSelected(); return; }
+    if (action === 'ec-wb-move-up') { ecWbMoveItem(el.dataset.id, 'up'); return; }
+    if (action === 'ec-wb-move-down') { ecWbMoveItem(el.dataset.id, 'down'); return; }
+});
+
+// 可以回顾页「按书本 / 课时筛选」下拉（select 不走 click 委托）
+document.addEventListener('change', e => {
+    const el = e.target;
+    if (!el || !el.dataset || !el.dataset.wbFilter) return;
+    if (el.dataset.wbFilter === 'book') { state._wbFilterBookId = el.value || ''; state._wbFilterLessonId = ''; }
+    else state._wbFilterLessonId = el.value || '';
+    render();
+});
+
 
 function init() {
     loadState();
@@ -11218,9 +14152,10 @@ function init() {
         if (!state.supabase) { toast('未连接云端，请先在设置中配置同步'); return; }
         const btn = document.getElementById('saveNowBtn');
         btn.classList.add('spinning');
-        syncToCloud(true).finally(() => {
+        // 按上传真实结果提示：此前无论是成功还是失败都弹「已上传」，用户会以为数据已存云
+        syncToCloud(true).then(r => {
             btn.classList.remove('spinning');
-            toast('已保存并上传到云端');
+            toast(r === false ? '⚠️ 上传失败，请检查网络后重试（本地数据已保存）' : '已保存并上传到云端');
         });
     });
 
@@ -11231,9 +14166,12 @@ function init() {
         }
         const btn = document.getElementById('refreshBtn');
         btn.classList.add('spinning');
-        syncFromCloud(true).finally(() => {
-            btn.classList.remove('spinning');
-            toast('已向云端检查最新数据');
+        // 双向同步：先上传本地改动，再拉取云端最新。避免「点了同步却只下载、手机进度没传上去」。
+        syncToCloud(true).then(r => {
+            syncFromCloud(true).finally(() => {
+                btn.classList.remove('spinning');
+                toast(r === false ? '⚠️ 上传失败，已尝试拉取云端（本地数据不会丢）' : '已双向同步（上传 + 下载）');
+            });
         });
     });
 
@@ -11256,13 +14194,55 @@ function init() {
 
     // 定时轮询云端，确保手机端修改后电脑端能在数秒内自动同步
     // （改为 15s 并复用同步串行锁，避免轮询与上传并发导致「同步回弹」）
+    // 本地有未上传改动时先推再拉，否则只拉——既保证手机进度能自动上传，也避免无谓上传。
     setInterval(() => {
-        if (state.supabase && !document.hidden) syncFromCloud();
+        if (document.hidden) return;
+        // 跨天自动重绘：页面挂机过夜后，昨天的「已完成/今日推荐」会一直停在屏幕上，
+        // 用户第二天打开会以为今天的打卡被算掉了。日期一变就强制重绘一次。
+        if (state._renderDate && state._renderDate !== today()) {
+            state._renderDate = today();
+            try { render(); } catch (e) { /* ignore */ }
+        }
+        if (!state.supabase) return;
+        if (state._unsynced) syncToCloud(false);
+        else syncFromCloud();
     }, 15000);
 
+    // 可见性变化：
+    // - 切回页面（从别的 App / 锁屏回来）：先推本地改动，再拉云端，确保刚做的背诵立刻同步到电脑端。
+    // - 切走页面（去聊天 / 锁屏）：立刻触发上传，不等 2 秒定时器——移动端后台会掐掉定时器，
+    //   这是「手机背完电脑收不到」最主要的根因。
     document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && state.supabase) syncFromCloud();
+        // 跨天回来同样要先重绘（离线时也要执行，所以放在 supabase 判断之前）
+        if (!document.hidden && state._renderDate && state._renderDate !== today()) {
+            state._renderDate = today();
+            try { render(); } catch (e) { /* ignore */ }
+        }
+        if (!state.supabase) return;
+        clearTimeout(state.saveTimer);
+        if (document.hidden) {
+            // 切走/锁屏：立刻上传。syncToCloud 内部走「本地优先」合并，
+            // 上传快也不会把刚打的卡冲回未完成。
+            syncToCloud(false);
+        } else {
+            // 切回：先把本地未同步的改动推上去，再拉取（有未传改动时拉取也走本地优先，不会回滚）
+            syncToCloud(false).then(() => syncFromCloud(false));
+        }
     });
+
+    // 多标签页/多窗口：另一个窗口写入本地数据时提示冲突，避免两边各自整包上传互相覆盖。
+    window.addEventListener('storage', (e) => {
+        if (e.key !== 'growtree_state' || !e.newValue) return;
+        if (!state._unsynced) return; // 本机没有未上传改动，无需打扰（轮询会自动合并云端）
+        try { toast('检测到其他窗口也在修改数据，建议只保留一个窗口，避免互相覆盖'); } catch (err) { /* ignore */ }
+    });
+
+    // 页面卸载 / 关掉时再兜底传一次（iOS Safari 走 pagehide），尽力把本地进度传上云端。
+    const _flushOnLeave = () => {
+        if (state.supabase) { clearTimeout(state.saveTimer); syncToCloud(false); }
+    };
+    window.addEventListener('pagehide', _flushOnLeave);
+    window.addEventListener('beforeunload', _flushOnLeave);
 
     // 后台轮询因用户正在输入而推迟的重绘：在输入框失焦且焦点未转移到另一个输入框时补绘，
     // 既不打断打字，也能保证数据最终刷新到界面。
@@ -11338,6 +14318,8 @@ function init() {
 
     // 每次刷新进入页面：弹出「玩家 [xx] 已上线 🕹️」
     showPlayerOnline();
+    // 供 index.html 的加载兜底判断：脚本已完整执行、事件已绑定，页面可以正常操作
+    window.__GT_READY__ = true;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
