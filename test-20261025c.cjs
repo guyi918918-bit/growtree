@@ -119,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecBatchZhImport, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecOpenRecite, ecTxtBlockHTML, ecTabCfgGet, ecTabCfgAll, ecTabCfgVisible, ecTabCfgToggleShow, ecTabCfgMove, ecTabCfgHTML, ecMergeTabCfg, ecReviewCalendarHTML, EC_SUBTABS, ecOpenTabCfg, ecTabCfgRefreshIfModal, EC_REVIEW_SUBTABS, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, state, EC_WRONG_SUBTABS, EC_WB_GRADES, ecWbData, ecWbStatusOf, ecWbFingerprint, ecWbStats, ecWbDueItems, ecWbParse, ecWbAddItems, ecWbStart, ecWbGrade, ecWbExit, ecWbReset, ecRenderWrong, ecWbOverviewHTML, ecWbCalendarHTML, ecWbDueHTML, ecWbAllHTML, ecWbMasteredHTML, ecWbSessionHTML, ecMergeWrong, EC_WB_UNASSIGNED, ecWbById, ecWbMatchLesson, ecWbLocationText, ecWbItemsOfBook, ecWbItemsOfLesson, ecWbCounts, ecWbDueIn, ecWbFilteredDueItems, ecWbAutoTaskOn, ecWbScopeHTML, ecWbScopeOfValue, ecWbAssign, ecWbRemoveIds, ecWbSelIds, ecWbSelMode, ecWbSelToggle, ecWbSelAll, ecWbMoveIds, ecWbMoveItem, ecWbToggleAutoTask, ecWbAutoDrill, ecWbStartBook, ecWbStartLesson, ecWbGoLesson, ecWbBooksHTML, ecWbBookListHTML, ecWbBookDetailHTML, ecWbLessonDetailHTML, ecWbItemHTML, ecWbLessonCounts, ecWbBadgeHTML, ecWbLessonCardHTML, ecWbBookDueCount, ecTodayRecommendWrongHTML, ecGlobalStats, renderEngCheckPage };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecBatchZhImport, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecOpenRecite, ecTxtBlockHTML, ecTabCfgGet, ecTabCfgAll, ecTabCfgVisible, ecTabCfgToggleShow, ecTabCfgMove, ecTabCfgHTML, ecMergeTabCfg, ecReviewCalendarHTML, EC_SUBTABS, ecOpenTabCfg, ecTabCfgRefreshIfModal, EC_REVIEW_SUBTABS, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, state, EC_WRONG_SUBTABS, EC_WB_GRADES, ecWbData, ecWbStatusOf, ecWbFingerprint, ecWbStats, ecWbDueItems, ecWbParse, ecWbAddItems, ecWbStart, ecWbGrade, ecWbExit, ecWbReset, ecRenderWrong, ecWbOverviewHTML, ecWbCalendarHTML, ecWbDueHTML, ecWbAllHTML, ecWbMasteredHTML, ecWbSessionHTML, ecMergeWrong, EC_WB_UNASSIGNED, ecWbById, ecWbMatchLesson, ecWbLocationText, ecWbItemsOfBook, ecWbItemsOfLesson, ecWbCounts, ecWbDueIn, ecWbFilteredDueItems, ecWbAutoTaskOn, ecWbScopeHTML, ecWbScopeOfValue, ecWbAssign, ecWbRemoveIds, ecWbSelIds, ecWbSelMode, ecWbSelToggle, ecWbSelAll, ecWbMoveIds, ecWbMoveItem, ecWbToggleAutoTask, ecWbAutoDrill, ecWbStartBook, ecWbStartLesson, ecWbGoLesson, ecWbBooksHTML, ecWbBookListHTML, ecWbBookDetailHTML, ecWbLessonDetailHTML, ecWbItemHTML, ecWbLessonCounts, ecWbBadgeHTML, ecWbLessonCardHTML, ecWbBookDueCount, ecTodayRecommendWrongHTML, ecGlobalStats, ecWbTokenize, ecWbTokKey, ecWbMergeSegs, ecWbDiffSides, ecWbSegsHTML, ecWbDiffWords, ecWbCompareHTML, ecWbReEsc, ecWbWhyHTML, EC_WB_TEMPLATE, ecWbTemplateCSV, ecWbFillTemplate, ecWbCopyTemplate, ecWbDownloadTemplate, renderEngCheckPage };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, getElementsByName: (name) => { const k = '__byname_' + name; if (!elCache[k]) elCache[k] = []; return elCache[k]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
@@ -832,8 +832,8 @@ ok('新题（fsrs 缺失）也计入待复习', /s === 'due' \|\| s === 'new'/.t
     s.revealed = true; EC.ecWbGrade(4);
     ok('最后一题完成后会话结束', EC.state._wbSession === null);
     ok('非法档位被忽略', (() => { const n = w.fsrs[s.queue[2]].n; EC.ecWbGrade(99); return w.fsrs[s.queue[2]].n === n; })());
-    ok('复习会话 HTML：未翻面不显示正确答案', (() => { EC.state._wbSession = { queue: [w.items[0].id], idx: 0, revealed: false, graded: 0 }; const h = EC.ecWbSessionHTML(); return h.includes('你当时的答案') && h.includes('🎯 考点') && !h.includes('✅ 正确答案'); })());
-    ok('复习会话 HTML：翻面显示正确答案+原因+四档', (() => { EC.state._wbSession.revealed = true; const h = EC.ecWbSessionHTML(); return h.includes('✅ 正确答案') && h.includes('💡 大白话原因') && h.includes('ec-wb-grade'); })());
+    ok('复习会话 HTML：未翻面不显示正确答案', (() => { EC.state._wbSession = { queue: [w.items[0].id], idx: 0, revealed: false, graded: 0 }; const h = EC.ecWbSessionHTML(); return h.includes('你的答案：') && h.includes('🎯 考点') && !h.includes('标准答案：'); })());
+    ok('复习会话 HTML：翻面显示标准答案+解析+四档', (() => { EC.state._wbSession.revealed = true; const h = EC.ecWbSessionHTML(); return h.includes('标准答案：') && h.includes('💡 大白话解析') && h.includes('ec-wb-diff') && h.includes('ec-wb-grade'); })());
     EC.state._wbSession = null;
     // 掌握判定
     const w2 = EC.ecWbData();
@@ -1691,6 +1691,95 @@ function seedCatalog(EC) {
         const r = EC.ecMergeWrong({ items: [plain('a', 'P', 300)], tombs: {} }, { items: [bound('a', 'P', 300)], tombs: {} });
         return r.items[0].lessonId === 'l1';
     })());
+}
+
+
+// ============ v20261106v：逐词比对灰底 + 可识别导入模板 ============
+console.log('—— v20261106v 逐词比对 / 导入模板 ——');
+{
+    const MINE = 'He usually drive to work. But he take the bus to work today.';
+    const RIGHT = 'He usually drives to work. But he is taking the bus to work today.';
+    const EC = makeEC();
+    const gray = h => (h.match(/ec-wb-diff/g) || []).length;
+    const strip = h => h.replace(/<[^>]+>/g, '');
+
+    // 1. 静态检查
+    ok('v：APP_BUILD 升到 20261106v', /const APP_BUILD = '20261106v'/.test(APP));
+    ok('v：灰底样式已定义', /\.ec-wb-diff\s*\{/.test(CSS) && /\[data-theme="dark"\] \.ec-wb-diff/.test(CSS));
+    ok('v：对比行样式已定义', /\.ec-wb-cmp\b/.test(CSS) && /\.ec-wb-cmp-label/.test(CSS) && /\.ec-wb-line-txt/.test(CSS));
+    ok('v：模板按钮条样式', /\.ec-wb-tplbar\b/.test(CSS));
+    ok('v：导入弹窗三个模板按钮', ['ecWbTplFill', 'ecWbTplCopy', 'ecWbTplDown'].every(id => APP.includes('id="' + id + '"')));
+    ok('v：概览有导入模板入口', /data-action="ec-wb-template"/.test(APP) && /ecWbImportOpen\('', true\)/.test(APP));
+    ok('v：导入弹窗支持预填模板', /prefill \? escapeHtml\(EC_WB_TEMPLATE\)/.test(APP));
+    ok('v：解析支持原因续行', /lastWasFull && items\.length/.test(APP));
+    ok('v：复习卡翻面前标注问题词', /灰底 = 有问题的地方/.test(APP));
+    ok('v：复习卡翻面后逐词核对', /灰底 = 不一样的地方/.test(APP));
+    ok('v：仍保留四档自评与联动', /ec-wb-grade/.test(APP) && /ecWbAutoDrill/.test(APP) && /ecReciteAction/.test(APP));
+
+    // 2. 核心：截图那两句话的逐词比对
+    const c = EC.ecWbCompareHTML(MINE, RIGHT);
+    ok('v：你的答案只高亮 drive / take', gray(c.mine) === 2 && /<span class="ec-wb-diff">drive<\/span>/.test(c.mine) && /<span class="ec-wb-diff">take<\/span>/.test(c.mine));
+    ok('v：标准答案只高亮 drives / is taking', gray(c.right) === 2 && /<span class="ec-wb-diff">drives<\/span>/.test(c.right) && /<span class="ec-wb-diff">is taking<\/span>/.test(c.right));
+    ok('v：相同部分完全正常显示', c.mine.includes('He usually ') && c.mine.includes(' to work. But he ') && c.right.includes(' the bus to work today.'));
+    ok('v：整句还原后与原文一致（不丢字）', strip(c.mine) === MINE && strip(c.right) === RIGHT);
+    ok('v：差异词提取正确', ['drive', 'take', 'drives'].every(w => c.words.includes(w)));
+    const same = EC.ecWbCompareHTML('He goes to school.', 'He goes to school.');
+    ok('v：两句完全一样时零灰底', gray(same.mine) === 0 && gray(same.right) === 0);
+    const zh = EC.ecWbCompareHTML('我昨天去公园了。', '我昨天去学校了。');
+    ok('v：中文按字高亮不同处', /我昨天去<span class="ec-wb-diff">公园<\/span>了/.test(zh.mine) && /<span class="ec-wb-diff">学校<\/span>/.test(zh.right));
+    const ins = EC.ecWbCompareHTML('I go home.', 'I will go home.');
+    ok('v：只多一个词时只高亮多出的词', /<span class="ec-wb-diff">will<\/span>/.test(ins.right) && gray(ins.mine) === 0);
+    const delOne = EC.ecWbCompareHTML('I will go home.', 'I go home.');
+    ok('v：只少一个词时只高亮少掉的词', /<span class="ec-wb-diff">will<\/span>/.test(delOne.mine) && gray(delOne.right) === 0);
+    const xss = EC.ecWbCompareHTML('<img src=x onerror=alert(1)>', '<b>ok</b>');
+    ok('v：答案里的 HTML 被转义（无脚本注入）', !xss.mine.includes('<img') && xss.mine.includes('&lt;img') && !xss.right.includes('<b>'));
+    ok('v：空答案不崩', (() => { const e = EC.ecWbCompareHTML('', 'ok'); return e.mine === '' && gray(e.right) === 1; })());
+    ok('v：null / undefined 不崩', (() => { const e = EC.ecWbCompareHTML(null, undefined); return typeof e.mine === 'string' && typeof e.right === 'string'; })());
+    ok('v：超长文本安全退化不抛错', (() => { const a = 'word '.repeat(400), b = 'word '.repeat(400) + 'extra'; const e = EC.ecWbCompareHTML(a, b); return gray(e.mine) >= 1 && gray(e.right) >= 1 && strip(e.mine).trim() === a.trim(); })());
+    ok('v：连续差异合成一块灰底', (() => { const e = EC.ecWbCompareHTML('a X Y Z b', 'a b'); return gray(e.mine) === 1; })());
+    ok('v：LCS 对齐保留原始空格', (() => { const e = EC.ecWbDiffSides('a  b', 'a b'); return e.mine.map(x => x.t).join('').replace(/\s/g, '') === 'ab'; })());
+
+    // 3. 大白话解析高亮
+    const why = '主语是 He，单数，动词要加 [[s]]，所以 [[drive]] 必须变成 drives。';
+    const wh = EC.ecWbWhyHTML(why, c.words);
+    ok('v：解析里 [[词]] 转成灰底', /<span class="ec-wb-diff">s<\/span>/.test(wh) && /<span class="ec-wb-diff">drive<\/span>/.test(wh));
+    ok('v：解析里差异词自动加灰底', /<span class="ec-wb-diff">drives<\/span>/.test(wh));
+    ok('v：解析普通文字正常显示', wh.includes('主语是 He，单数，动词要加'));
+    ok('v：解析里的 HTML 被转义', !EC.ecWbWhyHTML('<script>x</script>', []).includes('<script>'));
+    ok('v：解析空值 / 无差异词不崩', EC.ecWbWhyHTML('', []) === '' && EC.ecWbWhyHTML('普通原因', []).includes('普通原因'));
+
+    // 4. 导入模板能被解析器识别
+    const tpl = EC.EC_WB_TEMPLATE;
+    ok('v：模板是五列 Tab 分隔', tpl.split('\n').length === 3 && tpl.split('\n').every(l => l.split('\t').length === 5));
+    ok('v：模板含截图示例句', tpl.includes(MINE) && tpl.includes(RIGHT));
+    ok('v：模板原因带 [[高亮]] 标记', tpl.includes('[[drive]]') && tpl.includes('[[drives]]') && tpl.includes('[[is taking]]'));
+    const parsed = EC.ecWbParse(tpl);
+    ok('v：模板表头自动跳过', parsed.items.length === 2 && parsed.errors.length === 0);
+    ok('v：模板解析字段正确', parsed.items[0].lesson === 'L31' && parsed.items[0].point === '主谓一致 / 现在进行时' && parsed.items[0].mine === MINE && parsed.items[0].right === RIGHT);
+    ok('v：模板解析保留高亮标记', parsed.items[0].why.includes('[[s]]') && parsed.items[1].lesson === 'L32');
+    ok('v：模板可直接导入不重复', (() => { const w = EC.ecWbData(); const n = EC.ecWbAddItems(EC.ecWbAssign(parsed.items, { bookId: '', lessonId: '' })); const n2 = EC.ecWbAddItems(EC.ecWbAssign(parsed.items, { bookId: '', lessonId: '' })); return n === 2 && n2 === 0 && w.items.length === 2; })());
+    ok('v：CSV 模板带 BOM 且五列', (() => { const csv = EC.ecWbTemplateCSV(); return csv.charCodeAt(0) === 0xfeff && csv.split('\r\n').length === 3 && csv.split('\r\n')[0].split('","').length === 5; })());
+    ok('v：CSV 模板字段带引号', EC.ecWbTemplateCSV().startsWith('\ufeff"课时","知识点"'));
+    const cont = EC.ecWbParse('L1\t考点\t错\t对\t第一句原因\n第二句原因继续写\nL2\t考点2\t错2\t对2\t原因2');
+    ok('v：大白话原因换行会自动续接', cont.items.length === 2 && cont.items[0].why.includes('第一句原因\n第二句原因继续写') && cont.errors.length === 0);
+    ok('v：无上一行时的孤行仍报错', EC.ecWbParse('孤零零一行').errors.length === 1);
+    ok('v：旧四列格式不受影响', (() => { const r = EC.ecWbParse('考点\t错\t对\t原因'); return r.items.length === 1 && r.items[0].why === '原因'; })());
+
+    // 5. 渲染接入
+    const w2 = EC.ecWbData();
+    const it = w2.items[0];
+    const row = EC.ecWbItemHTML(it, { showPath: true });
+    ok('v：错题列表用灰底差异', row.includes('ec-wb-diff') && row.includes('ec-wb-line-txt'));
+    ok('v：错题列表解析也高亮', row.includes('ec-wb-why') || row.includes('ec-wb-diff'));
+    EC.state._wbSession = { queue: [it.id], idx: 0, revealed: false, graded: 0 };
+    const h1 = EC.ecWbSessionHTML();
+    ok('v：复习卡未翻面标出问题词', h1.includes('你的答案：') && h1.includes('ec-wb-diff') && !h1.includes('标准答案：'));
+    EC.state._wbSession.revealed = true;
+    const h2 = EC.ecWbSessionHTML();
+    ok('v：复习卡翻面并排两行对比', h2.includes('你的答案：') && h2.includes('标准答案：') && gray(h2) >= 3);
+    ok('v：复习卡翻面显示大白话解析', h2.includes('💡 大白话解析') && h2.includes('ec-wb-grade'));
+    EC.state._wbSession = null;
+    ok('v：刷题残留依然为 0', !/EC_QUIZ_BUILTIN|ecQuizStart|ecRenderQuiz/.test(APP));
 }
 
 // 等待异步断言后汇总

@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261106u';
+const APP_BUILD = '20261106v';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -11692,6 +11692,168 @@ const EC_WRONG_SUBTABS = [
     { id: 'mastered', name: '🏆 已掌握' }
 ];
 const EC_WB_UNASSIGNED = '__unassigned__';
+// ---------- v20261106v：逐词比对（相同正常显示，只有不同 / 错误处打灰色底纹） ----------
+// 思路：把两句话切成「词 + 空白」token，用最长公共子序列对齐；
+// 落在公共子序列里的原样输出，落在两侧的连续差异段合成一个灰底 span。
+function ecWbTokenize(s) {
+    const parts = String(s == null ? '' : s).match(/\s+|[^\s]+/g) || [];
+    const out = [];
+    parts.forEach(p => {
+        if (/^\s+$/.test(p)) { out.push(p); return; }
+        // 中文没有空格，按字切才能只给不同的那几个字打底纹
+        if (/[\u3400-\u9fff]/.test(p)) out.push(...(p.match(/[\u3400-\u9fff]|[^\u3400-\u9fff]+/g) || [p]));
+        else out.push(p);
+    });
+    return out;
+}
+function ecWbTokKey(t) { return /^\s+$/.test(t) ? ' ' : t; }
+// 连续灰底合成一块；夹在两块灰底中间的空格也并进去（is taking 一整块）；首尾空白移出灰底
+function ecWbMergeSegs(arr) {
+    const out = [];
+    for (let i = 0; i < arr.length; i++) {
+        const seg = arr[i], last = out[out.length - 1];
+        if (last && last.d === 1 && seg.d === 1) { last.t += seg.t; continue; }
+        if (last && last.d === 1 && seg.d === 0 && /^\s+$/.test(seg.t) && arr[i + 1] && arr[i + 1].d === 1) {
+            last.t += seg.t; continue;
+        }
+        out.push({ d: seg.d, t: seg.t });
+    }
+    const trimmed = [];
+    out.forEach(seg => {
+        if (seg.d !== 1) { trimmed.push(seg); return; }
+        const m = String(seg.t).match(/^(\s*)([\s\S]*?)(\s*)$/);
+        if (!m) { trimmed.push(seg); return; }
+        if (m[1]) trimmed.push({ d: 0, t: m[1] });
+        if (m[2]) trimmed.push({ d: 1, t: m[2] });
+        if (m[3]) trimmed.push({ d: 0, t: m[3] });
+    });
+    const joined = [];
+    trimmed.forEach(seg => {
+        const last = joined[joined.length - 1];
+        if (last && last.d === seg.d) last.t += seg.t;
+        else joined.push({ d: seg.d, t: seg.t });
+    });
+    return joined;
+}
+function ecWbDiffSides(a, b) {
+    const A = ecWbTokenize(a), B = ecWbTokenize(b);
+    if (!A.length && !B.length) return { mine: [], right: [] };
+    // 超长文本退化为整段对比，避免 O(n*m) 卡住页面
+    if (A.length * B.length > 60000) {
+        return { mine: ecWbMergeSegs([{ d: 1, t: A.join('') }]), right: ecWbMergeSegs([{ d: 1, t: B.join('') }]) };
+    }
+    const n = A.length, m = B.length;
+    const dp = [];
+    for (let i = 0; i <= n; i++) dp.push(new Uint16Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) {
+        for (let j = m - 1; j >= 0; j--) {
+            dp[i][j] = ecWbTokKey(A[i]) === ecWbTokKey(B[j])
+                ? dp[i + 1][j + 1] + 1
+                : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+    }
+    const mine = [], right = [];
+    const push = (arr, d, t) => {
+        if (!t) return;
+        const last = arr[arr.length - 1];
+        if (last && last.d === d) last.t += t;   // 连续差异合成一整块灰底（如 is taking）
+        else arr.push({ d: d, t: t });
+    };
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+        if (ecWbTokKey(A[i]) === ecWbTokKey(B[j])) { push(mine, 0, A[i]); push(right, 0, B[j]); i++; j++; }
+        else if (dp[i + 1][j] >= dp[i][j + 1]) { push(mine, 1, A[i]); i++; }
+        else { push(right, 1, B[j]); j++; }
+    }
+    while (i < n) push(mine, 1, A[i++]);
+    while (j < m) push(right, 1, B[j++]);
+    return { mine: ecWbMergeSegs(mine), right: ecWbMergeSegs(right) };
+}
+function ecWbSegsHTML(segs) {
+    return segs.map(s => s.d ? `<span class="ec-wb-diff">${escapeHtml(s.t)}</span>` : escapeHtml(s.t)).join('');
+}
+function ecWbDiffWords(sides) {
+    const out = [];
+    [sides.mine, sides.right].forEach(arr => arr.forEach(s => {
+        if (!s.d) return;
+        String(s.t).split(/\s+/).forEach(w => {
+            const c = w.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[^\p{L}\p{N}]+$/u, '');
+            if (c && c.length <= 24) out.push(c);
+        });
+    }));
+    return Array.from(new Set(out));
+}
+function ecWbCompareHTML(mine, right) {
+    const sides = ecWbDiffSides(mine, right);
+    return { mine: ecWbSegsHTML(sides.mine), right: ecWbSegsHTML(sides.right), words: ecWbDiffWords(sides) };
+}
+function ecWbReEsc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+// 大白话解析：[[词]] 手动标记 + 两处答案的差异词自动加灰底
+function ecWbWhyHTML(why, words) {
+    const raw = String(why == null ? '' : why);
+    if (!raw) return '';
+    const auto = (words || []).filter(w => w && w.length <= 24).slice(0, 12);
+    const re = auto.length
+        ? new RegExp('(^|[^A-Za-z0-9])(' + auto.map(ecWbReEsc).join('|') + ')(?=$|[^A-Za-z0-9])', 'gi')
+        : null;
+    return raw.split(/\[\[([\s\S]*?)\]\]/g).map((p, i) => {
+        if (i % 2 === 1) return `<span class="ec-wb-diff">${escapeHtml(p)}</span>`;
+        const t = escapeHtml(p);
+        if (!re) return t;
+        re.lastIndex = 0;
+        return t.replace(re, (m, pre, w) => pre + '<span class="ec-wb-diff">' + w + '</span>');
+    }).join('');
+}
+
+// ---------- v20261106v：可识别的导入模板 ----------
+// 五列 Tab 分隔：课时 | 知识点 | 我的答案 | 正确答案 | 大白话原因
+// 原因里 [[词]] 会加灰底；不写也会自动高亮两处答案里不一样的词。
+const EC_WB_TEMPLATE = [
+    '课时\t知识点\t我的答案\t正确答案\t大白话原因',
+    'L31\t主谓一致 / 现在进行时\tHe usually drive to work. But he take the bus to work today.\tHe usually drives to work. But he is taking the bus to work today.\t主语是 He，单数，一般现在时的动词要加 [[s]]，所以 [[drive]] 必须变成 [[drives]]。后半句是「今天正在坐公交」，此刻发生的动作用 [[be + doing]]，所以 [[is taking]] 最合适。',
+    'L32\t名词单复数\tWhich one do you want?\tWhich ones do you want?\t前面说的是复数，提问和替代都要用 [[ones]]；[[one]] 只指单数。'
+].join('\n');
+function ecWbTemplateCSV() {
+    const q = s => '"' + String(s).replace(/"/g, '""') + '"';
+    return '\ufeff' + EC_WB_TEMPLATE.split('\n').map(l => l.split('\t').map(q).join(',')).join('\r\n');
+}
+function ecWbFillTemplate() {
+    const box = document.getElementById('ecWbImportBox');
+    if (!box) return;
+    box.value = EC_WB_TEMPLATE;
+    box.focus();
+    if (box.setSelectionRange) box.setSelectionRange(0, 0);
+    toast('模板已填入，把示例改成自己的错题，再点「解析导入」');
+}
+function ecWbCopyTemplate() {
+    const fallback = () => {
+        const ta = document.createElement('textarea');
+        ta.value = EC_WB_TEMPLATE;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        let done = false;
+        try { done = document.execCommand('copy'); } catch (e) { done = false; }
+        document.body.removeChild(ta);
+        toast(done ? '模板已复制，粘到 Excel / WPS 里填就行' : '复制失败，请点「填入模板」再长按复制');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(EC_WB_TEMPLATE).then(
+            () => toast('模板已复制，粘到 Excel / WPS 里填就行'), fallback
+        );
+    } else fallback();
+}
+function ecWbDownloadTemplate() {
+    try {
+        const blob = new Blob([ecWbTemplateCSV()], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = '错题导入模板.csv';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        toast('CSV 模板已下载，用 Excel / WPS 打开填写');
+    } catch (e) { toast('下载失败，请用「填入模板」或「复制模板」'); }
+}
+
 
 // ---------- 数据 / 旧数据迁移 ----------
 function ecWbData() {
@@ -11855,6 +12017,7 @@ function ecWbParse(text) {
     const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
     const looksLesson = s => /^(L\s*\d|U\s*\d|Unit\s*\d|Lesson\s*\d|第\s*\d+\s*课|\d+\s*[-~至]\s*\d+\s*课?)/i.test(String(s || '').trim());
     let firstSeen = false;
+    let lastWasFull = false; // 上一行是完整五列时，允许「大白话原因」换行续写
     lines.forEach((raw, i) => {
         const line = raw.trim();
         if (!line) return;
@@ -11865,7 +12028,12 @@ function ecWbParse(text) {
             const joined = cols.join(' ');
             if (/正确答案/.test(joined) && /课时|知识点|我的答案/.test(joined)) return;
         }
-        if (cols.length < 3) { errors.push(`第 ${i + 1} 行：列数不足（至少 3 列）`); return; }
+        if (cols.length < 3) {
+            // 大白话解析换行：接到上一行原因后面（表格单元格里换行也不会丢）
+            if (lastWasFull && items.length) { items[items.length - 1].why += '\n' + line; return; }
+            lastWasFull = false;
+            errors.push(`第 ${i + 1} 行：列数不足（至少 3 列）`); return;
+        }
         let lesson = '', point = '', mine = '', right = '', why = '';
         if (cols.length >= 5) { lesson = cols[0]; point = cols[1]; mine = cols[2]; right = cols[3]; why = cols[4]; }
         else if (cols.length === 4 && looksLesson(cols[0])) { lesson = cols[0]; point = cols[1]; mine = cols[2]; right = cols[3]; }
@@ -11873,6 +12041,7 @@ function ecWbParse(text) {
         else { point = cols[0]; mine = cols[1]; right = cols[2]; }
         if (!point || !mine || !right) { errors.push(`第 ${i + 1} 行：知识点/我的答案/正确答案不能为空`); return; }
         items.push({ lesson, point, mine, right, why });
+        lastWasFull = cols.length >= 5 && !!why;
     });
     return { items, errors };
 }
@@ -11906,12 +12075,13 @@ function ecWbAddItems(list) {
 }
 
 // ---------- 导入 / 添加 / 编辑 / 删除 / 批量 / 排序 / 备份 ----------
-async function ecWbImportOpen(defaultLessonId) {
-    const v = await uiModal({
+async function ecWbImportOpen(defaultLessonId, prefill) {
+    const p = uiModal({
         title: '📥 批量导入错题',
-        html: '<div class="ec-hint">从 Excel / WPS 复制表格粘贴（自动按 Tab 分列）。列顺序：<b>课时 | 知识点 | 我的答案 | 正确答案 | 大白话原因</b>；第一行表头可带可不带，重复错题自动跳过。</div>'
+        html: '<div class="ec-hint">五列 <b>Tab 分隔</b>（直接从 Excel / WPS 复制粘贴）：<b>课时 | 知识点 | 我的答案 | 正确答案 | 大白话原因</b>。表头可留可删，重复题自动跳过；原因里写 <b>[[词]]</b> 会给重点词加灰底，不写也会自动高亮两句答案里不一样的词。</div>'
+            + '<div class="ec-wb-tplbar"><button type="button" class="btn btn-sm btn-secondary" id="ecWbTplFill">📋 填入模板</button><button type="button" class="btn btn-sm btn-secondary" id="ecWbTplCopy">📋 复制模板</button><button type="button" class="btn btn-sm btn-secondary" id="ecWbTplDown">⬇️ CSV 模板</button></div>'
             + ecWbScopeSelectHTML('ecWbScopeSel', defaultLessonId || '', '📚 归到哪本书 / 哪一课（表里写了课时会自动对上目录）')
-            + '<textarea id="ecWbImportBox" class="ec-wb-textarea" placeholder="L23-24&#9;名词替代词&#9;Which one?&#9;Which ones?&#9;前面是复数，提问和替代都要用 ones"></textarea>',
+            + `<textarea id="ecWbImportBox" class="ec-wb-textarea" placeholder="点上面「填入模板」看示例，或直接粘贴五列表格">${prefill ? escapeHtml(EC_WB_TEMPLATE) : ''}</textarea>`,
         getValue: () => {
             const box = document.getElementById('ecWbImportBox');
             const sel = document.getElementById('ecWbScopeSel');
@@ -11919,6 +12089,12 @@ async function ecWbImportOpen(defaultLessonId) {
         },
         okText: '解析导入'
     });
+    // uiModal 的 DOM 同步写入，弹窗内按钮直接绑 onclick，避免和全局动作委托打架
+    const bindTpl = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
+    bindTpl('ecWbTplFill', ecWbFillTemplate);
+    bindTpl('ecWbTplCopy', ecWbCopyTemplate);
+    bindTpl('ecWbTplDown', ecWbDownloadTemplate);
+    const v = await p;
     if (!v || typeof v !== 'object') return;
     const r = ecWbParse(v.text);
     if (!r.items.length) { toast(r.errors.length ? '没有可导入的行：' + r.errors[0] : '内容为空，先去表格里复制'); return; }
@@ -12253,6 +12429,7 @@ function ecWbOverviewHTML(stats) {
         <div class="ec-wb-actions">
             <button class="btn btn-primary" data-action="ec-wb-start" ${due.length ? '' : 'disabled'}>▶️ 开始复习${due.length ? `（${due.length} 题）` : ''}</button>
             <button class="btn btn-secondary" data-action="ec-wb-import">📥 批量导入</button>
+            <button class="btn btn-secondary" data-action="ec-wb-template">📋 导入模板</button>
             <button class="btn btn-secondary" data-action="ec-wb-add">➕ 记一道</button>
         </div>
         <div class="ec-wb-setting">
@@ -12436,6 +12613,7 @@ function ecWbItemHTML(it, opts) {
     const statusName = { new: '待复习', due: '待复习', waiting: '学习中', mastered: '已掌握' };
     const selMode = !!state._wbSelMode;
     const checked = !!(state._wbSel || {})[it.id];
+    const cmp = ecWbCompareHTML(it.mine, it.right);
     return `<div class="ec-wb-item${checked ? ' ec-sel' : ''}">
         ${selMode ? `<div class="ec-sel-cb ec-wb-sel-cb" data-action="ec-wb-sel" data-id="${it.id}">${checked ? '☑️' : '⬜'}</div>` : ''}
         <div class="ec-wb-item-head">
@@ -12443,9 +12621,9 @@ function ecWbItemHTML(it, opts) {
             <span class="ec-wb-status ec-wb-st-${st}">${statusName[st]}</span>
         </div>
         ${o.showPath ? `<div class="ec-wb-loc">📚 ${escapeHtml(ecWbLocationText(it))}</div>` : ''}
-        <div class="ec-wb-line"><span class="ec-wb-tag wrong">✗ 你当时</span><span>${escapeHtml(it.mine)}</span></div>
-        <div class="ec-wb-line"><span class="ec-wb-tag right">✓ 正确</span><span>${escapeHtml(it.right)}</span></div>
-        ${it.why ? `<div class="ec-wb-line"><span class="ec-wb-tag">💡 原因</span><span>${escapeHtml(it.why)}</span></div>` : ''}
+        <div class="ec-wb-line"><span class="ec-wb-tag wrong">✗ 你当时</span><span class="ec-wb-line-txt">${cmp.mine}</span></div>
+        <div class="ec-wb-line"><span class="ec-wb-tag right">✓ 正确</span><span class="ec-wb-line-txt">${cmp.right}</span></div>
+        ${it.why ? `<div class="ec-wb-line"><span class="ec-wb-tag">💡 原因</span><span class="ec-wb-line-txt">${ecWbWhyHTML(it.why, cmp.words)}</span></div>` : ''}
         <div class="ec-wb-item-foot">
             <span class="ec-wb-meta">${rec && rec.last ? (st === 'mastered' ? `已掌握 · 复习 ${rec.n} 次` : `下次复习 ${ecFmtWeek(rec.due)} · 已复习 ${rec.n} 次`) : '待复习'}</span>
             <span class="ec-wb-ops">
@@ -12536,6 +12714,9 @@ function ecWbSessionHTML() {
     const item = ecWbById(s.queue[s.idx]);
     if (!item) { state._wbSession = null; return ecRenderWrong(); }
     const pct = Math.round((s.idx / s.queue.length) * 100);
+    const cmp = ecWbCompareHTML(item.mine, item.right);
+    const mineRow = `<div class="ec-wb-cmp-row"><span class="ec-wb-cmp-bullet">•</span><span class="ec-wb-cmp-label">你的答案：</span><span class="ec-wb-cmp-text">${cmp.mine}</span></div>`;
+    const rightRow = `<div class="ec-wb-cmp-row"><span class="ec-wb-cmp-bullet">•</span><span class="ec-wb-cmp-label">标准答案：</span><span class="ec-wb-cmp-text">${cmp.right}</span></div>`;
     return `<div class="card ec-wb-session">
         <div class="ec-wb-sess-head">
             <div class="ec-wb-sess-progress">第 ${s.idx + 1} / ${s.queue.length} 题</div>
@@ -12547,21 +12728,17 @@ function ecWbSessionHTML() {
             <div class="ec-wb-block-title">🎯 考点 / 题目</div>
             <div class="ec-wb-point-text">${escapeHtml(item.point)}</div>
         </div>
-        <div class="ec-wb-block">
-            <div class="ec-wb-block-title">✍️ 你当时的答案</div>
-            <div class="ec-wb-mine">${escapeHtml(item.mine)}</div>
+        <div class="ec-wb-block cmp">
+            <div class="ec-wb-block-title">${s.revealed ? '🔍 逐词核对 · 灰底 = 不一样的地方' : '✍️ 你当时的答案 · 灰底 = 有问题的地方'}</div>
+            <div class="ec-wb-cmp">${mineRow}${s.revealed ? rightRow : ''}</div>
         </div>
         ${s.revealed ? `
-        <div class="ec-wb-block right">
-            <div class="ec-wb-block-title">✅ 正确答案</div>
-            <div class="ec-wb-right">${escapeHtml(item.right)}</div>
-        </div>
-        ${item.why ? `<div class="ec-wb-block why"><div class="ec-wb-block-title">💡 大白话原因</div><div class="ec-wb-why">${escapeHtml(item.why)}</div></div>` : ''}
+        ${item.why ? `<div class="ec-wb-block why"><div class="ec-wb-block-title">💡 大白话解析</div><div class="ec-wb-why">${ecWbWhyHTML(item.why, cmp.words)}</div></div>` : ''}
         <div class="ec-wb-grade-title">这次能答对吗？</div>
         <div class="ec-recite-actions">${EC_WB_GRADES.map(g => `<button class="ec-grade-btn ${g.cls}" data-action="ec-wb-grade" data-g="${g.id}" title="${g.desc}">${g.label}</button>`).join('')}</div>
         ` : `
-        <div class="ec-wb-think">先别看答案，心里说出正确写法，再点下方按钮核对</div>
-        <button class="btn btn-primary ec-wb-reveal-btn" data-action="ec-wb-reveal">👀 看正确答案</button>`}
+        <div class="ec-wb-think">先别看标准答案，心里把灰底的地方改对，再点下方按钮核对</div>
+        <button class="btn btn-primary ec-wb-reveal-btn" data-action="ec-wb-reveal">👀 看标准答案</button>`}
     </div>`;
 }
 // ---------- 与书单课目联动：课时徽标 / 课时详情卡 / 今日推荐 / 书本统计 ----------
@@ -13461,6 +13638,7 @@ document.addEventListener('click', async e => {
     if (action === 'ec-tabcfg-down') { ecTabCfgMove(el.dataset.tab, 'down'); ecTabCfgRefreshIfModal(); return; }
     // ---------- 错题复习（分书本 / 分课时 + 学习联动） ----------
     if (action === 'ec-wb-import') { ecWbImportOpen(el.dataset.lesson || ''); return; }
+    if (action === 'ec-wb-template') { ecWbImportOpen('', true); return; }
     if (action === 'ec-wb-import-lesson') { ecWbImportOpen(el.dataset.id || ''); return; }
     if (action === 'ec-wb-import-json') { ecWbImportJSON(); return; }
     if (action === 'ec-wb-export') { ecWbExport(); return; }
