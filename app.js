@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261106x';
+const APP_BUILD = '20261106y';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -5833,11 +5833,14 @@ const moduleRenderers = {
         if (state.currentSubTab.engcheck === 'ec-quiz') state.currentSubTab.engcheck = 'ec-wrong';
         // 子标签顺序与显隐由用户在「⚙️ 子标签显示设置」弹窗里自定义（state.data.engcheck.tabCfg）
         const tabs = ecTabCfgVisible();
-        const tab = validSubTab('engcheck', tabs, tabs[0].id);
+        // v20261106y：学习驾驶舱独立成「📊 总览」一页，四个学习页顶部只留一条紧凑状态条
+        const isHub = state.currentSubTab.engcheck === 'ec-hub';
+        const tab = isHub ? 'ec-hub' : validSubTab('engcheck', tabs, tabs[0].id);
         const extra = `<button class="ec-tabcfg-btn" data-action="ec-tabcfg-open" title="子标签显示设置（隐藏 / 排序）">⚙️</button>`;
-        // 学习驾驶舱四个子标签统一常驻；进入错题复习会话时收起，保持沉浸
-        const hub = state._wbSession ? '' : ecHeaderHTML();
-        return `<div class="card tab-card">${ecMainTabsHTML(tabs, tab, extra)}</div><div class="ec-page">${hub}${renderEngCheckPage(tab)}</div>`;
+        // 进入错题复习会话时整条状态栏都收起，保持沉浸
+        const top = state._wbSession ? '' : (isHub ? ecHeaderHTML() : ecMiniBarHTML());
+        const body = isHub ? ecHubPageHTML() : renderEngCheckPage(tab);
+        return `<div class="card tab-card">${ecMainTabsHTML(tabs, tab, extra)}</div><div class="ec-page">${top}${body}</div>`;
     },
 
     yjxs() {
@@ -8978,18 +8981,23 @@ function initEvents() {
         }
 
         if (action === 'tab') {
-            if (el.dataset.module) {
+            const mod = el.dataset.module;
+            if (mod) {
+                // v20261106y 关键修复：只有「真实模块 id」才能改 currentModule。
+                // ec-wrong-sub / ec-review-sub 只是三级目录的命名空间，写进 currentModule 后
+                // render() 找不到这个模块，会回退到导航第一项（欢迎首页）→ 表现为「点子标签就跳首页 / 点不进去」。
+                const isRealModule = !!getModuleById(mod);
                 if (el.dataset.tab) {
-                    state.currentSubTab[el.dataset.module] = el.dataset.tab;
-                    if (state.currentModule !== el.dataset.module) {
-                        state.currentModule = el.dataset.module;
-                    }
+                    state.currentSubTab[mod] = el.dataset.tab;
+                    if (isRealModule && state.currentModule !== mod) state.currentModule = mod;
                     if (el.dataset.subtab) {
-                        state.currentSubTab[el.dataset.module + '_' + el.dataset.tab] = el.dataset.subtab;
+                        state.currentSubTab[mod + '_' + el.dataset.tab] = el.dataset.subtab;
                     }
-                } else {
-                    state.currentModule = el.dataset.module;
+                } else if (isRealModule) {
+                    state.currentModule = mod;
                 }
+                // 切主 Tab 就是明确离开当前页面：清掉错题复习会话，避免换板块后仍卡在复习卡里
+                if (el.dataset.ecMain) state._wbSession = null;
                 render();
                 // 英语打卡主 Tab 切换后回到内容顶部，避免长页面停在半截（只作用于带标记的主 Tab）
                 if (el.dataset.ecMain) { try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { /* ignore */ } }
@@ -12938,7 +12946,9 @@ function ecGo(to, opts) {
 function ecMainTabsHTML(tabs, current, extraHTML) {
     const c = ecHubCounts();
     const badge = { 'ec-books': c.tasks, 'ec-review': c.reciteDue, 'ec-wrong': c.wrongDue, 'ec-achieve': 0 };
-    return `<div class="tab-bar ec-main-tabs">${tabs.map(t => {
+    // 「📊 总览」是固定入口，不参与子标签的隐藏 / 排序设置，随时能回到驾驶舱
+    const hubBtn = `<button class="tab-btn ec-hub-tab ${current === 'ec-hub' ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1" title="今日学习总览">📊 <span class="ec-tab-label">总览</span></button>`;
+    return `<div class="tab-bar ec-main-tabs">${hubBtn}${tabs.map(t => {
         const n = badge[t.id] || 0;
         const hot = (t.id === 'ec-review' && c.reciteOverdue) || (t.id === 'ec-wrong' && c.wrongOverdue);
         return `<button class="tab-btn ${current === t.id ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="${t.id}" data-ec-main="1">${t.icon || ''} <span class="ec-tab-label">${t.name}</span>${n > 0 ? `<span class="ec-tab-badge${hot ? ' overdue' : ''}">${n > 99 ? '99+' : n}</span>` : ''}</button>`;
@@ -12988,7 +12998,27 @@ function ecHeaderHTML() {
         </div>
     </div>`;
 }
-// 模块联动条：在复习中心 / 错题概览里互相提示另外几个板块今天的待办
+// 紧凑状态条（v20261106y）：四个学习页共用，只有一行，不再让大驾驶舱占掉首屏
+function ecMiniBarHTML() {
+    const d = ecData();
+    const c = ecHubCounts();
+    const lv = ecGetLevel(d.score);
+    const left = c.tasks + c.reciteDue + c.wrongDue;
+    return `<div class="card ec-mini-bar">
+        <span class="ec-mini-lv">Lv.${lv}</span>
+        <span class="ec-mini-item">⭐ ${(d.score || 0).toLocaleString()} 分</span>
+        <span class="ec-mini-item">🔥 连续 ${c.streak} 天</span>
+        <span class="ec-mini-todo${left ? ' has' : ' ok'}">${left ? `今天还有 ${left} 项待办` : '今天已清空 🎉'}</span>
+        <button class="ec-mini-go" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1">📊 看总览 ›</button>
+    </div>`;
+}
+// 总览页本体：头卡（等级 / 进度 / 四格 / 今日建议）已由 ecHeaderHTML 渲染，这里补说明与板块联动
+function ecHubPageHTML() {
+    return `<div class="ec-crumb">英语打卡 › 学习总览</div>
+    <div class="card ec-hub-note">四个板块的数字在这里统一汇总：点任意一格直接跳到对应板块，做完回来数字会自动更新；每个板块顶部的「📊 看总览」也能随时回到这一页。</div>
+    ${ecLinkCardHTML('')}`;
+}
+// 模块联动条：在复习中心 / 错题概览 / 总览里互相提示另外几个板块今天的待办
 function ecLinkCardHTML(current) {
     const c = ecHubCounts();
     const items = [
@@ -14135,6 +14165,8 @@ function init() {
 
     // 每次刷新进入页面：弹出「玩家 [xx] 已上线 🕹️」
     showPlayerOnline();
+    // 供 index.html 的加载兜底判断：脚本已完整执行、事件已绑定，页面可以正常操作
+    window.__GT_READY__ = true;
 }
 
 document.addEventListener('DOMContentLoaded', () => {

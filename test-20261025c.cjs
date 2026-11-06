@@ -119,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecBatchZhImport, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecOpenRecite, ecTxtBlockHTML, ecTabCfgGet, ecTabCfgAll, ecTabCfgVisible, ecTabCfgToggleShow, ecTabCfgMove, ecTabCfgHTML, ecMergeTabCfg, ecReviewCalendarHTML, EC_SUBTABS, ecOpenTabCfg, ecTabCfgRefreshIfModal, EC_REVIEW_SUBTABS, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, state, EC_WRONG_SUBTABS, EC_WB_GRADES, ecWbData, ecWbStatusOf, ecWbFingerprint, ecWbStats, ecWbDueItems, ecWbParse, ecWbAddItems, ecWbStart, ecWbGrade, ecWbExit, ecWbReset, ecRenderWrong, ecWbOverviewHTML, ecWbCalendarHTML, ecWbDueHTML, ecWbAllHTML, ecWbMasteredHTML, ecWbSessionHTML, ecMergeWrong, EC_WB_UNASSIGNED, ecWbById, ecWbMatchLesson, ecWbLocationText, ecWbItemsOfBook, ecWbItemsOfLesson, ecWbCounts, ecWbDueIn, ecWbFilteredDueItems, ecWbAutoTaskOn, ecWbScopeHTML, ecWbScopeOfValue, ecWbAssign, ecWbRemoveIds, ecWbSelIds, ecWbSelMode, ecWbSelToggle, ecWbSelAll, ecWbMoveIds, ecWbMoveItem, ecWbToggleAutoTask, ecWbAutoDrill, ecWbStartBook, ecWbStartLesson, ecWbGoLesson, ecWbBooksHTML, ecWbBookListHTML, ecWbBookDetailHTML, ecWbLessonDetailHTML, ecWbItemHTML, ecWbLessonCounts, ecWbBadgeHTML, ecWbLessonCardHTML, ecWbBookDueCount, ecTodayRecommendWrongHTML, ecGlobalStats, ecWbTokenize, ecWbTokKey, ecWbMergeSegs, ecWbDiffSides, ecWbSegsHTML, ecWbDiffWords, ecWbCompareHTML, ecWbReEsc, ecWbWhyHTML, EC_WB_TEMPLATE, ecWbTemplateCSV, ecWbFillTemplate, ecWbCopyTemplate, ecWbDownloadTemplate, ecWbHasMark, ecWbMarkHTML, ecWbMarkWords, ecWbFormHTML, ecWbFormValue, ecWbApplyForm, ecHeaderHTML, ecPendingTasks, ecHubCounts, ecHubAdvice, ecGo, ecMainTabsHTML, ecHubGridHTML, ecLinkCardHTML, ecAchieveGo, renderEngCheckPage };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecBatchZhImport, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecOpenRecite, ecTxtBlockHTML, ecTabCfgGet, ecTabCfgAll, ecTabCfgVisible, ecTabCfgToggleShow, ecTabCfgMove, ecTabCfgHTML, ecMergeTabCfg, ecReviewCalendarHTML, EC_SUBTABS, ecOpenTabCfg, ecTabCfgRefreshIfModal, EC_REVIEW_SUBTABS, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, state, EC_WRONG_SUBTABS, EC_WB_GRADES, ecWbData, ecWbStatusOf, ecWbFingerprint, ecWbStats, ecWbDueItems, ecWbParse, ecWbAddItems, ecWbStart, ecWbGrade, ecWbExit, ecWbReset, ecRenderWrong, ecWbOverviewHTML, ecWbCalendarHTML, ecWbDueHTML, ecWbAllHTML, ecWbMasteredHTML, ecWbSessionHTML, ecMergeWrong, EC_WB_UNASSIGNED, ecWbById, ecWbMatchLesson, ecWbLocationText, ecWbItemsOfBook, ecWbItemsOfLesson, ecWbCounts, ecWbDueIn, ecWbFilteredDueItems, ecWbAutoTaskOn, ecWbScopeHTML, ecWbScopeOfValue, ecWbAssign, ecWbRemoveIds, ecWbSelIds, ecWbSelMode, ecWbSelToggle, ecWbSelAll, ecWbMoveIds, ecWbMoveItem, ecWbToggleAutoTask, ecWbAutoDrill, ecWbStartBook, ecWbStartLesson, ecWbGoLesson, ecWbBooksHTML, ecWbBookListHTML, ecWbBookDetailHTML, ecWbLessonDetailHTML, ecWbItemHTML, ecWbLessonCounts, ecWbBadgeHTML, ecWbLessonCardHTML, ecWbBookDueCount, ecTodayRecommendWrongHTML, ecGlobalStats, ecWbTokenize, ecWbTokKey, ecWbMergeSegs, ecWbDiffSides, ecWbSegsHTML, ecWbDiffWords, ecWbCompareHTML, ecWbReEsc, ecWbWhyHTML, EC_WB_TEMPLATE, ecWbTemplateCSV, ecWbFillTemplate, ecWbCopyTemplate, ecWbDownloadTemplate, ecWbHasMark, ecWbMarkHTML, ecWbMarkWords, ecWbFormHTML, ecWbFormValue, ecWbApplyForm, ecHeaderHTML, ecPendingTasks, ecHubCounts, ecHubAdvice, ecGo, ecMainTabsHTML, ecHubGridHTML, ecLinkCardHTML, ecAchieveGo, renderEngCheckPage, ecMiniBarHTML, ecHubPageHTML };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, getElementsByName: (name) => { const k = '__byname_' + name; if (!elCache[k]) elCache[k] = []; return elCache[k]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
@@ -1887,12 +1887,13 @@ console.log('—— x：四模块联动 ——');
 
     // 1. 静态：新增函数、统一入口、动作分发
     ok('x：驾驶舱新函数齐全', ['ecPendingTasks', 'ecHubCounts', 'ecHubAdvice', 'ecGo', 'ecMainTabsHTML', 'ecHubGridHTML', 'ecLinkCardHTML', 'ecAchieveGo'].every(f => new RegExp('function ' + f + '\\(').test(APP)));
-    ok('x：四个子标签统一常驻头卡', /const hub = state\._wbSession \? '' : ecHeaderHTML\(\);/.test(APP) && APP.includes('${hub}${renderEngCheckPage(tab)}'));
-    ok('x：复习会话中收起头卡', /state\._wbSession \? '' : ecHeaderHTML\(\)/.test(APP));
+    // v20261106y：驾驶舱改为独立「📊 总览」页，四个学习页顶部只留一行紧凑状态条
+    ok('y：大驾驶舱只在总览页渲染', /const top = state\._wbSession \? '' : \(isHub \? ecHeaderHTML\(\) : ecMiniBarHTML\(\)\);/.test(APP) && APP.includes('const body = isHub ? ecHubPageHTML() : renderEngCheckPage(tab);'));
+    ok('y：复习会话中连状态条一起收起', /state\._wbSession \? '' : \(isHub/.test(APP));
     ok('x：页内旧头卡调用已全部移除', !APP.includes('${ecHeaderHTML()}'));
     ok('x：Tab 栏换成带徽标版本', /ecMainTabsHTML\(tabs, tab, extra\)/.test(APP) && /data-action="tab" data-module="engcheck"/.test(APP));
     ok('x：ec-go 统一跳转动作分发', /action === 'ec-go'/.test(APP) && /ecGo\(el\.dataset\.to/.test(APP));
-    ok('x：联动条插在复习中心与错题概览', (APP.match(/ecLinkCardHTML\('/g) || []).length === 2);
+    ok('y：联动条插在复习中心 / 错题概览 / 总览页', (APP.match(/ecLinkCardHTML\('/g) || []).length === 3);
     ok('x：刷题残留仍为 0', !/EC_QUIZ_BUILTIN|ecQuizStart|ecRenderQuiz/.test(APP));
     ok('x：背诵打分函数未丢', /function ecReciteAction/.test(APP));
 
@@ -1970,6 +1971,88 @@ console.log('—— x：四模块联动 ——');
     ok('x：新题 / 无 FSRS 记录的题不算逾期', EC.ecWbStats().overdue === 0);
     w2.fsrs['wx1'] = { last: Date.now() - 10 * 86400000, due: Date.now() - 3 * 86400000, s: 3, d: 5, n: 1 };
     ok('x：复习过且过期才算逾期', EC.ecWbStats().overdue >= 1);
+}
+
+
+// ============ v20261106y：子标签跳首页修复 / 驾驶舱独立成页 / 加载链路加固 ============
+console.log('—— y：导航修复 / 总览分页 / 加载加固 ——');
+{
+    const SW = fs.readFileSync(__dirname + '/sw.js', 'utf8');
+    const VER = fs.readFileSync(__dirname + '/version.json', 'utf8');
+    const EC = makeEC();
+
+    // 1. 版本链一致
+    ok('y：APP_BUILD 升到 20261106y', /const APP_BUILD = '20261106y';/.test(APP));
+    ok('y：index.html 引用 y 哈希文件', HTML.includes('app.20261106y.js') && HTML.includes('styles.20261106y.css'));
+    ok('y：version.json / SW / SHELL 同步升版', VER.includes('20261106y') && /growtree-shell-v151/.test(SW) && SW.includes("'./app.20261106y.js'") && SW.includes("'./styles.20261106y.css'"));
+
+    // 2. 核心缺陷：真实浏览器复现「点全部错题 → currentModule 变 home → 整页跳欢迎首页」。
+    //    直接抽出 tab 分支执行，验证虚拟命名空间不再污染 currentModule。
+    const segStart = APP.indexOf("if (action === 'tab') {");
+    const segEnd = APP.indexOf('// 新增打卡项：自定义板块下拉', segStart);
+    const seg = APP.slice(segStart, segEnd);
+    ok('y：tab 分支按真实模块判定', segStart > 0 && segEnd > segStart && /const isRealModule = !!getModuleById\(mod\);/.test(seg));
+    let renders = 0;
+    const runTab = (st, ds) => {
+        const f = new Function('state', 'getModuleById', 'render', 'closeSidebar', 'window', 'el', 'action', seg);
+        f(st,
+            id => ['home', 'engcheck', 'checkin', 'points'].includes(id) ? { id } : null,
+            () => { renders++; }, () => {}, { scrollTo() {} },
+            { dataset: Object.assign({ action: 'tab' }, ds) }, 'tab');
+    };
+    const s1 = { currentModule: 'engcheck', currentSubTab: {}, _wbSession: null };
+    runTab(s1, { module: 'ec-wrong-sub', tab: 'all' });
+    ok('y：点「全部错题」仍留在英语打卡', s1.currentModule === 'engcheck' && s1.currentSubTab['ec-wrong-sub'] === 'all' && renders === 1);
+    runTab(s1, { module: 'ec-wrong-sub', tab: 'books' });
+    ok('y：点「错题本」仍留在英语打卡', s1.currentModule === 'engcheck' && s1.currentSubTab['ec-wrong-sub'] === 'books');
+    runTab(s1, { module: 'ec-wrong-sub', tab: 'mastered' });
+    ok('y：点「已掌握」仍留在英语打卡', s1.currentModule === 'engcheck' && s1.currentSubTab['ec-wrong-sub'] === 'mastered');
+    runTab(s1, { module: 'ec-review-sub', tab: 'due' });
+    ok('y：复习中心三级子标签也不跳首页', s1.currentModule === 'engcheck' && s1.currentSubTab['ec-review-sub'] === 'due');
+    runTab(s1, { module: 'ghost-sub', tab: 'x' });
+    ok('y：未知命名空间不会切走当前模块', s1.currentModule === 'engcheck');
+    runTab(s1, { module: 'engcheck', tab: 'ec-wrong', ecMain: '1' });
+    ok('y：主 Tab 仍正常切子标签', s1.currentModule === 'engcheck' && s1.currentSubTab.engcheck === 'ec-wrong');
+    runTab(s1, { module: 'home' });
+    ok('y：侧栏导航仍能切回欢迎首页', s1.currentModule === 'home');
+    runTab(s1, { module: 'engcheck', tab: 'ec-books', ecMain: '1', subtab: 'category' });
+    ok('y：data-subtab 原有语义不变', s1.currentSubTab['engcheck_ec-books'] === 'category');
+    s1._wbSession = { queue: [1], idx: 0 };
+    runTab(s1, { module: 'engcheck', tab: 'ec-books', ecMain: '1' });
+    ok('y：切主 Tab 清掉复习会话（不再卡在复习卡）', s1._wbSession === null);
+
+    // 3. 驾驶舱独立成页
+    ok('y：总览页 / 紧凑条函数齐全', ['ecMiniBarHTML', 'ecHubPageHTML'].every(f => new RegExp('function ' + f + '\\(').test(APP)));
+    ok('y：engcheck 按 isHub 分流', /const isHub = state\.currentSubTab\.engcheck === 'ec-hub';/.test(APP) && /const tab = isHub \? 'ec-hub' : validSubTab/.test(APP));
+    const tabsY = EC.ecMainTabsHTML(EC.EC_SUBTABS, 'ec-books', '');
+    ok('y：主 Tab 栏有固定总览入口', tabsY.includes('data-tab="ec-hub"') && tabsY.includes('总览') && tabsY.includes('class="tab-btn ec-hub-tab'));
+    ok('y：总览入口是真实模块切换语义', tabsY.includes('data-module="engcheck" data-tab="ec-hub"'));
+    ok('y：总览不参与隐藏/排序配置', EC.EC_SUBTABS.every(t => t.id !== 'ec-hub'));
+    const mini = EC.ecMiniBarHTML();
+    ok('y：紧凑条一行显示等级/积分/连续/待办', mini.includes('ec-mini-bar') && mini.includes('Lv.') && mini.includes('⭐') && mini.includes('连续') && mini.includes('ec-mini-todo'));
+    ok('y：紧凑条可一键回总览', mini.includes('data-tab="ec-hub"') && mini.includes('看总览'));
+    ok('y：紧凑条不含大四格（不重复占位）', !mini.includes('ec-hub-cell') && !mini.includes('ec-hub-grid'));
+    const hubPage = EC.ecHubPageHTML();
+    ok('y：总览页带说明与四板块联动', hubPage.includes('学习总览') && hubPage.includes('ec-link-card') && hubPage.includes('ec-hub-note'));
+    ok('y：原四格与引导按钮全部保留', (EC.ecHeaderHTML().match(/data-action="ec-go"/g) || []).length === 5);
+
+    // 4. 样式
+    ok('y：紧凑条 / 总览按钮 CSS 齐全', ['.ec-mini-bar', '.ec-mini-lv', '.ec-mini-todo', '.ec-mini-go', '.ec-hub-tab', '.ec-hub-note'].every(c => CSS.includes(c)));
+    ok('y：紧凑条暗色 + 手机适配', /\[data-theme="dark"\] \.ec-mini-todo\.has/.test(CSS) && /\.ec-mini-item \{ display: none; \}/.test(CSS));
+    ok('y：CSS 花括号仍平衡', (CSS.match(/{/g) || []).length === (CSS.match(/}/g) || []).length);
+
+    // 5. 加载链路加固：关掉网页重开不再「看得见但点不动」
+    ok('y：境外 CDN 依赖清零', !/unpkg|jsdelivr|fonts\.googleapis/.test(HTML));
+    ok('y：无用库已移除', !/<script[^>]*(compromise|chart)/.test(HTML));
+    ok('y：必需库本地托管 + defer 不阻塞', HTML.includes('defer src="vendor/lunar.1.7.8.js"') && HTML.includes('defer src="vendor/supabase.2.119.0.js"') && HTML.includes('defer src="app.20261106y.js"'));
+    ok('y：本地库文件存在且含关键符号', fs.existsSync(__dirname + '/vendor/lunar.1.7.8.js') && fs.existsSync(__dirname + '/vendor/supabase.2.119.0.js') && fs.readFileSync(__dirname + '/vendor/supabase.2.119.0.js', 'utf8').includes('createClient'));
+    ok('y：启动就绪标记', /window\.__GT_READY__ = true;/.test(APP));
+    ok('y：加载失败有重新加载入口', /if \(window\.__GT_READY__\) return;/.test(HTML) && /重新加载/.test(HTML));
+    ok('y：后台请求失败不再弹整页错误', /console\.warn\('后台请求未完成'/.test(HTML) && /if \(!window\.__GT_READY__\) showFatalError/.test(HTML));
+    ok('y：脚本运行错误不再覆盖整页内容', /console\.error\('运行错误'/.test(HTML) && /刚才的操作没成功/.test(HTML));
+    ok('y：SW 对不可变文件缓存优先', /const immutable =/.test(SW) && /caches\.match\(req\)\.then\(\(hit\) =>/.test(SW) && /\/vendor\//.test(SW));
+    ok('y：SW 预缓存 vendor 且断网有兜底', SW.includes("'./vendor/lunar.1.7.8.js'") && SW.includes("'./vendor/supabase.2.119.0.js'") && /new Response\('离线中/.test(SW));
+    ok('y：SW 页面请求仍网络优先（部署即时生效）', /fetch\(networkReq\)/.test(SW) && /cache: 'reload'/.test(SW));
 }
 
 

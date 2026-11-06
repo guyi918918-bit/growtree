@@ -14,9 +14,8 @@
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="apple-touch-icon" href="apple-touch-icon.png">
     <title>顾一的成长小树</title>
-    <link rel="stylesheet" href="styles.20261106x.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.20261106y.css">
+    <!-- v20261106y：字体改用系统字体栈，去掉境外 Google Fonts 请求（慢网会阻塞后续脚本） -->
 </head>
 <body>
     <div id="app">
@@ -377,11 +376,11 @@ create policy "allow anon all" on beauty_inspiration
         </div>
     </div>
 
-    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/lunar-javascript/lunar.js"></script>
-    <script src="https://unpkg.com/compromise@14.16.0/builds/compromise.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.20261106x.js"></script>
+    <!-- v20261106y：第三方库全部本地托管，页面不再依赖境外 CDN；
+         两个从未使用的库（compromise / chart.js）已移除。defer 保证顺序执行且不阻塞页面解析 -->
+    <script defer src="vendor/lunar.1.7.8.js"></script>
+    <script defer src="vendor/supabase.2.119.0.js"></script>
+    <script defer src="app.20261106y.js"></script>
     <script>
         // 全局错误兜底：若初始化崩溃，把错误显示在页面上，而不是白屏
         function showFatalError(msg, detail) {
@@ -394,10 +393,30 @@ create policy "allow anon all" on beauty_inspiration
                 '<button onclick="location.reload(true)" style="margin-top:12px;padding:8px 16px;border:none;border-radius:8px;background:#34c759;color:#fff;font-size:14px">强制刷新</button>';
         }
         window.onerror = function (msg, url, line, col, err) {
-            showFatalError('运行错误：' + msg, '行号：' + line + ':' + col + '\n' + (err && err.stack ? err.stack : ''));
+            if (!window.__GT_READY__) {
+                showFatalError('运行错误：' + msg, '行号：' + line + ':' + col + '\n' + (err && err.stack ? err.stack : ''));
+                return;
+            }
+            // 页面已正常启动：单个操作出错不要把整页内容换成错误堆栈，只留轻量提示
+            console.error('运行错误', msg, line, col, err);
+            try { if (typeof toast === 'function') toast('⚠️ 刚才的操作没成功，请再点一次'); } catch (e) {}
         };
         window.addEventListener('unhandledrejection', function (e) {
-            showFatalError('未处理的异步错误', e.reason && e.reason.stack ? e.reason.stack : String(e.reason));
+            // 云端同步 / 天气 / 热榜等后台请求失败很常见，不等于页面崩溃，不能弹整页错误
+            console.warn('后台请求未完成', e.reason);
+            if (!window.__GT_READY__) showFatalError('启动时的异步错误', e.reason && e.reason.stack ? e.reason.stack : String(e.reason));
+        });
+        // 脚本没下载完整 / 没执行时，页面会「看得见但点不动」：给一个明确的重试入口
+        window.addEventListener('load', function () {
+            setTimeout(function () {
+                if (window.__GT_READY__) return;
+                const el = document.getElementById('fatalError');
+                if (!el) return;
+                el.style.display = 'block';
+                el.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:8px">😵 页面还没加载好</div>' +
+                    '<div style="font-size:14px;opacity:.85;margin-bottom:12px">可能是网络中断导致脚本没下载完整，数据都还在，重新加载一次就好。</div>' +
+                    '<button onclick="location.reload(true)" style="padding:8px 16px;border:none;border-radius:8px;background:#34c759;color:#fff;font-size:14px">重新加载</button>';
+            }, 6000);
         });
 
         // 注册 Service Worker：实现部署后自动静默更新，告别「删了重加」

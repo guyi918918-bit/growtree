@@ -4878,6 +4878,44 @@ select.input {
     .ec-tab-badge { min-width: 15px; height: 15px; font-size: 9px; padding: 0 3px; }
 }
 @media (prefers-reduced-motion: reduce) {
-    .ec-hub-cell, .ec-mod-stat, .ec-link-item, .ec-ach-go, .ec-bar-fill, .ec-ach-progress-fill { transition: none !important; }
+    .ec-hub-cell, .ec-mod-stat, .ec-link-item, .ec-ach-go, .ec-bar-fill, .ec-ach-progress-fill, .ec-mini-go { transition: none !important; }
     .ec-hub-cell:hover, .ec-mod-stat:hover, .ec-link-item:hover { transform: none !important; }
+}
+
+/* ===== v20261106y：学习驾驶舱独立成「📊 总览」一页 ===== */
+.ec-hub-tab:not(.active) { background: var(--primary-light); color: var(--primary-dark); }
+.ec-mini-bar.card {
+    display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
+    padding: 8px 12px; margin-bottom: 10px; overflow-x: auto;
+    font-size: 12px; line-height: 1.2;
+}
+.ec-mini-lv {
+    flex-shrink: 0; padding: 3px 9px; border-radius: 999px;
+    background: linear-gradient(135deg, #7c6cf5, #a78bfa); color: #fff;
+    font-size: 11px; font-weight: 800; letter-spacing: .2px;
+}
+.ec-mini-item { flex-shrink: 0; white-space: nowrap; color: var(--text-secondary); }
+.ec-mini-todo {
+    margin-left: auto; flex-shrink: 0; white-space: nowrap;
+    font-size: 11px; font-weight: 700; color: var(--text-secondary);
+}
+.ec-mini-todo.has { color: #d97706; }
+.ec-mini-todo.ok { color: var(--primary-dark); }
+.ec-mini-go {
+    flex-shrink: 0; border: none; border-radius: 999px; padding: 5px 11px;
+    background: var(--primary); color: #fff; font-size: 11px; font-weight: 700;
+    cursor: pointer; white-space: nowrap; transition: transform .15s ease, opacity .15s ease;
+}
+.ec-mini-go:hover { transform: translateY(-1px); opacity: .9; }
+.ec-mini-go:active { transform: translateY(0); }
+.ec-hub-note { padding: 10px 14px; font-size: 12px; line-height: 1.65; color: var(--text-secondary); }
+.ec-crumb + .ec-link-card { margin-top: 10px; }
+[data-theme="dark"] .ec-mini-todo.has { color: #ffb340; }
+[data-theme="dark"] .ec-mini-todo.ok { color: #5be584; }
+[data-theme="dark"] .ec-hub-tab:not(.active) { background: rgba(48,209,88,.14); color: #5be584; }
+@media (max-width: 600px) {
+    .ec-mini-bar.card { gap: 8px; padding: 7px 10px; }
+    .ec-mini-item { display: none; }
+    .ec-mini-todo { font-size: 11px; }
+    .ec-mini-go { padding: 5px 9px; font-size: 10px; }
 }
