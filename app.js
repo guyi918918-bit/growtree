@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261106t';
+const APP_BUILD = '20261106u';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -10997,7 +10997,8 @@ function ecGlobalStats() {
         const rec = d.tasks[k];
         if (rec && rec.at && rec.at >= dayStartMs) todayDone++;
     });
-    return { due, overdue, todayDone, mastered };
+    const wc = ecWbCounts(ecWbData().items);
+    return { due, overdue, todayDone, mastered, wrongDue: wc.due, wrongMastered: wc.mastered };
 }
 function ecDueRecites() {
     const d = ecData();
@@ -11022,7 +11023,9 @@ function ecBookStats(bookId) {
         const rec = d.fsrs[l.id];
         if (rec && rec.last) { recited++; if ((rec.s || 0) >= EC_FSRS.masteredS) mastered++; }
     });
-    return { lessons: lessons.length, tasksDone, taskTotal, recited, mastered };
+    const wc = ecWbCounts(ecWbItemsOfBook(bookId));
+    return { lessons: lessons.length, tasksDone, taskTotal, recited, mastered,
+        wrongTotal: wc.total, wrongDue: wc.due, wrongMastered: wc.mastered };
 }
 
 // ---------- 操作 ----------
@@ -11668,14 +11671,13 @@ async function ecClearRecords() {
     ecAfterAction('🧹 学习记录已清零，书单目录保留');
 }
 
-// ==================== 错题复习（错题集 + FSRS 间隔复习，直到掌握为止） ====================
+// ==================== 错题复习：分书本 / 分课时 + FSRS 间隔复习 + 与书本学习联动 ====================
 // 数据结构（state.data.engcheck.wrongbk，随 engcheck 云同步）：
-//   items: [{ id, lesson, point, mine, right, why, createdAt, updatedAt }]
-//     lesson=课时（如 L23-24） point=核心知识点 mine=你当时的答案 right=正确答案 why=大白话原因
-//   fsrs:  { itemId: {s,d,n,lapses,last,due,grade} } —— 复用 EC_FSRS / ecFsrsLearn / ecFsrsReview
-//   tombs: { itemId: 删除时间戳 }（墓碑：删除后不被对端旧快照复活）
-//   clearedAt: 清零分界线（清空错题集时记录，合并时丢弃更早的对端记录）
-//   updatedAt: 最近一次本地修改时间（跨设备合并方向参考）
+//   items: [{ id, bookId, lessonId, lesson, point, mine, right, why, order, createdAt, updatedAt }]
+//     bookId/lessonId 直接引用书单目录（books / lessons）；lesson 保留原文本，未归类时作为兜底显示
+//     point=核心知识点 mine=你当时的答案 right=正确答案 why=大白话原因 order=课时内排序
+//   fsrs / tombs / clearedAt / updatedAt：FSRS 记录、删除墓碑、清零分界线、最近修改时间
+//   autoTask / autoTaskAt：错题复习自评后是否自动完成该课「练题」任务（默认开，可关，跨设备按 at 取新）
 const EC_WB_GRADES = [
     { id: 1, name: 'Again', label: '又错了', desc: '还是想错 / 完全没印象', cls: 'g-again' },
     { id: 2, name: 'Hard', label: '很勉强', desc: '想起来了，但磕磕绊绊', cls: 'g-hard' },
@@ -11685,10 +11687,13 @@ const EC_WB_GRADES = [
 const EC_WRONG_SUBTABS = [
     { id: 'overview', name: '📊 概览' },
     { id: 'due', name: '⏰ 待复习' },
+    { id: 'books', name: '🗂️ 错题本' },
     { id: 'all', name: '📚 全部错题' },
     { id: 'mastered', name: '🏆 已掌握' }
 ];
+const EC_WB_UNASSIGNED = '__unassigned__';
 
+// ---------- 数据 / 旧数据迁移 ----------
 function ecWbData() {
     const d = ecData();
     if (!d.wrongbk || typeof d.wrongbk !== 'object') d.wrongbk = { items: [], fsrs: {}, tombs: {}, clearedAt: 0, updatedAt: 0 };
@@ -11698,26 +11703,95 @@ function ecWbData() {
     if (!w.tombs || typeof w.tombs !== 'object') w.tombs = {};
     if (typeof w.clearedAt !== 'number') w.clearedAt = 0;
     if (typeof w.updatedAt !== 'number') w.updatedAt = 0;
+    if (typeof w.autoTask !== 'boolean') w.autoTask = true;
+    if (typeof w.autoTaskAt !== 'number') w.autoTaskAt = 0;
+    ecWbMigrate(w);
     return w;
+}
+function ecWbBookOf(it) { return it && it.bookId ? ecBookById(it.bookId) : null; }
+function ecWbLessonOf(it) { return it && it.lessonId ? ecLessonById(it.lessonId) : null; }
+function ecWbLessonName(it) {
+    const l = ecWbLessonOf(it);
+    if (l) return l.name;
+    return (it && it.lesson) ? String(it.lesson) : '未标课时';
+}
+function ecWbBookName(it) {
+    const b = ecWbBookOf(it);
+    if (b) return b.name;
+    const l = ecWbLessonOf(it);
+    if (l) { const b2 = ecBookById(l.bookId); if (b2) return b2.name; }
+    return '未归类';
+}
+function ecWbLocationText(it) {
+    return ecWbBookName(it) + (ecWbLessonOf(it) || (it && it.lesson) ? ' › ' + ecWbLessonName(it) : '');
+}
+// 用课时文字匹配书单目录：先名称包含，再课次编号（L31、L32 / 第 5 课 / Unit 3 都能对上）
+function ecWbMatchLesson(text, bookId) {
+    const s = String(text || '').trim();
+    if (!s) return null;
+    const d = ecData();
+    const books = bookId ? d.books.filter(b => b.id === bookId) : d.books;
+    const norm = x => String(x || '').toLowerCase().replace(/[\s，,、·：:]/g, '');
+    for (const b of books) {
+        for (const l of ecLessonsOf(b.id)) {
+            const a = norm(l.name), c = norm(s);
+            if (a && c && (a === c || a.indexOf(c) >= 0 || c.indexOf(a) >= 0)) return { bookId: b.id, lessonId: l.id };
+        }
+    }
+    const nums = ecZhTitleNums(s);
+    if (nums.length) {
+        for (const b of books) {
+            for (const l of ecLessonsOf(b.id)) {
+                if (ecZhTitleNums(l.name).some(n => nums.indexOf(n) >= 0)) return { bookId: b.id, lessonId: l.id };
+            }
+        }
+    }
+    return null;
+}
+// v20261106u：老错题只有 lesson 文本 → 自动认领到书单课时；认领结果参与跨端合并（时间戳要让绑定版本胜出）
+function ecWbMigrate(w) {
+    const ts = Date.now();
+    let changed = false;
+    w.items.forEach((it, i) => {
+        if (!it || typeof it !== 'object') return;
+        if (it.bookId === undefined || it.lessonId === undefined) {
+            const hit = ecWbMatchLesson(it.lesson || '');
+            it.bookId = hit ? hit.bookId : '';
+            it.lessonId = hit ? hit.lessonId : '';
+            it.updatedAt = Math.max(Number(it.updatedAt) || 0, ts + i);
+            changed = true;
+        }
+        if (typeof it.order !== 'number') it.order = Number(it.createdAt) || (ts + i);
+    });
+    if (changed) w.updatedAt = Math.max(Number(w.updatedAt) || 0, ts);
 }
 function ecWbTouch() { ecWbData().updatedAt = Date.now(); }
 function ecWbById(id) { return ecWbData().items.find(it => it.id === id) || null; }
 function ecWbStatusOf(id, nowTs) { return ecReciteStatus(ecWbData().fsrs[id], nowTs); }
 function ecWbFingerprint(it) { return [it.point, it.mine, it.right].map(s => String(s || '').trim()).join('|'); }
+function ecWbItemsOfBook(bookId) {
+    return ecWbData().items.filter(it => bookId === EC_WB_UNASSIGNED ? !it.bookId : it.bookId === bookId);
+}
+function ecWbItemsOfLesson(lessonId) { return ecWbData().items.filter(it => it.lessonId === lessonId); }
+function ecWbCounts(list) {
+    const nowTs = Date.now();
+    const c = { total: list.length, due: 0, mastered: 0, waiting: 0 };
+    list.forEach(it => {
+        const s = ecWbStatusOf(it.id, nowTs);
+        if (s === 'mastered') c.mastered++;
+        else if (s === 'waiting') c.waiting++;
+        else c.due++;
+    });
+    return c;
+}
 function ecWbStats() {
     const w = ecWbData();
-    const nowTs = Date.now();
     const today0 = new Date().setHours(0, 0, 0, 0);
-    const st = { due: 0, overdue: 0, waiting: 0, mastered: 0, total: w.items.length };
+    const st = ecWbCounts(w.items);
+    st.overdue = 0;
     w.items.forEach(it => {
-        const s = ecWbStatusOf(it.id, nowTs);
-        if (s === 'mastered') st.mastered++;
-        else if (s === 'waiting') st.waiting++;
-        else {
-            // 'due' / 'new'（fsrs 记录缺失的旧数据）都算待复习，避免题目凭空消失
-            st.due++;
-            if ((Number((w.fsrs[it.id] || {}).due) || 0) < today0) st.overdue++;
-        }
+        const s = ecWbStatusOf(it.id, Date.now());
+        if (s !== 'mastered' && s !== 'waiting' && (Number((w.fsrs[it.id] || {}).due) || 0) < today0) st.overdue++;
     });
     return st;
 }
@@ -11729,13 +11803,56 @@ function ecWbDueItems() {
         return s === 'due' || s === 'new';
     }).sort((a, b) => (Number((w.fsrs[a.id] || {}).due) || 0) - (Number((w.fsrs[b.id] || {}).due) || 0));
 }
+// 按 scope（bookId / lessonId / 未归类）或顶部筛选条件过滤待复习队列
+function ecWbDueIn(scope) {
+    const s = scope || {};
+    return ecWbDueItems().filter(it => {
+        if (s.lessonId && it.lessonId !== s.lessonId) return false;
+        if (s.bookId === EC_WB_UNASSIGNED) return !it.bookId;
+        if (s.bookId && it.bookId !== s.bookId) return false;
+        return true;
+    });
+}
+function ecWbFilterScope() {
+    return { lessonId: state._wbFilterLessonId || '', bookId: state._wbFilterBookId || '' };
+}
+function ecWbFilteredDueItems() { return ecWbDueIn(ecWbFilterScope()); }
+function ecWbAutoTaskOn() { return ecWbData().autoTask !== false; }
 
-// ---------- 导入解析：支持 Tab（Excel/WPS 直接复制粘贴）与 || 分隔 ----------
+// ---------- 归属选择（书本 › 课时 一次选完，避免两级联动弹窗） ----------
+function ecWbScopeHTML(sel) {
+    const d = ecData();
+    let html = `<option value="">未归类（不挂到任何书 / 课）</option>`;
+    d.books.forEach(b => {
+        const ls = ecLessonsOf(b.id);
+        if (!ls.length) return;
+        html += `<optgroup label="${escapeHtml(b.name)}">` + ls.map(l =>
+            `<option value="${l.id}"${sel === l.id ? ' selected' : ''}>${escapeHtml(l.name)}</option>`).join('') + `</optgroup>`;
+    });
+    return html;
+}
+function ecWbScopeOfValue(v) {
+    const l = v ? ecLessonById(v) : null;
+    return l ? { bookId: l.bookId, lessonId: l.id } : { bookId: '', lessonId: '' };
+}
+function ecWbScopeSelectHTML(id, sel, label) {
+    return `<div class="ec-wb-field"><label>${label}</label><select id="${id}" class="ec-wb-select">${ecWbScopeHTML(sel)}</select></div>`;
+}
+// 一行导入文本里的课时列优先按目录名匹配；匹配不到就用弹窗选的课；再不行保留文本、未归类
+function ecWbAssign(list, fallback) {
+    const f = fallback || { bookId: '', lessonId: '' };
+    return list.map(it => {
+        const hit = ecWbMatchLesson(it.lesson || '', f.bookId || '');
+        const scope = hit || f;
+        return Object.assign({}, it, { bookId: scope.bookId || '', lessonId: scope.lessonId || '' });
+    });
+}
+
+// ---------- 导入解析：Tab（Excel / WPS 直接粘贴）、||、单竖线 ----------
 // 列序：课时 | 知识点 | 我的答案 | 正确答案 | 大白话原因（可只给 3 列：知识点|我的答案|正确答案）
 function ecWbParse(text) {
     const items = [], errors = [];
     const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
-    // 首列看起来像课时（L23-24 / Unit 3 / 第 5 课 / U2）时，即使「原因」列为空被截成 4 列也不会错位
     const looksLesson = s => /^(L\s*\d|U\s*\d|Unit\s*\d|Lesson\s*\d|第\s*\d+\s*课|\d+\s*[-~至]\s*\d+\s*课?)/i.test(String(s || '').trim());
     let firstSeen = false;
     lines.forEach((raw, i) => {
@@ -11745,7 +11862,6 @@ function ecWbParse(text) {
         const cols = line.split(sep === '||' ? /\|\|/ : sep).map(s => s.trim());
         if (!firstSeen) {
             firstSeen = true;
-            // 表头行：含「正确答案」且含「课时/知识点/我的答案」字样 → 跳过
             const joined = cols.join(' ');
             if (/正确答案/.test(joined) && /课时|知识点|我的答案/.test(joined)) return;
         }
@@ -11761,7 +11877,7 @@ function ecWbParse(text) {
     return { items, errors };
 }
 
-// 批量入库：指纹（知识点+我的答案+正确答案）去重；每题建立 FSRS 记录且立即可复习
+// 批量入库：指纹去重；每题建 FSRS 且立即可复习；带书本/课时归属
 function ecWbAddItems(list) {
     const w = ecWbData();
     const seen = new Set(w.items.map(ecWbFingerprint));
@@ -11775,9 +11891,13 @@ function ecWbAddItems(list) {
     const nowTs = Date.now();
     fresh.forEach((it, i) => {
         const id = uuid();
-        w.items.push({ id, lesson: it.lesson || '', point: it.point, mine: it.mine, right: it.right, why: it.why || '', createdAt: nowTs + i, updatedAt: nowTs + i });
+        w.items.push({
+            id, bookId: it.bookId || '', lessonId: it.lessonId || '', lesson: it.lesson || '',
+            point: it.point, mine: it.mine, right: it.right, why: it.why || '',
+            order: nowTs + i, createdAt: nowTs + i, updatedAt: nowTs + i
+        });
         const rec = ecFsrsLearn(nowTs);
-        rec.due = nowTs; // 刚做错的题立即可复习，不用等明天
+        rec.due = nowTs; // 刚做错的题立即可复习
         w.fsrs[id] = rec;
     });
     // 收录错题本身不计分（一次粘贴几十题会稀释积分），只在真正复习自评时给分
@@ -11785,69 +11905,95 @@ function ecWbAddItems(list) {
     return fresh.length;
 }
 
-// ---------- 导入 / 添加 / 编辑 / 删除 / 清空 / 备份 ----------
-async function ecWbImportOpen() {
+// ---------- 导入 / 添加 / 编辑 / 删除 / 批量 / 排序 / 备份 ----------
+async function ecWbImportOpen(defaultLessonId) {
     const v = await uiModal({
         title: '📥 批量导入错题',
-        html: '<div class="ec-hint">从 Excel / WPS 直接复制表格粘贴到下面（自动按 Tab 分列）。<br>列顺序：<b>课时 | 知识点 | 我的答案 | 正确答案 | 大白话原因</b>；第一行表头可带可不带，重复错题自动跳过。</div>'
+        html: '<div class="ec-hint">从 Excel / WPS 复制表格粘贴（自动按 Tab 分列）。列顺序：<b>课时 | 知识点 | 我的答案 | 正确答案 | 大白话原因</b>；第一行表头可带可不带，重复错题自动跳过。</div>'
+            + ecWbScopeSelectHTML('ecWbScopeSel', defaultLessonId || '', '📚 归到哪本书 / 哪一课（表里写了课时会自动对上目录）')
             + '<textarea id="ecWbImportBox" class="ec-wb-textarea" placeholder="L23-24&#9;名词替代词&#9;Which one?&#9;Which ones?&#9;前面是复数，提问和替代都要用 ones"></textarea>',
-        getValue: () => { const el = document.getElementById('ecWbImportBox'); return el ? el.value : ''; },
+        getValue: () => {
+            const box = document.getElementById('ecWbImportBox');
+            const sel = document.getElementById('ecWbScopeSel');
+            return { text: box ? box.value : '', scope: sel ? sel.value : '' };
+        },
         okText: '解析导入'
     });
-    if (v == null) return;
-    const r = ecWbParse(v);
+    if (!v || typeof v !== 'object') return;
+    const r = ecWbParse(v.text);
     if (!r.items.length) { toast(r.errors.length ? '没有可导入的行：' + r.errors[0] : '内容为空，先去表格里复制'); return; }
+    const scope = ecWbScopeOfValue(v.scope);
+    const list = ecWbAssign(r.items, scope);
     const w = ecWbData();
     const seen = new Set(w.items.map(ecWbFingerprint));
-    const freshN = r.items.filter(it => !seen.has(ecWbFingerprint(it))).length;
+    const freshN = list.filter(it => !seen.has(ecWbFingerprint(it))).length;
     if (!freshN) { toast('这些错题都已在错题集里，没有新增'); return; }
-    const ok = await uiConfirm(`解析出 ${r.items.length} 行：新增 ${freshN} 题，重复 ${r.items.length - freshN} 题自动跳过${r.errors.length ? `，另有 ${r.errors.length} 行无法识别已跳过` : ''}。\n\n确认导入？`);
+    const scopeName = scope.lessonId ? ecWbLessonName({ lessonId: scope.lessonId }) : '未归类';
+    const ok = await uiConfirm(`解析出 ${r.items.length} 行：新增 ${freshN} 题，重复 ${r.items.length - freshN} 题自动跳过${r.errors.length ? `，另有 ${r.errors.length} 行无法识别已跳过` : ''}。\n\n归属：${scopeName}${scope.lessonId ? '（表里写了课时的行会优先按课时名自动对上）' : ''}\n\n确认导入？`);
     if (!ok) return;
-    const n = ecWbAddItems(r.items);
-    ecAfterAction(`📥 已导入 ${n} 道错题，已加入待复习（今天就能复习）`);
+    const n = ecWbAddItems(list);
+    ecAfterAction(`📥 已导入 ${n} 道错题到「${scopeName}」，今天就能复习`);
 }
 
 function ecWbFormHTML(it) {
     const escQ = s => escapeHtml(s || '').replace(/"/g, '&quot;');
-    return `<input id="ecWbF0" class="ec-wb-input" placeholder="课时（如 L23-24，可留空）" value="${escQ(it.lesson)}">
-        <input id="ecWbF1" class="ec-wb-input" placeholder="知识点（如 名词替代词）*" value="${escQ(it.point)}">
-        <input id="ecWbF2" class="ec-wb-input" placeholder="我当时的答案 *" value="${escQ(it.mine)}">
-        <input id="ecWbF3" class="ec-wb-input" placeholder="正确答案 *" value="${escQ(it.right)}">
-        <input id="ecWbF4" class="ec-wb-input" placeholder="大白话原因（为什么错，可留空）" value="${escQ(it.why)}">`;
+    return ecWbScopeSelectHTML('ecWbF0', it.lessonId || '', '📚 归到哪本书 / 哪一课')
+        + `<input id="ecWbF1" class="ec-wb-input" placeholder="课时备注（可留空，如 L23-24）" value="${escQ(it.lesson)}">
+        <input id="ecWbF2" class="ec-wb-input" placeholder="知识点（如 名词替代词）*" value="${escQ(it.point)}">
+        <input id="ecWbF3" class="ec-wb-input" placeholder="我当时的答案 *" value="${escQ(it.mine)}">
+        <input id="ecWbF4" class="ec-wb-input" placeholder="正确答案 *" value="${escQ(it.right)}">
+        <input id="ecWbF5" class="ec-wb-input" placeholder="大白话原因（为什么错，可留空）" value="${escQ(it.why)}">`;
 }
 function ecWbFormValue() {
-    return [0, 1, 2, 3, 4].map(i => { const el = document.getElementById('ecWbF' + i); return (el ? el.value : '').trim(); });
+    const val = i => { const el = document.getElementById('ecWbF' + i); return el ? String(el.value || '').trim() : ''; };
+    return { scope: val(0), lesson: val(1), point: val(2), mine: val(3), right: val(4), why: val(5) };
 }
-async function ecWbAddSingle() {
-    const v = await uiModal({ title: '➕ 记一道错题', html: ecWbFormHTML({}), getValue: ecWbFormValue, okText: '加入错题集' });
-    if (v == null) return;
-    const [lesson, point, mine, right, why] = v;
-    if (!point || !mine || !right) { toast('知识点、我的答案、正确答案必填'); return; }
-    const n = ecWbAddItems([{ lesson, point, mine, right, why }]);
+function ecWbApplyForm(item, v, defaultLessonId) {
+    const scope = ecWbScopeOfValue(v.scope || defaultLessonId || '');
+    let lessonText = v.lesson || '';
+    // 选了课时但没填备注时，把课时名写进 lesson，导出备份/未归类兜底都更清楚
+    if (!lessonText && scope.lessonId) { const l = ecLessonById(scope.lessonId); lessonText = l ? l.name : ''; }
+    return Object.assign({}, item, {
+        bookId: scope.bookId, lessonId: scope.lessonId, lesson: lessonText,
+        point: v.point, mine: v.mine, right: v.right, why: v.why, updatedAt: Date.now()
+    });
+}
+async function ecWbAddSingle(defaultLessonId) {
+    const v = await uiModal({
+        title: '➕ 记一道错题',
+        html: ecWbFormHTML({ lessonId: defaultLessonId || '' }),
+        getValue: ecWbFormValue, okText: '加入错题集'
+    });
+    if (!v || typeof v !== 'object') return;
+    if (!v.point || !v.mine || !v.right) { toast('知识点、我的答案、正确答案必填'); return; }
+    const n = ecWbAddItems([ecWbApplyForm({}, v, defaultLessonId)]);
     ecAfterAction(n ? '➕ 已加入错题集（今天就能复习）' : '这道题已在错题集里（知识点+答案相同）');
 }
 async function ecWbEdit(id) {
     const item = ecWbById(id);
     if (!item) return;
     const v = await uiModal({ title: '✏️ 编辑错题', html: ecWbFormHTML(item), getValue: ecWbFormValue, okText: '保存' });
-    if (v == null) return;
-    const [lesson, point, mine, right, why] = v;
-    if (!point || !mine || !right) { toast('知识点、我的答案、正确答案必填'); return; }
-    Object.assign(item, { lesson, point, mine, right, why, updatedAt: Date.now() });
+    if (!v || typeof v !== 'object') return;
+    if (!v.point || !v.mine || !v.right) { toast('知识点、我的答案、正确答案必填'); return; }
+    Object.assign(item, ecWbApplyForm(item, v));
     ecWbTouch();
-    ecAfterAction('✏️ 已保存修改');
+    ecAfterAction('✏️ 已保存修改（归属也更新了）');
 }
 async function ecWbDel(id) {
     const item = ecWbById(id);
     if (!item) return;
     const ok = await uiConfirm(`删除这道错题？\n\n「${item.point}」\n删除后不可恢复`, { isDanger: true });
     if (!ok) return;
-    const w = ecWbData();
-    w.items = w.items.filter(it => it.id !== id);
-    delete w.fsrs[id];
-    w.tombs[id] = Date.now(); // 墓碑：防止对端旧快照把它复活
-    ecWbTouch();
+    ecWbRemoveIds([id]);
     ecAfterAction('🗑️ 已删除');
+}
+function ecWbRemoveIds(ids) {
+    const w = ecWbData();
+    const set = new Set(ids);
+    const ts = Date.now();
+    w.items = w.items.filter(it => !set.has(it.id));
+    ids.forEach(id => { delete w.fsrs[id]; w.tombs[id] = ts; });
+    ecWbTouch();
 }
 async function ecWbClear() {
     const w = ecWbData();
@@ -11856,50 +12002,169 @@ async function ecWbClear() {
     if (!ok) return;
     w.items = [];
     w.fsrs = {};
-    w.clearedAt = Date.now(); // 清零分界线：对端更早的记录合并时丢弃
+    w.clearedAt = Date.now();
     ecWbTouch();
     ecAfterAction('🧹 错题集已清空');
 }
 async function ecWbExport() {
     const w = ecWbData();
     if (!w.items.length) { toast('错题集是空的，没有可导出的内容'); return; }
-    const payload = w.items.map(it => ({ lesson: it.lesson, point: it.point, mine: it.mine, right: it.right, why: it.why }));
+    const payload = w.items.map(it => ({ book: ecWbBookName(it), lesson: ecWbLessonName(it), point: it.point, mine: it.mine, right: it.right, why: it.why }));
     await uiModal({
         title: `📤 导出错题集（${w.items.length} 题）`,
-        html: '<div class="ec-hint">长按全选复制，粘贴到备忘录 / 微信文件传输助手保存；换设备时用「导入备份」粘贴回来。</div>'
+        html: '<div class="ec-hint">长按全选复制，粘贴到备忘录 / 微信文件传输助手保存；换设备时用「导入备份」粘贴回来（会按书本/课时名自动认领）。</div>'
             + `<textarea id="ecWbExportBox" class="ec-wb-textarea" readonly>${escapeHtml(JSON.stringify(payload, null, 1))}</textarea>`,
         okText: '关闭'
     });
 }
 async function ecWbImportJSON() {
     const v = await uiModal({
-        title: '📥 导入备份（JSON）',
-        html: '<div class="ec-hint">粘贴之前「导出备份」的 JSON 内容</div>'
-            + '<textarea id="ecWbImportBox" class="ec-wb-textarea" placeholder=\'[{"point":"名词替代词","mine":"Which one?","right":"Which ones?"}]\'></textarea>',
+        title: '📥 导入备份',
+        html: '<div class="ec-hint">粘贴之前「导出备份」的内容（JSON）或五列表格文本；会自动按书本/课时名认领。</div>'
+            + '<textarea id="ecWbImportBox" class="ec-wb-textarea" placeholder=\'[{"lesson":"L23-24","point":"名词替代词","mine":"Which one?","right":"Which ones?"}]\'></textarea>',
         getValue: () => { const el = document.getElementById('ecWbImportBox'); return el ? el.value : ''; },
         okText: '导入'
     });
-    if (v == null) return;
-    let arr;
-    try { arr = JSON.parse(v); } catch (e) { toast('JSON 格式不对，导入失败'); return; }
-    if (!Array.isArray(arr)) { toast('JSON 应该是一个数组'); return; }
-    const list = arr.filter(o => o && o.point && o.mine && o.right)
-        .map(o => ({ lesson: String(o.lesson || ''), point: String(o.point), mine: String(o.mine), right: String(o.right), why: String(o.why || '') }));
-    if (!list.length) { toast('没有可导入的错题（每条需要 point/mine/right）'); return; }
-    const n = ecWbAddItems(list);
+    if (!v) return;
+    let list = [];
+    const s = String(v).trim();
+    if (s.charAt(0) === '[') {
+        try {
+            const arr = JSON.parse(s);
+            if (!Array.isArray(arr)) throw new Error('not array');
+            list = arr.filter(o => o && o.point && o.mine && o.right).map(o => ({
+                lesson: String(o.lesson || ''), point: String(o.point), mine: String(o.mine), right: String(o.right), why: String(o.why || '')
+            }));
+        } catch (e) { toast('JSON 格式不对，导入失败'); return; }
+    } else list = ecWbParse(s).items;
+    if (!list.length) { toast('没有可导入的错题（每条需要知识点/我的答案/正确答案）'); return; }
+    const n = ecWbAddItems(ecWbAssign(list, { bookId: '', lessonId: '' }));
     ecAfterAction(n ? `📥 导入 ${n} 道错题（重复已自动跳过）` : '这些错题都已在错题集里');
 }
 
-// ---------- 复习会话（翻面卡片：我的答案 → 看正确答案+原因 → 四档自评） ----------
-function ecWbStart(id) {
-    const due = ecWbDueItems();
-    let queue = due.map(it => it.id);
-    if (id) {
-        const at = queue.indexOf(id);
-        queue = at >= 0 ? queue.slice(at) : [id];
-    }
-    if (!queue.length) { toast('现在没有待复习的错题'); return; }
-    state._wbSession = { queue, idx: 0, revealed: false, graded: 0 };
+// ---------- 批量选择 / 批量移动 / 课时内排序 ----------
+function ecWbSelIds() { const s = state._wbSel || {}; return Object.keys(s).filter(k => s[k]); }
+function ecWbSelMode(on) { state._wbSelMode = typeof on === 'boolean' ? on : !state._wbSelMode; state._wbSel = {}; render(); }
+function ecWbSelToggle(id) { state._wbSel = state._wbSel || {}; state._wbSel[id] = !state._wbSel[id]; render(); }
+function ecWbSelAll() {
+    state._wbSel = state._wbSel || {};
+    const ids = (state._wbVisibleIds && state._wbVisibleIds.length) ? state._wbVisibleIds : ecWbData().items.map(it => it.id);
+    const all = ids.length > 0 && ids.every(id => state._wbSel[id]);
+    ids.forEach(id => { state._wbSel[id] = !all; });
+    render();
+}
+async function ecWbDelSelected() {
+    const ids = ecWbSelIds();
+    if (!ids.length) { toast('先勾选要删除的错题'); return; }
+    const ok = await uiConfirm(`删除选中的 ${ids.length} 道错题？\n\n删除后不可恢复`, { isDanger: true });
+    if (!ok) return;
+    ecWbRemoveIds(ids);
+    state._wbSel = {}; state._wbSelMode = false;
+    ecAfterAction(`🗑️ 已删除 ${ids.length} 道错题`);
+}
+async function ecWbMoveSelected() {
+    const ids = ecWbSelIds();
+    if (!ids.length) { toast('先勾选要调整的错题'); return; }
+    const v = await uiModal({
+        title: `📦 调整 ${ids.length} 道错题的归属`,
+        html: '<div class="ec-hint">把选中的错题一次性挪到另一本书 / 另一课；选「未归类」则解除书本课时绑定。</div>'
+            + ecWbScopeSelectHTML('ecWbMoveSel', '', '📚 移到'),
+        getValue: () => { const el = document.getElementById('ecWbMoveSel'); return el ? el.value : ''; },
+        okText: '移动'
+    });
+    if (v == null) return;
+    const scope = ecWbScopeOfValue(v);
+    const l = scope.lessonId ? ecLessonById(scope.lessonId) : null;
+    ecWbMoveIds(ids, scope, l ? l.name : '');
+    state._wbSel = {}; state._wbSelMode = false;
+    ecAfterAction(`📦 已把 ${ids.length} 道错题移到「${l ? l.name : '未归类'}」`);
+}
+function ecWbMoveIds(ids, scope, lessonText) {
+    const set = new Set(ids);
+    const ts = Date.now();
+    ecWbData().items.forEach(it => {
+        if (!set.has(it.id)) return;
+        it.bookId = scope.bookId || '';
+        it.lessonId = scope.lessonId || '';
+        if (lessonText) it.lesson = lessonText;
+        it.updatedAt = ts;
+    });
+    ecWbTouch();
+}
+function ecWbMoveItem(id, dir) {
+    const item = ecWbById(id);
+    if (!item) return;
+    const peers = ecWbData().items
+        .filter(it => (it.lessonId || '') === (item.lessonId || '') && (it.bookId || '') === (item.bookId || ''))
+        .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+    const i = peers.findIndex(x => x.id === id);
+    const j = i + (dir === 'up' ? -1 : 1);
+    if (i < 0 || j < 0 || j >= peers.length) { toast(dir === 'up' ? '已经是第一题了' : '已经是最后一题了'); return; }
+    const tmp = peers[i].order;
+    peers[i].order = peers[j].order;
+    peers[j].order = tmp;
+    [peers[i], peers[j]].forEach(x => { x.updatedAt = Date.now(); });
+    ecWbTouch();
+    ecAfterAction('🔀 已调整题目顺序');
+}
+function ecWbToggleAutoTask() {
+    const w = ecWbData();
+    w.autoTask = w.autoTask === false;
+    w.autoTaskAt = Date.now();
+    ecAfterAction(w.autoTask ? '✅ 已开启：复习错题后自动完成该课「练题」任务' : '⏸️ 已关闭：复习错题不再自动打卡任务');
+}
+
+// ---------- 复习也算学习：自评后自动完成该课「练题」任务 ----------
+function ecWbAutoDrill(lessonId, nowTs) {
+    const l = ecLessonById(lessonId);
+    if (!l) return '';
+    const defs = ecBookTasks(l.bookId);
+    const def = defs.find(t => t.id === 'write-drill') || defs.find(t => /练题|习题|做题|刷题|写/.test(String(t.name || ''))) || null;
+    if (!def) return '';
+    const key = ecTaskKey(lessonId, def.id);
+    const d = ecData();
+    if (d.tasks[key]) return '';
+    d.tasks[key] = { at: nowTs, fromWrong: true };
+    ecAddScore(def.points || 2);
+    return def.name;
+}
+
+// ---------- 复习会话（翻面卡片 → 四档自评；可按整本书 / 某一课开练） ----------
+function ecWbStart(id, scope) {
+    let queue;
+    if (scope && (scope.lessonId || scope.bookId)) queue = ecWbDueIn(scope).map(it => it.id);
+    else if (id) {
+        const due = ecWbDueIn(ecWbFilterScope()).map(it => it.id);
+        const at = due.indexOf(id);
+        queue = at >= 0 ? due.slice(at) : [id];
+    } else queue = ecWbFilteredDueItems().map(it => it.id);
+    if (!queue.length) { toast('这个范围现在没有待复习的错题'); render(); return; }
+    state._wbSession = { queue, idx: 0, revealed: false, graded: 0, autoTasks: [] };
+    render();
+}
+function ecWbStartBook(bookId) {
+    state._wbFilterBookId = ''; state._wbFilterLessonId = '';
+    ecWbStart('', { bookId });
+}
+function ecWbStartLesson(lessonId) {
+    state._wbFilterBookId = ''; state._wbFilterLessonId = '';
+    const l = ecLessonById(lessonId);
+    state.currentSubTab = state.currentSubTab || {};
+    state.currentSubTab.engcheck = 'ec-wrong';
+    state.currentSubTab['ec-wrong-sub'] = 'books';
+    state._wbBookId = l ? l.bookId : '';
+    state._wbLessonId = lessonId;
+    ecWbStart('', { lessonId });
+}
+// 从书单课时详情「查看 / 整理本课错题」直达错题本第三级
+function ecWbGoLesson(lessonId) {
+    const l = ecLessonById(lessonId);
+    state.currentSubTab = state.currentSubTab || {};
+    state.currentSubTab.engcheck = 'ec-wrong';
+    state.currentSubTab['ec-wrong-sub'] = 'books';
+    state._wbBookId = l ? l.bookId : '';
+    state._wbLessonId = lessonId;
+    state._wbSelMode = false; state._wbSel = {};
     render();
 }
 function ecWbGrade(g) {
@@ -11915,12 +12180,18 @@ function ecWbGrade(g) {
     const gain = g === 1 ? 0 : g === 2 ? 1 : g === 3 ? 2 : 3;
     if (gain) ecAddScore(gain);
     ecLogStudy();
+    // 联动：错题复习算学习 → 自动完成该课「练题」任务（可在课时页取消完成，或在概览关掉开关）
+    if (ecWbAutoTaskOn() && item.lessonId) {
+        const name = ecWbAutoDrill(item.lessonId, nowTs);
+        if (name && s.autoTasks.indexOf(name) < 0) s.autoTasks.push(name);
+    }
     ecWbTouch();
     s.graded++;
     if (s.idx + 1 >= s.queue.length) {
         state._wbSession = null;
         const mastered = (rec.s || 0) >= EC_FSRS.masteredS;
-        ecAfterAction(`✅ 本次复习完成 ${s.graded} 题${mastered ? '，最后这题已掌握 🏆' : ''}`);
+        const autoMsg = s.autoTasks.length ? ` · 已自动完成「${s.autoTasks.join('、')}」任务` : '';
+        ecAfterAction(`✅ 本次复习完成 ${s.graded} 题${mastered ? '，最后这题已掌握 🏆' : ''}${autoMsg}`);
         return;
     }
     s.idx++;
@@ -11933,13 +12204,13 @@ function ecWbReset(id) {
     const w = ecWbData();
     const nowTs = Date.now();
     const rec = ecFsrsLearn(nowTs);
-    rec.due = nowTs; // 移回复习池后立即可复习
+    rec.due = nowTs;
     w.fsrs[id] = rec;
     ecWbTouch();
     ecAfterAction('🔁 已移回复习池，现在就可以复习');
 }
 
-// ---------- 渲染 ----------
+// ---------- 渲染：五个三级子导航 ----------
 function ecRenderWrong() {
     if (state._wbSession) return ecWbSessionHTML();
     const stats = ecWbStats();
@@ -11948,6 +12219,7 @@ function ecRenderWrong() {
     const nav = `<div class="card ec-review-subnav"><div class="tab-bar">${EC_WRONG_SUBTABS.map(t => `<button class="tab-btn ${rtab === t.id ? 'active' : ''}" data-action="tab" data-module="ec-wrong-sub" data-tab="${t.id}">${t.name}</button>`).join('')}</div></div>`;
     let body = '';
     if (rtab === 'due') body = ecWbDueHTML();
+    else if (rtab === 'books') body = ecWbBooksHTML();
     else if (rtab === 'all') body = ecWbAllHTML();
     else if (rtab === 'mastered') body = ecWbMasteredHTML();
     else body = ecWbOverviewHTML(stats);
@@ -11955,7 +12227,19 @@ function ecRenderWrong() {
 }
 
 function ecWbOverviewHTML(stats) {
-    const due = ecWbDueItems();
+    const due = ecWbFilteredDueItems();
+    const d = ecData();
+    const bookRows = d.books.map(b => {
+        const c = ecWbCounts(ecWbItemsOfBook(b.id));
+        if (!c.total) return '';
+        return `<div class="ec-wb-bookrow">
+            <div class="ec-wb-bookrow-name">📚 ${escapeHtml(b.name)} <span class="ec-wb-mini">共 ${c.total} 题 · 已掌握 ${c.mastered}</span></div>
+            <div class="ec-wb-bookrow-ops">${c.due ? `<button class="btn btn-sm btn-primary" data-action="ec-wb-start-book" data-id="${b.id}">▶️ 复习本书（${c.due}）</button>` : '<span class="ec-wb-mini">暂无待复习</span>'}<button class="btn btn-sm btn-secondary" data-action="ec-wb-open-book" data-id="${b.id}">查看 ›</button></div>
+        </div>`;
+    }).join('');
+    const un = ecWbCounts(ecWbItemsOfBook(EC_WB_UNASSIGNED));
+    const unRow = un.total ? `<div class="ec-wb-bookrow"><div class="ec-wb-bookrow-name">📥 未归类 <span class="ec-wb-mini">共 ${un.total} 题 · 待复习 ${un.due}</span></div>
+        <div class="ec-wb-bookrow-ops"><button class="btn btn-sm btn-secondary" data-action="ec-wb-open-book" data-id="${EC_WB_UNASSIGNED}">去整理 ›</button></div></div>` : '';
     return `
     <div class="card">
         <div class="card-header"><div class="card-title">📕 错题复习 · 概览</div></div>
@@ -11965,13 +12249,18 @@ function ecWbOverviewHTML(stats) {
             <div class="ec-stat"><div class="ec-stat-num">${stats.waiting}</div><div class="ec-stat-label">学习中</div></div>
             <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${stats.mastered}</div><div class="ec-stat-label">已掌握</div></div>
         </div>
-        <div class="ec-hint">共收录 ${stats.total} 道错题：做错的题整理导入进来，按记忆曲线间隔复习（Again / Hard / Good / Easy 四档自评），稳定性 ≥ 60 天判为已掌握。</div>
+        <div class="ec-hint">共收录 ${stats.total} 道错题：做错的题按书本 / 课时整理导入，按记忆曲线间隔复习（Again / Hard / Good / Easy 四档自评），稳定性 ≥ 60 天判为已掌握。错题复习会计入积分、每日学习与连续天数。</div>
         <div class="ec-wb-actions">
             <button class="btn btn-primary" data-action="ec-wb-start" ${due.length ? '' : 'disabled'}>▶️ 开始复习${due.length ? `（${due.length} 题）` : ''}</button>
             <button class="btn btn-secondary" data-action="ec-wb-import">📥 批量导入</button>
             <button class="btn btn-secondary" data-action="ec-wb-add">➕ 记一道</button>
         </div>
+        <div class="ec-wb-setting">
+            <div><b>⚙️ 错题复习算学习</b><div class="ec-wb-mini">复习自评后，自动完成该课「✍️ 练题」任务并加对应积分；到课时页点「↩️ 取消完成」可撤销。</div></div>
+            <button class="btn btn-sm ${ecWbAutoTaskOn() ? 'btn-primary' : 'btn-secondary'}" data-action="ec-wb-autotask">${ecWbAutoTaskOn() ? '已开启' : '已关闭'}</button>
+        </div>
     </div>
+    ${bookRows || unRow ? `<div class="card"><div class="card-header"><div class="card-title">📚 按书本看错题</div></div>${bookRows}${unRow}</div>` : ''}
     ${ecWbCalendarHTML()}`;
 }
 
@@ -12016,19 +12305,33 @@ function ecWbCalendarHTML() {
     </div>`;
 }
 
+// 待复习：可按整本书 / 某一课筛选
+function ecWbFilterHTML() {
+    const d = ecData();
+    const fb = state._wbFilterBookId || '', fl = state._wbFilterLessonId || '';
+    let opts = `<option value="">📚 全部书本</option>`;
+    d.books.forEach(b => { opts += `<option value="${b.id}"${fb === b.id ? ' selected' : ''}>${escapeHtml(b.name)}</option>`; });
+    if (ecWbItemsOfBook(EC_WB_UNASSIGNED).length) opts += `<option value="${EC_WB_UNASSIGNED}"${fb === EC_WB_UNASSIGNED ? ' selected' : ''}>📥 未归类</option>`;
+    const lopts = [`<option value="">📖 该书中全部课时</option>`].concat(
+        (fb && fb !== EC_WB_UNASSIGNED ? ecLessonsOf(fb) : []).map(l => `<option value="${l.id}"${fl === l.id ? ' selected' : ''}>${escapeHtml(l.name)}</option>`)
+    ).join('');
+    return `<div class="ec-wb-filter">
+        <select id="ecWbFilterBook" class="ec-wb-select" data-wb-filter="book">${opts}</select>
+        <select id="ecWbFilterLesson" class="ec-wb-select" data-wb-filter="lesson" ${fb && fb !== EC_WB_UNASSIGNED ? '' : 'disabled'}>${lopts}</select>
+    </div>`;
+}
 function ecWbDueHTML() {
     const w = ecWbData();
-    const due = ecWbDueItems();
+    const due = ecWbFilteredDueItems();
     const rows = due.map(it => {
         const rec = w.fsrs[it.id] || {};
         const fresh = !rec.last;
         const late = !fresh && (rec.due || 0) < new Date().setHours(0, 0, 0, 0);
-        const meta = fresh
-            ? '现在就能复习 · 还没复习过'
+        const meta = fresh ? '现在就能复习 · 还没复习过'
             : `应复习：${ecFmtWeek(rec.due || 0)}（${ecRelText(rec.due || 0)}） · 已复习 ${rec.n || 0} 次${rec.lapses ? ` · 遗忘 ${rec.lapses} 次` : ''}`;
         return `<div class="ec-due-row${late ? ' late' : ''}">
             <div class="ec-due-info">
-                <div class="ec-due-title">📕 ${escapeHtml(it.point)}${it.lesson ? `<span class="ec-due-path">${escapeHtml(it.lesson)}</span>` : ''}</div>
+                <div class="ec-due-title">📕 ${escapeHtml(it.point)}<span class="ec-due-path">${escapeHtml(ecWbLocationText(it))}</span></div>
                 <div class="ec-wb-line"><span class="ec-wb-tag wrong">✗ 你当时</span><span>${escapeHtml(it.mine)}</span></div>
                 <div class="ec-due-meta">${meta}</div>
                 <div class="ec-due-btns"><button class="btn btn-sm btn-primary" data-action="ec-wb-start-one" data-id="${it.id}">▶️ 复习这题</button></div>
@@ -12037,54 +12340,179 @@ function ecWbDueHTML() {
     }).join('');
     return `<div class="card">
         <div class="card-header"><div class="card-title">⏰ 待复习（${due.length}）</div>
-        ${due.length ? '<button class="btn btn-sm btn-primary" data-action="ec-wb-start">▶️ 全部开始</button>' : ''}</div>
-        ${rows || '<div class="ec-hint">没有到期的错题 🎉 新导入的错题会立即可复习</div>'}
+            ${due.length ? '<button class="btn btn-sm btn-primary" data-action="ec-wb-start">▶️ 全部开始</button>' : ''}</div>
+        ${ecWbFilterHTML()}
+        ${rows || '<div class="ec-hint">这个范围没有到期的错题 🎉 换个书本筛选，或新导入的错题会立即可复习</div>'}
     </div>`;
 }
 
+// ---------- 错题本三级目录：书本 → 课时 → 错题 ----------
+function ecWbCrumb(parts) {
+    return `<div class="ec-wb-crumb">${parts.map((p, i) => p.action
+        ? `<button class="ec-wb-crumb-btn" data-action="${p.action}" data-id="${p.id || ''}">${escapeHtml(p.name)}</button>${i < parts.length - 1 ? '<span>›</span>' : ''}`
+        : `<span class="ec-wb-crumb-cur">${escapeHtml(p.name)}</span>${i < parts.length - 1 ? '<span>›</span>' : ''}`).join('')}</div>`;
+}
+function ecWbBooksHTML() {
+    if (state._wbLessonId) return ecWbLessonDetailHTML(state._wbLessonId);
+    if (state._wbBookId) return ecWbBookDetailHTML(state._wbBookId);
+    return ecWbBookListHTML();
+}
+function ecWbToolbar(opts) {
+    const o = opts || {};
+    return `<div class="ec-wb-actions ec-wb-toolbar">
+        ${o.back ? `<button class="btn btn-sm btn-secondary" data-action="${o.back.action}" ${o.back.id ? `data-id="${o.back.id}"` : ''}>‹ ${o.back.name}</button>` : ''}
+        <button class="btn btn-sm btn-primary" data-action="ec-wb-import" ${o.lessonId ? `data-lesson="${o.lessonId}"` : ''}>📥 导入错题</button>
+        <button class="btn btn-sm btn-secondary" data-action="ec-wb-add" ${o.lessonId ? `data-lesson="${o.lessonId}"` : ''}>➕ 记一道</button>
+        ${o.items && o.items.length ? `<button class="btn btn-sm btn-secondary" data-action="ec-wb-sel-mode">${state._wbSelMode ? '✕ 退出批量' : '🗑️ 批量管理'}</button>` : ''}
+        <button class="btn btn-sm btn-secondary" data-action="ec-wb-export">📤 导出备份</button>
+        <button class="btn btn-sm btn-secondary" data-action="ec-wb-import-json">📥 导入备份</button>
+        ${o.clear ? '<button class="btn btn-sm btn-danger" data-action="ec-wb-clear">🧹 清空</button>' : ''}
+    </div>`;
+}
+function ecWbBookListHTML() {
+    const d = ecData();
+    const rows = d.books.map(b => {
+        const c = ecWbCounts(ecWbItemsOfBook(b.id));
+        return `<div class="card ec-wb-dir-card" data-action="ec-wb-open-book" data-id="${b.id}">
+            <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📚</span>
+                <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">${escapeHtml(b.name)}</div>
+                <div class="ec-wb-mini">${c.total ? `共 ${c.total} 题 · 待复习 ${c.due} · 已掌握 ${c.mastered}` : '还没有错题，点进去按课时导入'}</div></div>
+                <span class="ec-book-go">›</span></div>
+            ${c.due ? `<div class="ec-wb-dir-ops"><button class="btn btn-sm btn-primary" data-action="ec-wb-start-book" data-id="${b.id}">▶️ 只复习这本书（${c.due}）</button></div>` : ''}
+        </div>`;
+    }).join('');
+    const un = ecWbCounts(ecWbItemsOfBook(EC_WB_UNASSIGNED));
+    const unCard = un.total ? `<div class="card ec-wb-dir-card" data-action="ec-wb-open-book" data-id="${EC_WB_UNASSIGNED}">
+        <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📥</span>
+            <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">未归类</div>
+            <div class="ec-wb-mini">共 ${un.total} 题 · 待复习 ${un.due} · 可批量调整到书本 / 课时</div></div>
+            <span class="ec-book-go">›</span></div></div>` : '';
+    return `<div class="card">
+        <div class="card-header"><div class="card-title">📚 错题本 · 按书本整理（${d.books.length} 本）</div></div>
+        ${ecWbCrumb([{ name: '全部书本' }])}
+        <div class="ec-hint">书本和课时直接沿用「书单课目」目录：进书 → 进课 → 看这一课的错题。能批量删除、批量调整归属、课时内排序；导入时选好书和课就自动归位。</div>
+        ${ecWbToolbar({ clear: true })}
+    </div>
+    ${rows}${unCard}${!d.books.length ? '<div class="card ec-empty"><div class="ec-empty-icon">📚</div><div>书单里还没有书</div><div class="ec-hint">先去「书单课目」建书加课，错题就能分书分课整理了</div></div>' : ''}`;
+}
+function ecWbBookDetailHTML(bookId) {
+    const isUn = bookId === EC_WB_UNASSIGNED;
+    const book = isUn ? null : ecBookById(bookId);
+    if (!isUn && !book) { state._wbBookId = null; return ecWbBookListHTML(); }
+    const items = ecWbItemsOfBook(bookId);
+    const c = ecWbCounts(items);
+    const lessonIds = [];
+    items.forEach(it => { if (it.lessonId && lessonIds.indexOf(it.lessonId) < 0) lessonIds.push(it.lessonId); });
+    const lessonRows = lessonIds.map(lid => {
+        const l = ecLessonById(lid);
+        const lc = ecWbCounts(ecWbItemsOfLesson(lid));
+        return `<div class="card ec-wb-dir-card" data-action="ec-wb-open-lesson" data-id="${lid}">
+            <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📖</span>
+                <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">${escapeHtml(l ? l.name : '已删除的课时')}</div>
+                <div class="ec-wb-mini">共 ${lc.total} 题 · 待复习 ${lc.due} · 已掌握 ${lc.mastered}</div></div>
+                <span class="ec-book-go">›</span></div>
+            ${lc.due ? `<div class="ec-wb-dir-ops"><button class="btn btn-sm btn-primary" data-action="ec-wb-start-lesson" data-id="${lid}">▶️ 只复习这一课（${lc.due}）</button></div>` : ''}
+        </div>`;
+    }).join('');
+    const noLesson = items.filter(it => !it.lessonId);
+    const noLessonCard = noLesson.length ? `<div class="card ec-wb-dir-card" data-action="ec-wb-open-lesson" data-id="${EC_WB_UNASSIGNED}">
+        <div class="ec-wb-dir-main"><span class="ec-wb-dir-icon">📥</span>
+            <div class="ec-wb-dir-info"><div class="ec-wb-dir-name">未标课时（${noLesson.length}）</div>
+            <div class="ec-wb-mini">${noLesson.filter(it => ecWbStatusOf(it.id, Date.now()) === 'due' || ecWbStatusOf(it.id, Date.now()) === 'new').length} 题待复习 · 可批量移动到具体课时</div></div>
+            <span class="ec-book-go">›</span></div></div>` : '';
+    return `<div class="card">
+        <div class="card-header"><div class="card-title">${isUn ? '📥 未归类' : '📚 ' + escapeHtml(book.name)} · 按课时整理</div></div>
+        ${ecWbCrumb([{ name: '全部书本', id: '', action: 'ec-wb-back-books' }, { name: isUn ? '未归类' : book.name }])}
+        <div class="ec-hint">共 ${c.total} 道错题 · 待复习 ${c.due} · 已掌握 ${c.mastered}。课时来自书单目录，改名 / 增删请到「书单课目」。</div>
+        ${ecWbToolbar({ back: { action: 'ec-wb-back-books', name: '返回书本' }, lessonId: (book && ecLessonsOf(book.id)[0]) ? ecLessonsOf(book.id)[0].id : '' })}
+    </div>
+    ${lessonRows}${noLessonCard}${!items.length ? '<div class="card ec-empty"><div class="ec-empty-icon">📕</div><div>这本书还没有错题</div><div class="ec-hint">点「📥 导入错题」，选好这本书和课时粘贴表格即可</div></div>' : ''}`;
+}
+function ecWbItemHTML(it, opts) {
+    const o = opts || {};
+    const w = ecWbData();
+    const rec = w.fsrs[it.id];
+    const st = ecWbStatusOf(it.id, Date.now());
+    const statusName = { new: '待复习', due: '待复习', waiting: '学习中', mastered: '已掌握' };
+    const selMode = !!state._wbSelMode;
+    const checked = !!(state._wbSel || {})[it.id];
+    return `<div class="ec-wb-item${checked ? ' ec-sel' : ''}">
+        ${selMode ? `<div class="ec-sel-cb ec-wb-sel-cb" data-action="ec-wb-sel" data-id="${it.id}">${checked ? '☑️' : '⬜'}</div>` : ''}
+        <div class="ec-wb-item-head">
+            <span class="ec-wb-point">${escapeHtml(it.point)}</span>
+            <span class="ec-wb-status ec-wb-st-${st}">${statusName[st]}</span>
+        </div>
+        ${o.showPath ? `<div class="ec-wb-loc">📚 ${escapeHtml(ecWbLocationText(it))}</div>` : ''}
+        <div class="ec-wb-line"><span class="ec-wb-tag wrong">✗ 你当时</span><span>${escapeHtml(it.mine)}</span></div>
+        <div class="ec-wb-line"><span class="ec-wb-tag right">✓ 正确</span><span>${escapeHtml(it.right)}</span></div>
+        ${it.why ? `<div class="ec-wb-line"><span class="ec-wb-tag">💡 原因</span><span>${escapeHtml(it.why)}</span></div>` : ''}
+        <div class="ec-wb-item-foot">
+            <span class="ec-wb-meta">${rec && rec.last ? (st === 'mastered' ? `已掌握 · 复习 ${rec.n} 次` : `下次复习 ${ecFmtWeek(rec.due)} · 已复习 ${rec.n} 次`) : '待复习'}</span>
+            <span class="ec-wb-ops">
+                ${st === 'mastered' ? `<button class="ec-edit-btn" data-action="ec-wb-reset" data-id="${it.id}" title="移回复习池">🔁</button>` : `<button class="ec-edit-btn" data-action="ec-wb-start-one" data-id="${it.id}" title="复习这题">▶️</button>`}
+                ${o.sortable ? `<button class="ec-edit-btn" data-action="ec-wb-move-up" data-id="${it.id}" title="上移">▲</button><button class="ec-edit-btn" data-action="ec-wb-move-down" data-id="${it.id}" title="下移">▼</button>` : ''}
+                <button class="ec-edit-btn" data-action="ec-wb-edit" data-id="${it.id}" title="编辑 / 改归属">✏️</button>
+                <button class="ec-edit-btn" data-action="ec-wb-del" data-id="${it.id}" title="删除">🗑️</button>
+            </span>
+        </div>
+    </div>`;
+}
+function ecWbSelBar(ids) {
+    if (!state._wbSelMode) return '';
+    const n = ecWbSelIds().length;
+    return `<div class="ec-sel-bar ec-wb-selbar">
+        <span class="ec-sel-count">已选 ${n} 题</span>
+        <button class="btn btn-sm btn-secondary" data-action="ec-wb-sel-all">全选 / 反选</button>
+        <button class="btn btn-sm btn-secondary" data-action="ec-wb-move-sel" ${n ? '' : 'disabled'}>📦 批量改归属</button>
+        <button class="btn btn-sm btn-danger" data-action="ec-wb-del-sel" ${n ? '' : 'disabled'}>🗑️ 删除所选</button>
+        <span class="ec-wb-selbar-ids" data-wb-ids="${escapeHtml(ids.join(','))}"></span>
+    </div>`;
+}
+function ecWbLessonDetailHTML(lessonId) {
+    const isUn = lessonId === EC_WB_UNASSIGNED;
+    const l = isUn ? null : ecLessonById(lessonId);
+    const bookId = state._wbBookId || (l ? l.bookId : '');
+    const book = bookId && bookId !== EC_WB_UNASSIGNED ? ecBookById(bookId) : null;
+    const items = ecWbData().items.filter(it => isUn
+        ? (!it.lessonId && (it.bookId || '') === (bookId || ''))
+        : it.lessonId === lessonId).sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+    const c = ecWbCounts(items);
+    const name = isUn ? '未标课时' : (l ? l.name : '已删除的课时');
+    state._wbVisibleIds = items.map(it => it.id);
+    const rows = items.map(it => ecWbItemHTML(it, { sortable: true })).join('');
+    return `<div class="card">
+        <div class="card-header"><div class="card-title">📕 ${escapeHtml(name)} · 错题（${items.length}）</div></div>
+        ${ecWbCrumb([
+            { name: '全部书本', id: '', action: 'ec-wb-back-books' },
+            { name: book ? book.name : '未归类', id: bookId, action: 'ec-wb-back-book' },
+            { name }
+        ])}
+        <div class="ec-hint">共 ${c.total} 题 · 待复习 ${c.due} · 已掌握 ${c.mastered}。用 ▲▼ 调整这一课里的题目顺序；批量勾选后可一次改到别的书 / 课，或删除。</div>
+        ${ecWbToolbar({ back: { action: 'ec-wb-back-book', name: '返回课时' }, lessonId: isUn ? '' : lessonId, items })}
+        ${ecWbSelBar(items.map(it => it.id))}
+        ${c.due ? `<div class="ec-wb-actions"><button class="btn btn-primary" data-action="${isUn ? 'ec-wb-start-unassigned' : 'ec-wb-start-lesson'}" ${isUn ? `data-id="${bookId || ''}"` : `data-id="${lessonId}"`}>▶️ 开始复习${isUn ? '这些未归类题' : '这一课'}（${c.due} 题）</button></div>` : ''}
+    </div>
+    ${rows ? `<div class="card">${rows}</div>` : '<div class="card ec-empty"><div class="ec-empty-icon">📕</div><div>这一课还没有错题</div><div class="ec-hint">点上方「📥 导入错题」粘贴表格，导入后自动归到这一课</div></div>'}`;
+}
 function ecWbAllHTML() {
     const w = ecWbData();
-    const nowTs = Date.now();
-    const statusName = { new: '待复习', due: '待复习', waiting: '学习中', mastered: '已掌握' };
     const groups = {};
-    w.items.forEach(it => { const k = it.lesson || '未标课时'; (groups[k] = groups[k] || []).push(it); });
+    w.items.forEach(it => { const k = ecWbLocationText(it); (groups[k] = groups[k] || []).push(it); });
     const keys = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true }));
     const sections = keys.map(k => {
-        const rows = groups[k].map(it => {
-            const rec = w.fsrs[it.id];
-            const st = ecWbStatusOf(it.id, nowTs);
-            return `<div class="ec-wb-item">
-                <div class="ec-wb-item-head">
-                    <span class="ec-wb-point">${escapeHtml(it.point)}</span>
-                    <span class="ec-wb-status ec-wb-st-${st}">${statusName[st]}</span>
-                </div>
-                <div class="ec-wb-line"><span class="ec-wb-tag wrong">✗ 你当时</span><span>${escapeHtml(it.mine)}</span></div>
-                <div class="ec-wb-line"><span class="ec-wb-tag right">✓ 正确</span><span>${escapeHtml(it.right)}</span></div>
-                ${it.why ? `<div class="ec-wb-line"><span class="ec-wb-tag">💡 原因</span><span>${escapeHtml(it.why)}</span></div>` : ''}
-                <div class="ec-wb-item-foot">
-                    <span class="ec-wb-meta">${rec && rec.last ? (st === 'mastered' ? `已掌握 · 复习 ${rec.n} 次` : `下次复习 ${ecFmtWeek(rec.due)} · 已复习 ${rec.n} 次`) : '待复习'}</span>
-                    <span class="ec-wb-ops">
-                        <button class="ec-edit-btn" data-action="ec-wb-edit" data-id="${it.id}" title="编辑">✏️</button>
-                        <button class="ec-edit-btn" data-action="ec-wb-del" data-id="${it.id}" title="删除">🗑️</button>
-                    </span>
-                </div>
-            </div>`;
-        }).join('');
+        const rows = groups[k].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+            .map(it => ecWbItemHTML(it, { showPath: false })).join('');
         return `<div class="ec-wb-group"><div class="ec-wb-group-title">${escapeHtml(k)}（${groups[k].length}）</div>${rows}</div>`;
     }).join('');
+    state._wbVisibleIds = w.items.map(it => it.id);
     return `<div class="card">
         <div class="card-header"><div class="card-title">📚 全部错题（${w.items.length}）</div></div>
-        <div class="ec-wb-actions">
-            <button class="btn btn-sm btn-primary" data-action="ec-wb-import">📥 批量导入</button>
-            <button class="btn btn-sm btn-secondary" data-action="ec-wb-add">➕ 记一道</button>
-            <button class="btn btn-sm btn-secondary" data-action="ec-wb-export">📤 导出备份</button>
-            <button class="btn btn-sm btn-secondary" data-action="ec-wb-import-json">📥 导入备份</button>
-            ${w.items.length ? '<button class="btn btn-sm btn-danger" data-action="ec-wb-clear">🧹 清空</button>' : ''}
-        </div>
-        ${sections || '<div class="ec-hint">还没有错题。点「批量导入」从 Excel/WPS 粘贴，或「记一道」手动添加。</div>'}
+        ${ecWbToolbar({ clear: true, items: w.items })}
+        ${ecWbSelBar(w.items.map(it => it.id))}
+        <div class="ec-hint">按「书本 › 课时」平铺展示全部错题；想分书分课管理请点「📚 错题本」。</div>
+        ${sections || '<div class="ec-hint">还没有错题。点「📥 导入错题」从 Excel/WPS 粘贴，或「➕ 记一道」手动添加。</div>'}
     </div>`;
 }
-
 function ecWbMasteredHTML() {
     const w = ecWbData();
     const nowTs = Date.now();
@@ -12094,7 +12522,7 @@ function ecWbMasteredHTML() {
         const rec = w.fsrs[it.id] || {};
         return `<div class="ec-due-row">
             <div class="ec-due-info">
-                <div class="ec-due-title">🏆 ${escapeHtml(it.point)}${it.lesson ? `<span class="ec-due-path">${escapeHtml(it.lesson)}</span>` : ''}</div>
+                <div class="ec-due-title">🏆 ${escapeHtml(it.point)}<span class="ec-due-path">${escapeHtml(ecWbLocationText(it))}</span></div>
                 <div class="ec-due-meta">稳定性 ${ecSDays(rec.s)} · 复习 ${rec.n || 0} 次 · D=${(Number(rec.d) || 0).toFixed(1)}</div>
                 <div class="ec-due-btns"><button class="btn btn-sm btn-secondary" data-action="ec-wb-reset" data-id="${it.id}">🔁 移回复习池</button></div>
             </div>
@@ -12103,7 +12531,6 @@ function ecWbMasteredHTML() {
     return `<div class="card"><div class="card-header"><div class="card-title">🏆 已掌握（${list.length}）</div></div>
         ${rows || '<div class="ec-hint">还没有已掌握的错题，坚持复习就会出现在这里</div>'}</div>`;
 }
-
 function ecWbSessionHTML() {
     const s = state._wbSession;
     const item = ecWbById(s.queue[s.idx]);
@@ -12115,7 +12542,7 @@ function ecWbSessionHTML() {
             <button class="btn btn-sm btn-secondary" data-action="ec-wb-exit">退出</button>
         </div>
         <div class="ec-wb-bar"><div class="ec-wb-bar-in" style="width:${pct}%"></div></div>
-        <div class="ec-wb-chips">${item.lesson ? `<span class="ec-wb-chip">${escapeHtml(item.lesson)}</span>` : ''}</div>
+        <div class="ec-wb-chips"><span class="ec-wb-chip">📚 ${escapeHtml(ecWbLocationText(item))}</span></div>
         <div class="ec-wb-block">
             <div class="ec-wb-block-title">🎯 考点 / 题目</div>
             <div class="ec-wb-point-text">${escapeHtml(item.point)}</div>
@@ -12137,14 +12564,42 @@ function ecWbSessionHTML() {
         <button class="btn btn-primary ec-wb-reveal-btn" data-action="ec-wb-reveal">👀 看正确答案</button>`}
     </div>`;
 }
+// ---------- 与书单课目联动：课时徽标 / 课时详情卡 / 今日推荐 / 书本统计 ----------
+function ecWbLessonCounts(lessonId) { return ecWbCounts(ecWbItemsOfLesson(lessonId)); }
+function ecWbBadgeHTML(lessonId) {
+    const c = ecWbLessonCounts(lessonId);
+    if (!c.total) return '';
+    return `<span class="ec-wb-badge" title="这一课的错题">📕 ${c.total}${c.due ? ` · 待复习 ${c.due}` : ''}</span>`;
+}
+function ecWbLessonCardHTML(lessonId) {
+    const c = ecWbLessonCounts(lessonId);
+    return `<div class="card ec-wb-linkcard">
+        <div class="card-header"><div class="card-title">📕 本课错题 · 也算今天的学习</div></div>
+        <div class="ec-wb-linkstats">${c.total ? `共 <b>${c.total}</b> 题 · 待复习 <b>${c.due}</b> 题 · 已掌握 <b>${c.mastered}</b> 题` : '这一课还没有整理过错题'}</div>
+        <div class="ec-wb-actions">
+            ${c.due ? `<button class="btn btn-sm btn-primary" data-action="ec-wb-start-lesson" data-id="${lessonId}">▶️ 复习本课错题（${c.due}）</button>` : ''}
+            <button class="btn btn-sm btn-secondary" data-action="ec-wb-open-wrong-lesson" data-id="${lessonId}">📚 查看 / 整理本课错题</button>
+            <button class="btn btn-sm btn-secondary" data-action="ec-wb-import-lesson" data-id="${lessonId}">📥 导入本课错题</button>
+        </div>
+        <div class="ec-hint">${ecWbAutoTaskOn() ? '复习自评后会自动完成本课的「✍️ 练题」任务并积分' : '当前未开启「复习自动算练题任务」，可在错题复习 › 概览里打开'}；任务可在下方点「↩️ 取消完成」撤销。</div>
+    </div>`;
+}
+function ecWbBookDueCount(bookId) { return ecWbCounts(ecWbItemsOfBook(bookId)).due; }
+function ecTodayRecommendWrongHTML(bookId) {
+    const n = ecWbBookDueCount(bookId);
+    if (!n) return '';
+    return `<div class="ec-reco-wrong" data-action="ec-wb-start-book" data-id="${bookId}">📕 这本书还有 <b>${n}</b> 道错题到期待复习 · 点这里开始 →</div>`;
+}
 
-// ---------- 错题数据跨设备合并（wrongbk 随 engcheck 同步） ----------
-// items 按 id：墓碑优先 + updatedAt 新者胜；fsrs 按 last 新者胜；clearedAt 分界线丢弃更早记录
+// ---------- 错题数据跨设备合并 ----------
+// items 按 id：墓碑优先 + updatedAt 新者胜 + 绑定字段优先保留；fsrs 按 last 新者胜；
+// autoTask 开关按 autoTaskAt 取新；clearedAt 分界线丢弃更早记录
 function ecMergeWrong(a, b) {
     const A = (a && typeof a === 'object') ? a : {};
     const B = (b && typeof b === 'object') ? b : {};
     const cut = Math.max(Number(A.clearedAt) || 0, Number(B.clearedAt) || 0);
     const tombs = { ...(B.tombs || {}), ...(A.tombs || {}) };
+    const hasBind = x => (x && (x.bookId || x.lessonId)) ? 1 : 0;
     const map = new Map();
     (Array.isArray(B.items) ? B.items : []).concat(Array.isArray(A.items) ? A.items : []).forEach(it => {
         if (!it || !it.id) return;
@@ -12152,7 +12607,15 @@ function ecMergeWrong(a, b) {
         const t = Number(tombs[it.id]) || 0;
         if (t && t >= (Number(it.updatedAt) || 0)) return;
         const cur = map.get(it.id);
-        if (!cur || (Number(it.updatedAt) || 0) >= (Number(cur.updatedAt) || 0)) map.set(it.id, it);
+        if (!cur) { map.set(it.id, it); return; }
+        const diff = (Number(it.updatedAt) || 0) - (Number(cur.updatedAt) || 0);
+        if (diff > 0) {
+            map.set(it.id, hasBind(it) || !hasBind(cur) ? it : Object.assign({}, it, { bookId: cur.bookId, lessonId: cur.lessonId, lesson: cur.lesson || it.lesson }));
+        } else if (diff === 0 && hasBind(it) > hasBind(cur)) {
+            map.set(it.id, it);
+        } else if (hasBind(cur) === 0 && hasBind(it) > 0) {
+            map.set(it.id, Object.assign({}, cur, { bookId: it.bookId, lessonId: it.lessonId }));
+        }
     });
     const fsrs = {};
     [B.fsrs || {}, A.fsrs || {}].forEach(src => {
@@ -12164,14 +12627,19 @@ function ecMergeWrong(a, b) {
             if (!fsrs[k] || (Number(r.last) || 0) >= (Number(fsrs[k].last) || 0)) fsrs[k] = r;
         });
     });
+    const useA = (Number(A.autoTaskAt) || 0) >= (Number(B.autoTaskAt) || 0);
+    const autoSrc = useA ? A : B;
     return {
         items: Array.from(map.values()).sort((x, y) => (Number(x.createdAt) || 0) - (Number(y.createdAt) || 0)),
         fsrs,
         tombs,
         clearedAt: cut,
-        updatedAt: Math.max(Number(A.updatedAt) || 0, Number(B.updatedAt) || 0)
+        updatedAt: Math.max(Number(A.updatedAt) || 0, Number(B.updatedAt) || 0),
+        autoTask: autoSrc.autoTask === false ? false : true,
+        autoTaskAt: Math.max(Number(A.autoTaskAt) || 0, Number(B.autoTaskAt) || 0)
     };
 }
+
 
 // ---------- 渲染 ----------
 function renderEngCheckPage(tab) {
@@ -12274,7 +12742,7 @@ function ecRenderBooks() {
                 <div class="ec-book-icon">📚</div>
                 <div class="ec-book-info">
                     <div class="ec-book-name">${escapeHtml(b.name)}</div>
-                    <div class="ec-book-meta">${st.lessons} 节课 · 任务 ${st.tasksDone}/${st.taskTotal} · 背诵 ${st.recited}/${st.lessons}</div>
+                    <div class="ec-book-meta">${st.lessons} 节课 · 任务 ${st.tasksDone}/${st.taskTotal} · 背诵 ${st.recited}/${st.lessons}${st.wrongTotal ? ` · 📕 错题 ${st.wrongTotal}` : ''}</div>
                     <div class="ec-bar"><div class="ec-bar-fill" style="width:${pct}%"></div></div>
                 </div>
                 <div class="ec-book-side">
@@ -12360,7 +12828,7 @@ function ecRenderLessons() {
                 <div class="ec-lesson-info">
                     <div class="ec-lesson-name">${locked ? '<span class="ec-lock" title="还没开始这一课">🔒</span>' : ''}${escapeHtml(l.name)}${allDone ? ' <span class="ec-done-flag">✅</span>' : ''}</div>
                     ${l.note ? `<div class="ec-lesson-note">${escapeHtml(l.note)}</div>` : ''}
-                    <div class="ec-lesson-meta">任务 ${pg.done}/${pg.total}${allDone ? ' · 已完成' : ''} · ${reciteTag}</div>
+                    <div class="ec-lesson-meta">任务 ${pg.done}/${pg.total}${allDone ? ' · 已完成' : ''} · ${reciteTag}${ecWbBadgeHTML(l.id)}</div>
                 </div>
                 <div class="ec-lesson-side">
                     <button class="ec-edit-btn" data-action="ec-edit-lesson" data-id="${l.id}" title="编辑">✏️</button>
@@ -12456,6 +12924,7 @@ function ecTodayRecommendHTML(bookId) {
         <div class="ec-reco-head">🎉 今日推荐</div>
         <div class="ec-reco-name">这本书今天的任务都完成啦！</div>
         <div class="ec-reco-meta">休息一下，或者去「复习中心」提前背下一课</div>
+        ${ecTodayRecommendWrongHTML(bookId)}
     </div>`;
     }
     if (reco.kind === 'task') {
@@ -12464,6 +12933,7 @@ function ecTodayRecommendHTML(bookId) {
         <div class="ec-reco-head">🎯 今日推荐</div>
         <div class="ec-reco-name">${escapeHtml(reco.lesson.name)} <span class="ec-reco-tag">任务 ${reco.pg.done}/${reco.pg.total}</span></div>
         <div class="ec-reco-meta">按顺序继续打卡，完成这一课就追平进度啦 →</div>
+        ${ecTodayRecommendWrongHTML(bookId)}
     </div>`;
     }
     return `
@@ -12471,6 +12941,7 @@ function ecTodayRecommendHTML(bookId) {
         <div class="ec-reco-head">🎯 今日推荐</div>
         <div class="ec-reco-name">${escapeHtml(reco.lesson.name)} <span class="ec-reco-tag">背诵到点</span></div>
         <div class="ec-reco-meta">任务都完成了，这一课的背诵${ecRelText(reco.rec.due)}，去合书画背书 →</div>
+        ${ecTodayRecommendWrongHTML(bookId)}
     </div>`;
 }
 
@@ -12694,6 +13165,7 @@ function ecRenderLesson() {
         <div class="ec-hint">三级目录：每节课按「听 / 读 / 说 / 写」打卡，再加一整篇课文背诵（FSRS 复习）。</div>
     </div>
     ${ecRecitePanel(lesson.id)}
+    ${ecWbLessonCardHTML(lesson.id)}
     ${groups}`;
 }
 
@@ -12898,6 +13370,7 @@ function ecRenderAchieve() {
             <span class="ec-day-label">${x.label}</span>
         </div>`).join('');
     const studyDays = Object.keys(d.days).length;
+    const wc = ecWbCounts(ecWbData().items);
     return `
     ${ecHeaderHTML()}
     <div class="card">
@@ -12908,6 +13381,7 @@ function ecRenderAchieve() {
             <div class="ec-stat"><div class="ec-stat-num ec-stat-ok">${d.bestStreak || 0}</div><div class="ec-stat-label">最长连续</div></div>
             <div class="ec-stat"><div class="ec-stat-num">${studyDays}</div><div class="ec-stat-label">学习天数</div></div>
         </div>
+        <div class="ec-wb-achstats">📕 错题集：共 <b>${wc.total}</b> 题 · 待复习 <b>${wc.due}</b> · 已掌握 <b>${wc.mastered}</b>（复习错题也算今天的学习）</div>
         <div class="ec-day-strip">${strip}</div>
         <div class="ec-hint">最近 7 天：有打卡的日子会点亮 ✓</div>
     </div>
@@ -12985,20 +13459,53 @@ document.addEventListener('click', async e => {
     if (action === 'ec-tabcfg-show') { ecTabCfgToggleShow(el.dataset.tab); ecTabCfgRefreshIfModal(); return; }
     if (action === 'ec-tabcfg-up') { ecTabCfgMove(el.dataset.tab, 'up'); ecTabCfgRefreshIfModal(); return; }
     if (action === 'ec-tabcfg-down') { ecTabCfgMove(el.dataset.tab, 'down'); ecTabCfgRefreshIfModal(); return; }
-    // ---------- 错题复习 ----------
-    if (action === 'ec-wb-import') { ecWbImportOpen(); return; }
+    // ---------- 错题复习（分书本 / 分课时 + 学习联动） ----------
+    if (action === 'ec-wb-import') { ecWbImportOpen(el.dataset.lesson || ''); return; }
+    if (action === 'ec-wb-import-lesson') { ecWbImportOpen(el.dataset.id || ''); return; }
     if (action === 'ec-wb-import-json') { ecWbImportJSON(); return; }
     if (action === 'ec-wb-export') { ecWbExport(); return; }
-    if (action === 'ec-wb-add') { ecWbAddSingle(); return; }
+    if (action === 'ec-wb-add') { ecWbAddSingle(el.dataset.lesson || ''); return; }
     if (action === 'ec-wb-edit') { ecWbEdit(el.dataset.id); return; }
     if (action === 'ec-wb-del') { ecWbDel(el.dataset.id); return; }
     if (action === 'ec-wb-clear') { ecWbClear(); return; }
     if (action === 'ec-wb-start') { ecWbStart(''); return; }
     if (action === 'ec-wb-start-one') { ecWbStart(el.dataset.id || ''); return; }
+    if (action === 'ec-wb-start-book') { ecWbStartBook(el.dataset.id || ''); return; }
+    if (action === 'ec-wb-start-lesson') { ecWbStartLesson(el.dataset.id || ''); return; }
+    if (action === 'ec-wb-start-unassigned') { state._wbFilterBookId = ''; state._wbFilterLessonId = ''; ecWbStart('', { bookId: EC_WB_UNASSIGNED }); return; }
     if (action === 'ec-wb-reveal') { if (state._wbSession) { state._wbSession.revealed = true; render(); } return; }
     if (action === 'ec-wb-grade') { ecWbGrade(parseInt(el.dataset.g, 10)); return; }
     if (action === 'ec-wb-exit') { ecWbExit(); return; }
     if (action === 'ec-wb-reset') { ecWbReset(el.dataset.id); return; }
+    if (action === 'ec-wb-autotask') { ecWbToggleAutoTask(); return; }
+    // 错题本三级目录：书本 → 课时 → 错题
+    if (action === 'ec-wb-open-book') {
+        state.currentSubTab = state.currentSubTab || {};
+        state.currentSubTab['ec-wrong-sub'] = 'books';
+        state._wbBookId = el.dataset.id || ''; state._wbLessonId = null;
+        state._wbSelMode = false; state._wbSel = {}; render(); return;
+    }
+    if (action === 'ec-wb-open-lesson') { state._wbLessonId = el.dataset.id || ''; state._wbSelMode = false; state._wbSel = {}; render(); return; }
+    if (action === 'ec-wb-back-books') { state._wbBookId = null; state._wbLessonId = null; state._wbSelMode = false; state._wbSel = {}; render(); return; }
+    if (action === 'ec-wb-back-book') { state._wbLessonId = null; state._wbSelMode = false; state._wbSel = {}; render(); return; }
+    if (action === 'ec-wb-open-wrong-lesson') { ecWbGoLesson(el.dataset.id || ''); return; }
+    // 批量管理：勾选 / 全选 / 批量删除 / 批量改归属 / 课时内排序
+    if (action === 'ec-wb-sel-mode') { ecWbSelMode(); return; }
+    if (action === 'ec-wb-sel') { ecWbSelToggle(el.dataset.id); return; }
+    if (action === 'ec-wb-sel-all') { ecWbSelAll(); return; }
+    if (action === 'ec-wb-del-sel') { ecWbDelSelected(); return; }
+    if (action === 'ec-wb-move-sel') { ecWbMoveSelected(); return; }
+    if (action === 'ec-wb-move-up') { ecWbMoveItem(el.dataset.id, 'up'); return; }
+    if (action === 'ec-wb-move-down') { ecWbMoveItem(el.dataset.id, 'down'); return; }
+});
+
+// 待复习页「按书本 / 课时筛选」下拉（select 不走 click 委托）
+document.addEventListener('change', e => {
+    const el = e.target;
+    if (!el || !el.dataset || !el.dataset.wbFilter) return;
+    if (el.dataset.wbFilter === 'book') { state._wbFilterBookId = el.value || ''; state._wbFilterLessonId = ''; }
+    else state._wbFilterLessonId = el.value || '';
+    render();
 });
 
 

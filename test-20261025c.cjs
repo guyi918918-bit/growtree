@@ -119,7 +119,7 @@ function makeEC(overrides) {
         _ecLastReview: null, _ecAddOpen: false
     }, overrides || {});
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render', 'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecBatchZhImport, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecOpenRecite, ecTxtBlockHTML, ecTabCfgGet, ecTabCfgAll, ecTabCfgVisible, ecTabCfgToggleShow, ecTabCfgMove, ecTabCfgHTML, ecMergeTabCfg, ecReviewCalendarHTML, EC_SUBTABS, ecOpenTabCfg, ecTabCfgRefreshIfModal, EC_REVIEW_SUBTABS, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, state, EC_WRONG_SUBTABS, EC_WB_GRADES, ecWbData, ecWbStatusOf, ecWbFingerprint, ecWbStats, ecWbDueItems, ecWbParse, ecWbAddItems, ecWbStart, ecWbGrade, ecWbExit, ecWbReset, ecRenderWrong, ecWbOverviewHTML, ecWbCalendarHTML, ecWbDueHTML, ecWbAllHTML, ecWbMasteredHTML, ecWbSessionHTML, ecMergeWrong, renderEngCheckPage };');
+        ecCode + '\nreturn { ecData, ecFsrsLearn, ecFsrsReview, ecRetrievability, ecReciteStatus, ecReciteAction, ecToggleTask, ecGetLevel, ecLevelSymbols, EC_GRADES, EC_TASKS, EC_FSRS, ecRenderBooks, ecRenderLessons, ecRenderLesson, ecRenderReview, ecRenderAchieve, ecRenderDrill, ecFmtWeek, ecRecitePanel, ecEditLessonZh, ecBatchZhParse, ecZhTitleNums, ecRenameBookTask, ecMoveBookTask, ecTaskKey, ecGetTask, ecBookTasks, ecFindTaskDef, ecLessonProgress, ecBookStats, ecAddBook, ecBatchBooks, ecDelSelBooks, ecDelSelLessons, ecAddTaskToBook, ecDelBookTask, ecEditLessonNote, ecImportLessons, ecBatchZhImport, ecAddLesson, ecRemoveBook, ecRemoveLesson, ecMergeEngcheck, ecOpenRecite, ecTxtBlockHTML, ecTabCfgGet, ecTabCfgAll, ecTabCfgVisible, ecTabCfgToggleShow, ecTabCfgMove, ecTabCfgHTML, ecMergeTabCfg, ecReviewCalendarHTML, EC_SUBTABS, ecOpenTabCfg, ecTabCfgRefreshIfModal, EC_REVIEW_SUBTABS, ecAfterAction, ecTodayRecommend, ecTodayRecommendHTML, ecToLocalInput, ecEditTaskTime, ecClearRecords, ecTomb, state, EC_WRONG_SUBTABS, EC_WB_GRADES, ecWbData, ecWbStatusOf, ecWbFingerprint, ecWbStats, ecWbDueItems, ecWbParse, ecWbAddItems, ecWbStart, ecWbGrade, ecWbExit, ecWbReset, ecRenderWrong, ecWbOverviewHTML, ecWbCalendarHTML, ecWbDueHTML, ecWbAllHTML, ecWbMasteredHTML, ecWbSessionHTML, ecMergeWrong, EC_WB_UNASSIGNED, ecWbById, ecWbMatchLesson, ecWbLocationText, ecWbItemsOfBook, ecWbItemsOfLesson, ecWbCounts, ecWbDueIn, ecWbFilteredDueItems, ecWbAutoTaskOn, ecWbScopeHTML, ecWbScopeOfValue, ecWbAssign, ecWbRemoveIds, ecWbSelIds, ecWbSelMode, ecWbSelToggle, ecWbSelAll, ecWbMoveIds, ecWbMoveItem, ecWbToggleAutoTask, ecWbAutoDrill, ecWbStartBook, ecWbStartLesson, ecWbGoLesson, ecWbBooksHTML, ecWbBookListHTML, ecWbBookDetailHTML, ecWbLessonDetailHTML, ecWbItemHTML, ecWbLessonCounts, ecWbBadgeHTML, ecWbLessonCardHTML, ecWbBookDueCount, ecTodayRecommendWrongHTML, ecGlobalStats, renderEngCheckPage };');
     const docMock = { getElementById: (id) => { if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: !!inputs[id + '__checked'] }; return elCache[id]; }, getElementsByName: (name) => { const k = '__byname_' + name; if (!elCache[k]) elCache[k] = []; return elCache[k]; }, addEventListener: () => {} };
     const inst = fn(mockState, s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), () => {}, () => {}, () => {}, () => {}, async (msg, dv) => (inputs['uiModalInput'] !== undefined ? inputs['uiModalInput'] : (dv != null ? String(dv) : true)), async () => confirmAnswer,
         async (opts) => {
@@ -756,7 +756,7 @@ ok('合并器接入 engcheck', /merged\.wrongbk = ecMergeWrong\(/.test(APP));
 ok('CSS 含错题模块样式', ['.ec-wb-item', '.ec-wb-session', '.ec-wb-textarea', '.ec-wb-point-text', '.ec-wb-status'].every(c => CSS.includes(c)));
 ok('日历复用复习中心已有样式', CSS.includes('.ec-cal-body') && !CSS.includes('.ec-cal-items'));
 ok('翻页走 ecAfterAction（不会卡在上一题）', /s\.idx\+\+;\s*s\.revealed = false;\s*\/\/[\s\S]{0,120}ecAfterAction\(\);/.test(APP));
-ok('版本号 20261106t', APP.includes("const APP_BUILD = '20261106t'"));
+ok('版本号不低于 20261106t（升版不失效）', (() => { const m = APP.match(/const APP_BUILD = '(\d+)([a-z]*)'/); return !!m && (m[1] > '20261106' || (m[1] === '20261106' && (m[2] || '') >= 't')); })());
 ok('背诵打分函数未被误删（回归护栏）', /function ecReciteAction\(/.test(APP));
 ok('导入错题不刷分', !/ecAddScore\(fresh\.length\)/.test(APP));
 ok('新题（fsrs 缺失）也计入待复习', /s === 'due' \|\| s === 'new'/.test(APP));
@@ -1470,6 +1470,227 @@ try {
     ok('清空分界线：未清空时不过滤', drop(arr, 0).length === 2);
 } catch (e) {
     ok('dropBeforeCut 行为测试可执行', false);
+}
+
+
+// ============ 十五、v20261106u：错题本分书本 / 分课时 + 与书本学习联动 ============
+console.log('—— v20261106u 分书分课 + 学习联动 ——');
+
+// 1. 静态检查
+const buildM = APP.match(/const APP_BUILD = '(\d+)([a-z]*)'/);
+ok('版本号不低于 20261106u', !!buildM && (buildM[1] > '20261106' || (buildM[1] === '20261106' && (buildM[2] || '') >= 'u')));
+ok('五个三级子导航含错题本', /id: 'books', name: '🗂️ 错题本'/.test(APP) && /EC_WRONG_SUBTABS = \[/.test(APP));
+ok('错题条目带书本/课时/排序字段', /bookId: it\.bookId \|\| ''/.test(APP) && /lessonId: it\.lessonId \|\| ''/.test(APP) && /order: nowTs \+ i/.test(APP));
+ok('自动练题开关数据结构', /w\.autoTask = true/.test(APP) && /w\.autoTaskAt = 0/.test(APP));
+ok('旧数据认领函数存在', /function ecWbMigrate\(/.test(APP) && /function ecWbMatchLesson\(/.test(APP));
+ok('归属下拉按书本分组', /<optgroup label="\$\{escapeHtml\(b\.name\)\}">/.test(APP));
+ok('导入按课时列自动认领', /function ecWbAssign\(/.test(APP) && /ecWbMatchLesson\(it\.lesson \|\| '', f\.bookId/.test(APP));
+ok('批量管理函数齐全', ['ecWbSelMode', 'ecWbSelToggle', 'ecWbSelAll', 'ecWbDelSelected', 'ecWbMoveSelected', 'ecWbMoveIds', 'ecWbMoveItem'].every(f => APP.includes('function ' + f + '(')));
+ok('三级目录渲染函数齐全', ['ecWbBooksHTML', 'ecWbBookListHTML', 'ecWbBookDetailHTML', 'ecWbLessonDetailHTML', 'ecWbItemHTML'].every(f => APP.includes('function ' + f + '(')));
+ok('书本维度复习入口', /function ecWbDueIn\(/.test(APP) && /function ecWbStartBook\(/.test(APP) && /function ecWbStartLesson\(/.test(APP));
+ok('筛选下拉 change 委托', /data-wb-filter="book"/.test(APP) && /dataset\.wbFilter/.test(APP));
+ok('复习自动算练题任务', /function ecWbAutoDrill\(/.test(APP) && /fromWrong: true/.test(APP) && /ecWbAutoDrill\(item\.lessonId, nowTs\)/.test(APP));
+ok('课时列表显示错题徽标', /ecWbBadgeHTML\(l\.id\)/.test(APP));
+ok('课时详情插入错题联动卡', /\$\{ecWbLessonCardHTML\(lesson\.id\)\}/.test(APP));
+ok('今日推荐三态都带错题提示', (APP.match(/ecTodayRecommendWrongHTML\(bookId\)/g) || []).length >= 3);
+ok('书本统计含错题', /wrongTotal: wc\.total/.test(APP) && /📕 错题 \$\{st\.wrongTotal\}/.test(APP));
+ok('成就榜含错题统计', /ec-wb-achstats/.test(APP) && /复习错题也算今天的学习/.test(APP));
+ok('分发器覆盖新增动作', ['ec-wb-import-lesson', 'ec-wb-start-book', 'ec-wb-start-lesson', 'ec-wb-start-unassigned', 'ec-wb-open-wrong-lesson', 'ec-wb-open-book', 'ec-wb-open-lesson', 'ec-wb-back-books', 'ec-wb-back-book', 'ec-wb-autotask', 'ec-wb-sel-mode', 'ec-wb-sel', 'ec-wb-sel-all', 'ec-wb-del-sel', 'ec-wb-move-sel', 'ec-wb-move-up', 'ec-wb-move-down'].every(a => APP.includes(`action === '${a}'`)));
+ok('CSS 含新目录/筛选/联动样式', ['.ec-wb-dir-card', '.ec-wb-filter', '.ec-wb-crumb', '.ec-wb-badge', '.ec-wb-setting', '.ec-reco-wrong', '.ec-wb-achstats'].every(c => CSS.includes(c)));
+ok('合并器保留绑定与开关', /hasBind/.test(APP) && /autoTaskAt/.test(APP));
+
+// 建一套书单目录（书本 → 课时），供下面的行为测试复用
+function seedCatalog(EC) {
+    const d = EC.ecData();
+    d.books.push({ id: 'b1', name: '新概念英语 第一册', order: 1 });
+    d.books.push({ id: 'b2', name: '新概念英语 第二册', order: 2 });
+    d.lessons.push({ id: 'l1', bookId: 'b1', name: 'L31、L32 Where is Sally?', order: 1 });
+    d.lessons.push({ id: 'l2', bookId: 'b1', name: 'Lesson 5 Nice to meet you', order: 2 });
+    d.lessons.push({ id: 'l3', bookId: 'b2', name: 'Unit 3 复习课', order: 1 });
+    return d;
+}
+
+// 2. 课时文字 → 书单目录的认领匹配
+{
+    const EC = makeEC(); seedCatalog(EC);
+    ok('课次编号匹配（L31、L32）', (() => { const r = EC.ecWbMatchLesson('L31、L32'); return r && r.bookId === 'b1' && r.lessonId === 'l1'; })());
+    ok('中文课次匹配（第 5 课）', (() => { const r = EC.ecWbMatchLesson('第 5 课'); return r && r.lessonId === 'l2'; })());
+    ok('课时名精确匹配（Unit 3 复习课）', (() => { const r = EC.ecWbMatchLesson('Unit 3 复习课'); return r && r.lessonId === 'l3'; })());
+    ok('限定书本时不会串到别的书', EC.ecWbMatchLesson('Unit 3', 'b1') === null);
+    ok('认领不到的返回 null', EC.ecWbMatchLesson('随便写的') === null && EC.ecWbMatchLesson('') === null);
+}
+
+// 3. 老错题自动认领（只补字段一次，且让绑定版本在跨端合并中胜出）
+{
+    const EC = makeEC(); seedCatalog(EC);
+    EC.ecData().wrongbk = {
+        items: [{ id: 'w1', lesson: 'L31、L32', point: 'P1', mine: 'M1', right: 'R1', why: '', createdAt: 1, updatedAt: 1 }],
+        fsrs: {}, tombs: {}, clearedAt: 0, updatedAt: 0
+    };
+    const w = EC.ecWbData();
+    ok('旧错题自动认领到书/课', w.items[0].bookId === 'b1' && w.items[0].lessonId === 'l1');
+    ok('旧错题补 order 字段', typeof w.items[0].order === 'number');
+    ok('认领后时间戳推进（防旧快照顶掉）', w.items[0].updatedAt > 1);
+    const at = w.items[0].updatedAt;
+    EC.ecWbData();
+    ok('重复取数不会反复迁移', w.items[0].updatedAt === at);
+    w.items.push({ id: 'w2', lesson: '没有这课', point: 'P2', mine: 'M2', right: 'R2', createdAt: 2, updatedAt: 2 });
+    EC.ecWbData();
+    ok('认领不到的落未归类', w.items[1].bookId === '' && w.items[1].lessonId === '');
+    ok('未归类显示名兜底', EC.ecWbLocationText(w.items[1]).includes('未归类'));
+}
+
+// 4. 导入归属：行内课时优先，其次弹窗选的课
+{
+    const EC = makeEC(); seedCatalog(EC);
+    const parsed = EC.ecWbParse('课时\t知识点\t我的答案\t正确答案\t原因\nL31、L32\t考点A\tmyA\trtA\t因A\n随便\t考点B\tmyB\trtB\t');
+    const list = EC.ecWbAssign(parsed.items, { bookId: 'b1', lessonId: 'l2' });
+    ok('导入解析出 2 题', parsed.items.length === 2);
+    ok('行内课时名优先认领', list[0].lessonId === 'l1' && list[0].bookId === 'b1');
+    ok('认领不到的用弹窗选的课', list[1].lessonId === 'l2' && list[1].bookId === 'b1');
+    ok('批量入库带归属', EC.ecWbAddItems(list) === 2 && EC.ecWbItemsOfBook('b1').length === 2);
+    ok('按书取错题', EC.ecWbItemsOfBook('b2').length === 0);
+    ok('按课取错题', EC.ecWbItemsOfLesson('l1').length === 1);
+    ok('归属文本为书名›课时名', EC.ecWbLocationText(EC.ecWbItemsOfLesson('l1')[0]).includes('新概念英语 第一册'));
+}
+
+// 5. 三级目录渲染：书本 → 课时 → 错题
+{
+    const EC = makeEC(); seedCatalog(EC);
+    EC.ecWbAddItems([
+        { bookId: 'b1', lessonId: 'l1', lesson: 'L31、L32', point: '考点A', mine: 'myA', right: 'rtA', why: '因A' },
+        { bookId: 'b1', lessonId: 'l1', lesson: 'L31、L32', point: '考点B', mine: 'myB', right: 'rtB', why: '' }
+    ]);
+    EC.state.currentSubTab = { 'ec-wrong-sub': 'books' };
+    const hb = EC.ecRenderWrong();
+    ok('一级：书本列表 + 导入/新增/备份工具条', hb.includes('错题本 · 按书本整理') && hb.includes('新概念英语 第一册') && hb.includes('ec-wb-import'));
+    ok('一级：可只复习一本书', hb.includes('ec-wb-start-book'));
+    EC.state._wbBookId = 'b1';
+    const hl = EC.ecRenderWrong();
+    ok('二级：课时列表', hl.includes('按课时整理') && hl.includes('L31、L32') && hl.includes('ec-wb-open-lesson'));
+    ok('二级：返回书本面包屑', hl.includes('ec-wb-back-books'));
+    EC.state._wbLessonId = 'l1';
+    const hi = EC.ecRenderWrong();
+    ok('三级：题目列表含编辑/删除/排序/批量', hi.includes('考点A') && hi.includes('ec-wb-move-up') && hi.includes('ec-wb-sel-mode') && hi.includes('ec-wb-edit'));
+    ok('三级：开始复习本课', hi.includes('ec-wb-start-lesson'));
+    ok('未归类题有独立复习入口', /ec-wb-start-unassigned/.test(APP));
+    ok('三级：面包屑三级', hi.includes('ec-wb-crumb-btn'));
+}
+
+// 6. 批量删除 / 批量改归属 / 课时内排序
+{
+    const EC = makeEC(); seedCatalog(EC);
+    EC.ecWbAddItems([
+        { bookId: 'b1', lessonId: 'l1', lesson: '', point: 'P1', mine: 'm1', right: 'r1' },
+        { bookId: 'b1', lessonId: 'l1', lesson: '', point: 'P2', mine: 'm2', right: 'r2' },
+        { bookId: 'b1', lessonId: 'l1', lesson: '', point: 'P3', mine: 'm3', right: 'r3' }
+    ]);
+    const ids = EC.ecWbData().items.map(x => x.id);
+    EC.ecWbMoveIds([ids[0]], { bookId: 'b2', lessonId: 'l3' }, 'Unit 3 复习课');
+    ok('批量改归属生效', EC.ecWbById(ids[0]).bookId === 'b2' && EC.ecWbById(ids[0]).lessonId === 'l3');
+    ok('批量改归属后按书统计正确', EC.ecWbItemsOfBook('b2').length === 1 && EC.ecWbItemsOfBook('b1').length === 2);
+    EC.ecWbSelMode(true); EC.ecWbSelToggle(ids[1]); EC.ecWbSelToggle(ids[2]);
+    ok('选择模式可勾选多题', EC.ecWbSelIds().length === 2);
+    EC.ecWbSelAll();
+    ok('全选可用', EC.ecWbSelIds().length === 3);
+    EC.ecWbSelAll();
+    ok('反选可用', EC.ecWbSelIds().length === 0);
+    const before = EC.ecWbItemsOfLesson('l1').sort((a, b) => a.order - b.order)[0].id;
+    EC.ecWbMoveItem(before, 'down');
+    const after = EC.ecWbItemsOfLesson('l1').sort((a, b) => a.order - b.order)[0].id;
+    ok('课时内上/下移调整顺序', before !== after);
+    EC.ecWbRemoveIds([ids[0]]);
+    ok('删除写墓碑', !EC.ecWbById(ids[0]) && !!EC.ecWbData().tombs[ids[0]]);
+    ok('删除同时清 FSRS', !EC.ecWbData().fsrs[ids[0]]);
+}
+
+// 7. 复习也算学习：自动完成「练题」任务 + 可关闭开关
+{
+    const EC = makeEC(); seedCatalog(EC);
+    EC.ecWbAddItems([{ bookId: 'b1', lessonId: 'l1', lesson: 'L31、L32', point: 'P1', mine: 'M1', right: 'R1' }]);
+    ok('默认开启自动算任务', EC.ecWbAutoTaskOn() === true);
+    EC.ecWbStart('', { lessonId: 'l1' });
+    const s = EC.state._wbSession;
+    s.revealed = true;
+    const scoreBefore = EC.ecData().score || 0;
+    EC.ecWbGrade(3);
+    const d = EC.ecData();
+    ok('复习自评自动完成练题任务', !!d.tasks['l1|write-drill'] && d.tasks['l1|write-drill'].fromWrong === true);
+    ok('任务打卡与自评都给分', (d.score - scoreBefore) >= 4);
+    ok('自动任务不重复打卡', (() => { const at = d.tasks['l1|write-drill'].at; EC.ecWbAutoDrill('l1', Date.now()); return d.tasks['l1|write-drill'].at === at; })());
+    EC.ecWbToggleAutoTask();
+    ok('开关可关闭', EC.ecWbAutoTaskOn() === false && EC.ecWbData().autoTaskAt > 0);
+    EC.ecWbAddItems([{ bookId: 'b1', lessonId: 'l2', lesson: '', point: 'P2', mine: 'M2', right: 'R2' }]);
+    EC.ecWbStart('', { lessonId: 'l2' });
+    EC.state._wbSession.revealed = true;
+    EC.ecWbGrade(3);
+    ok('关闭后不再自动打卡任务', !EC.ecData().tasks['l2|write-drill']);
+}
+
+// 8. 与书单页联动：徽标 / 详情卡 / 今日推荐 / 统计 / 成就榜
+{
+    const EC = makeEC(); seedCatalog(EC);
+    EC.ecWbAddItems([
+        { bookId: 'b1', lessonId: 'l1', lesson: '', point: 'P1', mine: 'M1', right: 'R1' },
+        { bookId: 'b1', lessonId: 'l1', lesson: '', point: 'P2', mine: 'M2', right: 'R2' }
+    ]);
+    ok('课时徽标显示数量', EC.ecWbBadgeHTML('l1').includes('📕') && EC.ecWbBadgeHTML('l1').includes('2'));
+    ok('无错题课时不显示徽标', EC.ecWbBadgeHTML('l2') === '');
+    const card = EC.ecWbLessonCardHTML('l1');
+    ok('课时详情卡三个入口', card.includes('本课错题') && card.includes('ec-wb-start-lesson') && card.includes('ec-wb-open-wrong-lesson') && card.includes('ec-wb-import-lesson'));
+    const reco = EC.ecTodayRecommendWrongHTML('b1');
+    ok('今日推荐提示到期错题', reco.includes('2') && reco.includes('ec-wb-start-book'));
+    ok('无错题的书不提示', EC.ecTodayRecommendWrongHTML('b2') === '');
+    ok('书本统计含错题数', EC.ecBookStats('b1').wrongTotal === 2 && EC.ecBookStats('b1').wrongDue === 2);
+    ok('全局统计含错题', EC.ecGlobalStats().wrongDue === 2);
+    EC.state._ecLessonId = 'l1';
+    ok('课时详情页渲染错题卡', EC.ecRenderLesson().includes('本课错题'));
+    ok('成就榜显示错题统计', EC.ecRenderAchieve().includes('错题集'));
+    EC.state._ecBookId = 'b1'; EC.state._ecLessonId = null;
+    ok('课时列表页渲染错题徽标', EC.ecRenderLessons().includes('ec-wb-badge'));
+}
+
+// 9. 书本 / 课时维度筛选复习队列
+{
+    const EC = makeEC(); seedCatalog(EC);
+    EC.ecWbAddItems([
+        { bookId: 'b1', lessonId: 'l1', lesson: '', point: 'P1', mine: 'M1', right: 'R1' },
+        { bookId: 'b2', lessonId: 'l3', lesson: '', point: 'P2', mine: 'M2', right: 'R2' },
+        { bookId: '', lessonId: '', lesson: '课外', point: 'P3', mine: 'M3', right: 'R3' }
+    ]);
+    ok('按整本书取待复习题', EC.ecWbDueIn({ bookId: 'b1' }).length === 1 && EC.ecWbDueIn({ bookId: 'b1' })[0].point === 'P1');
+    ok('按某一课取待复习题', EC.ecWbDueIn({ lessonId: 'l3' }).length === 1);
+    ok('未归类可单独筛出', EC.ecWbDueIn({ bookId: EC.EC_WB_UNASSIGNED }).length === 1);
+    EC.state._wbFilterBookId = 'b2'; EC.state._wbFilterLessonId = '';
+    ok('顶部筛选生效', EC.ecWbFilteredDueItems().length === 1 && EC.ecWbFilteredDueItems()[0].point === 'P2');
+    EC.state._wbFilterLessonId = 'l1';
+    ok('书+课筛选取交集（无结果）', EC.ecWbFilteredDueItems().length === 0);
+    EC.ecWbStartBook('b1');
+    ok('只复习这本书建立 1 题队列', EC.state._wbSession.queue.length === 1 && EC.state._wbSession.queue[0] === EC.ecWbDueIn({ bookId: 'b1' })[0].id);
+    EC.ecWbStartLesson('l3');
+    ok('只复习这一课并跳到错题本该课', EC.state.currentSubTab.engcheck === 'ec-wrong' && EC.state._wbLessonId === 'l3');
+    EC.ecWbGoLesson('l1');
+    ok('书单「查看本课错题」直达第三级', EC.state._wbBookId === 'b1' && EC.state._wbLessonId === 'l1');
+}
+
+// 10. 跨设备合并：绑定字段 / 开关 / 旧快照不顶掉新绑定
+{
+    const EC = makeEC();
+    const bound = (id, point, at) => ({ id, bookId: 'b1', lessonId: 'l1', lesson: 'L31', point, mine: 'm', right: 'r', createdAt: at, updatedAt: at });
+    const plain = (id, point, at) => ({ id, lesson: 'L31', point, mine: 'm', right: 'r', createdAt: at, updatedAt: at });
+    const A = { items: [bound('a', 'A-带归属', 100)], fsrs: {}, tombs: {}, clearedAt: 0, updatedAt: 100, autoTask: false, autoTaskAt: 500 };
+    const B = { items: [plain('a', 'A-旧', 50)], fsrs: {}, tombs: {}, clearedAt: 0, updatedAt: 50, autoTask: true, autoTaskAt: 100 };
+    const m = EC.ecMergeWrong(A, B);
+    ok('合并保留书本/课时绑定', m.items[0].bookId === 'b1' && m.items[0].lessonId === 'l1');
+    ok('开关按 autoTaskAt 新者胜', m.autoTask === false && m.autoTaskAt === 500);
+    const C = { items: [plain('a', 'A-更新但无绑定', 200)], fsrs: {}, tombs: {}, clearedAt: 0, updatedAt: 200 };
+    const D = { items: [bound('a', 'A-较旧', 100)], fsrs: {}, tombs: {}, clearedAt: 0, updatedAt: 100 };
+    const m2 = EC.ecMergeWrong(C, D);
+    ok('对端旧快照不顶掉绑定', m2.items[0].bookId === 'b1' && m2.items[0].lessonId === 'l1' && m2.items[0].point === 'A-更新但无绑定');
+    ok('同 id 同时间戳优先带绑定版本', (() => {
+        const r = EC.ecMergeWrong({ items: [plain('a', 'P', 300)], tombs: {} }, { items: [bound('a', 'P', 300)], tombs: {} });
+        return r.items[0].lessonId === 'l1';
+    })());
 }
 
 // 等待异步断言后汇总

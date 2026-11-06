@@ -4656,3 +4656,51 @@ select.input {
     .ec-wb-actions .btn { flex: 1; text-align: center; }
     .ec-wb-session { padding: 12px; }
 }
+
+/* ===== v20261106u：错题本分书本 / 分课时 + 与书本学习联动 ===== */
+.ec-wb-field { margin: 10px 0; }
+.ec-wb-field label { display: block; font-size: 12px; font-weight: 700; color: #666; margin-bottom: 5px; }
+.ec-wb-select { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #e3e6ea; border-radius: 10px; background: #fff; color: #333; font-size: 13px; }
+.ec-wb-mini { font-size: 11px; color: #999; font-weight: 400; }
+.ec-wb-setting { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed #e8e8e8; font-size: 12.5px; color: #555; line-height: 1.6; }
+.ec-wb-setting .btn { flex-shrink: 0; }
+.ec-wb-bookrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid #f2f2f2; }
+.ec-wb-bookrow:last-child { border-bottom: none; }
+.ec-wb-bookrow-name { font-size: 13.5px; font-weight: 700; color: #333; }
+.ec-wb-bookrow-ops { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ec-wb-filter { display: flex; gap: 8px; margin: 10px 0 12px; }
+.ec-wb-filter .ec-wb-select { flex: 1; min-width: 0; }
+.ec-wb-filter .ec-wb-select:disabled { opacity: .5; }
+.ec-wb-crumb { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; color: #aaa; margin: 8px 0 10px; }
+.ec-wb-crumb-btn { border: none; background: #f2f6ff; color: #4a6fa5; border-radius: 8px; padding: 3px 9px; font-size: 12px; cursor: pointer; }
+.ec-wb-crumb-cur { font-weight: 700; color: #555; }
+.ec-wb-dir-card { padding: 12px 14px; margin-bottom: 10px; cursor: pointer; }
+.ec-wb-dir-main { display: flex; align-items: center; gap: 10px; }
+.ec-wb-dir-icon { font-size: 22px; flex-shrink: 0; }
+.ec-wb-dir-info { flex: 1; min-width: 0; }
+.ec-wb-dir-name { font-size: 14px; font-weight: 700; color: #333; line-height: 1.5; word-break: break-word; }
+.ec-wb-dir-ops { margin: 8px 0 0 32px; }
+.ec-wb-toolbar { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #eee; }
+.ec-wb-sel-cb { position: static; width: auto; height: auto; border: none; background: transparent; justify-content: flex-start; font-size: 16px; margin: 0 0 8px; }
+.ec-wb-selbar .btn { padding: 4px 8px; font-size: 12px; }
+.ec-wb-selbar-ids { display: none; }
+.ec-wb-item.ec-sel { border-color: #66bb6a; background: #f1faf1; }
+.ec-wb-loc { font-size: 11px; color: #8a94a0; margin: 4px 0 6px; }
+.ec-wb-badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px; background: #fff3e0; color: #e65100; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.ec-wb-linkstats { font-size: 13px; color: #555; padding: 8px 0 2px; }
+.ec-wb-achstats { margin: 10px 0; padding: 9px 12px; border-radius: 10px; background: #fff8e1; color: #795548; font-size: 12px; }
+.ec-reco-wrong { margin-top: 10px; padding: 8px 11px; border-radius: 10px; background: #fff3e0; color: #e65100; font-size: 12px; font-weight: 600; cursor: pointer; }
+[data-theme="dark"] .ec-wb-select { background: #2a2a2a; border-color: #444; color: #eee; }
+[data-theme="dark"] .ec-wb-field label, [data-theme="dark"] .ec-wb-crumb-cur, [data-theme="dark"] .ec-wb-dir-name, [data-theme="dark"] .ec-wb-bookrow-name { color: #ddd; }
+[data-theme="dark"] .ec-wb-setting, [data-theme="dark"] .ec-wb-linkstats { color: #bbb; }
+[data-theme="dark"] .ec-wb-bookrow, [data-theme="dark"] .ec-wb-toolbar, [data-theme="dark"] .ec-wb-setting { border-color: #3a3a3a; }
+[data-theme="dark"] .ec-wb-crumb-btn { background: #2a3340; color: #9dc0f0; }
+[data-theme="dark"] .ec-wb-item.ec-sel { background: #213621; border-color: #4a8a4a; }
+[data-theme="dark"] .ec-wb-achstats { background: #33290e; color: #e8c98a; }
+[data-theme="dark"] .ec-reco-wrong { background: #3a2a16; color: #ffb74d; }
+@media (max-width: 480px) {
+    .ec-wb-filter { flex-direction: column; }
+    .ec-wb-dir-ops { margin-left: 0; }
+    .ec-wb-setting { flex-direction: column; align-items: flex-start; }
+}
+
