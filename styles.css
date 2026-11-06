@@ -4741,3 +4741,143 @@ select.input {
 .ui-modal-title, .ui-modal-input, .ui-modal-actions { flex-shrink: 0; }
 .ui-modal-msg { overflow-y: auto; min-height: 0; }
 
+
+/* ==================== v20261106x 四模块联动 · 学习驾驶舱 ==================== */
+/* 主 Tab 栏：待办徽标让四个板块的状态不用点进去也能看到 */
+.ec-main-tabs { align-items: center; }
+.ec-main-tabs .tab-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding-right: 10px; }
+.ec-tab-label { white-space: nowrap; }
+.ec-tab-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 17px; height: 17px; padding: 0 4px; margin-left: 2px;
+    border-radius: 999px; background: var(--primary); color: #fff;
+    font-size: 10px; font-weight: 800; line-height: 1; box-shadow: 0 1px 4px rgba(52,199,89,.28);
+}
+.ec-tab-badge.overdue { background: #ff9500; box-shadow: 0 1px 4px rgba(255,149,0,.32); }
+.ec-main-tabs .tab-btn:not(.active) .ec-tab-badge { opacity: .82; }
+
+/* 头卡：等级信息保留，下面挂四格今日待办 */
+.ec-hub {
+    background: linear-gradient(165deg, rgba(52,199,89,.075), rgba(255,255,255,0) 42%), var(--surface);
+    border: 1px solid var(--border);
+}
+.ec-hub .ec-head-main { margin-bottom: 2px; }
+.ec-hub .ec-head-score { font-size: 16px; }
+.ec-hub .ec-head-sub { gap: 12px; margin: 9px 0 8px; }
+.ec-hub .ec-bar { height: 7px; }
+.ec-hub .ec-bar-fill { background: linear-gradient(90deg, var(--primary), #7ed957); }
+.ec-hub-title {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    margin: 15px 0 9px; font-size: 13px; font-weight: 700; color: var(--text);
+}
+.ec-hub-title em, .ec-card-note, .ec-link-head em {
+    font-style: normal; font-size: 11px; font-weight: 500; color: var(--text-secondary);
+}
+.ec-hub-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ec-hub-cell {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+    padding: 10px 10px 9px; min-width: 0; text-align: left;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface-2); color: var(--text); cursor: pointer;
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.ec-hub-cell:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.08); border-color: var(--primary); }
+.ec-hub-cell:active { transform: translateY(0); }
+.ec-hub-ico { font-size: 15px; line-height: 1.2; }
+.ec-hub-num { font-size: 22px; font-weight: 800; line-height: 1.15; letter-spacing: -.5px; }
+.ec-hub-label { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ec-hub-hint { font-size: 10px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ec-hub-cell.amber .ec-hub-num { color: #d97706; }
+.ec-hub-cell.orange .ec-hub-num { color: #e65100; }
+.ec-hub-cell.red .ec-hub-num { color: #d93025; }
+.ec-hub-cell.green .ec-hub-num { color: var(--primary-dark); }
+.ec-hub-cell.ok .ec-hub-num { color: var(--primary-dark); }
+.ec-hub-cell.ok { border-color: rgba(52,199,89,.35); }
+.ec-hub-advice {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin-top: 10px; padding: 9px 10px 9px 12px;
+    border-radius: 12px; background: var(--primary-light);
+}
+.ec-hub-advice-text { font-size: 12px; line-height: 1.5; color: var(--text); }
+.ec-hub-advice .btn { flex-shrink: 0; white-space: nowrap; }
+
+/* 板块联动条 */
+.ec-link-card { padding: 12px 14px; }
+.ec-link-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 9px; font-size: 13px; font-weight: 700; }
+.ec-link-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+.ec-link-item {
+    display: flex; align-items: center; gap: 7px; min-width: 0;
+    padding: 9px 10px; border: 1px solid var(--border); border-radius: 11px;
+    background: var(--surface-2); color: var(--text-secondary); font-size: 11.5px; text-align: left; cursor: pointer;
+    transition: transform .16s ease, border-color .16s ease, color .16s ease;
+}
+.ec-link-item:hover { transform: translateX(2px); border-color: var(--primary); color: var(--text); }
+.ec-link-item.has { color: var(--text); border-color: rgba(255,159,10,.45); background: rgba(255,159,10,.07); }
+.ec-link-ico { font-size: 14px; flex-shrink: 0; }
+.ec-link-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ec-link-go { font-size: 15px; flex-shrink: 0; opacity: .65; }
+
+/* 成就榜：四大板块数据卡（可点击直达） */
+.ec-mod-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ec-mod-stat {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0;
+    padding: 11px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer;
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.ec-mod-stat:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.08); border-color: var(--primary); }
+.ec-mod-ico { font-size: 17px; }
+.ec-mod-name { font-size: 11px; font-weight: 700; color: var(--text-secondary); }
+.ec-mod-num { font-size: 21px; font-weight: 800; line-height: 1.15; }
+.ec-mod-num i { font-style: normal; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.ec-mod-sub { font-size: 10px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+/* 7 天学习热力：颜色随当天完成量加深 */
+.ec-day.lv1 .ec-day-dot { background: rgba(52,199,89,.35); border-color: rgba(52,199,89,.45); color: #1a7f37; }
+.ec-day.lv2 .ec-day-dot { background: rgba(52,199,89,.65); border-color: rgba(52,199,89,.7); color: #fff; }
+.ec-day.lv3 .ec-day-dot { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(52,199,89,.3); }
+.ec-day.lv1 .ec-day-dot, .ec-day.lv2 .ec-day-dot, .ec-day.lv3 .ec-day-dot { font-size: 10px; font-weight: 800; }
+
+/* 成就墙：分组 + 解锁进度 + 去完成 */
+.ec-ach-progress { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin: 2px 0 12px; }
+.ec-ach-progress-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--primary), #7ed957); transition: width .35s ease; }
+.ec-ach-group-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); margin: 12px 2px 8px; }
+.ec-ach-item.ec-ach-on { border-color: rgba(52,199,89,.4); background: linear-gradient(140deg, rgba(52,199,89,.10), rgba(52,199,89,.02)); }
+.ec-ach-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--primary-light); color: var(--primary-dark); font-size: 9px; font-weight: 700; vertical-align: 1px; }
+.ec-ach-go { align-self: center; flex-shrink: 0; margin-left: 6px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--primary-dark); font-size: 10px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.ec-ach-go:hover { border-color: var(--primary); }
+
+/* 暗色主题 */
+[data-theme="dark"] .ec-hub { background: linear-gradient(165deg, rgba(48,209,88,.10), rgba(28,28,30,0) 42%), var(--surface); }
+[data-theme="dark"] .ec-hub-cell, [data-theme="dark"] .ec-mod-stat, [data-theme="dark"] .ec-link-item { background: var(--surface-2); border-color: var(--border); color: var(--text); }
+[data-theme="dark"] .ec-link-item { color: var(--text-secondary); }
+[data-theme="dark"] .ec-link-item.has { color: var(--text); background: rgba(255,214,10,.08); border-color: rgba(255,214,10,.35); }
+[data-theme="dark"] .ec-hub-advice { background: rgba(48,209,88,.12); }
+[data-theme="dark"] .ec-hub-cell.amber .ec-hub-num { color: #ffb340; }
+[data-theme="dark"] .ec-hub-cell.orange .ec-hub-num { color: #ff9f0a; }
+[data-theme="dark"] .ec-hub-cell.red .ec-hub-num { color: #ff6961; }
+[data-theme="dark"] .ec-hub-cell.green .ec-hub-num, [data-theme="dark"] .ec-hub-cell.ok .ec-hub-num { color: #5be584; }
+[data-theme="dark"] .ec-day.lv1 .ec-day-dot { color: #a8e6bd; }
+[data-theme="dark"] .ec-ach-item.ec-ach-on { background: linear-gradient(140deg, rgba(48,209,88,.14), rgba(48,209,88,.03)); }
+[data-theme="dark"] .ec-ach-tag { color: #5be584; }
+[data-theme="dark"] .ec-ach-go { background: var(--surface-2); color: #5be584; }
+
+/* 手机：保留四格一屏可见，隐藏次要提示文字 */
+@media (max-width: 600px) {
+    .ec-hub-grid { gap: 6px; }
+    .ec-hub-cell { padding: 9px 7px; }
+    .ec-hub-num { font-size: 19px; }
+    .ec-hub-label { font-size: 10px; }
+    .ec-hub-hint { display: none; }
+    .ec-hub-advice { flex-wrap: wrap; }
+    .ec-mod-stats { grid-template-columns: repeat(2, 1fr); }
+    .ec-ach-go { padding: 3px 6px; font-size: 9px; }
+}
+@media (max-width: 380px) {
+    .ec-link-grid { grid-template-columns: 1fr; }
+    .ec-tab-badge { min-width: 15px; height: 15px; font-size: 9px; padding: 0 3px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ec-hub-cell, .ec-mod-stat, .ec-link-item, .ec-ach-go, .ec-bar-fill, .ec-ach-progress-fill { transition: none !important; }
+    .ec-hub-cell:hover, .ec-mod-stat:hover, .ec-link-item:hover { transform: none !important; }
+}
