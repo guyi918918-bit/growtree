@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261106v';
+const APP_BUILD = '20261106w';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -11783,7 +11783,24 @@ function ecWbDiffWords(sides) {
     }));
     return Array.from(new Set(out));
 }
+// 表格里用 [[ ]] 手动圈出的错误点：完全按用户标的位置打灰底，不再自动 diff
+function ecWbHasMark(s) { return /\[\[[\s\S]*?\]\]/.test(String(s == null ? '' : s)); }
+function ecWbMarkHTML(s) {
+    return String(s == null ? '' : s).split(/\[\[([\s\S]*?)\]\]/g)
+        .map((part, i) => i % 2 === 1 ? `<span class="ec-wb-diff">${escapeHtml(part)}</span>` : escapeHtml(part)).join('');
+}
+function ecWbMarkWords(s) {
+    const out = [];
+    String(s == null ? '' : s).replace(/\[\[([\s\S]*?)\]\]/g, (m, w) => { if (w) out.push(String(w).trim()); return m; });
+    return out;
+}
 function ecWbCompareHTML(mine, right) {
+    if (ecWbHasMark(mine) || ecWbHasMark(right)) {
+        return {
+            mine: ecWbMarkHTML(mine), right: ecWbMarkHTML(right),
+            words: Array.from(new Set(ecWbMarkWords(mine).concat(ecWbMarkWords(right))))
+        };
+    }
     const sides = ecWbDiffSides(mine, right);
     return { mine: ecWbSegsHTML(sides.mine), right: ecWbSegsHTML(sides.right), words: ecWbDiffWords(sides) };
 }
@@ -11809,9 +11826,13 @@ function ecWbWhyHTML(why, words) {
 // 五列 Tab 分隔：课时 | 知识点 | 我的答案 | 正确答案 | 大白话原因
 // 原因里 [[词]] 会加灰底；不写也会自动高亮两处答案里不一样的词。
 const EC_WB_TEMPLATE = [
-    '课时\t知识点\t我的答案\t正确答案\t大白话原因',
-    'L31\t主谓一致 / 现在进行时\tHe usually drive to work. But he take the bus to work today.\tHe usually drives to work. But he is taking the bus to work today.\t主语是 He，单数，一般现在时的动词要加 [[s]]，所以 [[drive]] 必须变成 [[drives]]。后半句是「今天正在坐公交」，此刻发生的动作用 [[be + doing]]，所以 [[is taking]] 最合适。',
-    'L32\t名词单复数\tWhich one do you want?\tWhich ones do you want?\t前面说的是复数，提问和替代都要用 [[ones]]；[[one]] 只指单数。'
+    '课时\t知识点\t题目\t我的答案\t正确答案\t大白话原因',
+    'L1-L2\t物主代词\t中译英: 那是她的伞。\tThat is [[her\'s]] umbrella.\tThat is [[her]] umbrella.\t绝对没有 her\'s 这个词！形容词性物主代词 her 后面必须加名词。',
+    'L23-L24\t名词替代词\t填空: Give me some glasses. – Which [[______]]?\tWhich [[one]]?\tWhich [[ones]]?\t前面是复数（glasses），提问和替代必须用复数 ones。',
+    'L25-L26\tThere be 否定\t改错: There don\'t have any food.\tThere [[don\'t have]] any food.\tThere [[isn\'t]] any food.\t表达「某地没有某物」，地道英语用 There isn\'t / aren\'t，绝不用 don\'t have。',
+    'L25-L26\t不可数名词\t中译英: 瓶子里有一些水。\tThere [[are]] some water in the bottle.\tThere [[is]] some water in the bottle.\twater 是不可数名词，永远配 is，别被 some 骗了。',
+    'L25-L28\tsome/any\t中译英: 客厅里有一些杂志吗？\tAre there [[some]] magazines in the living room?\tAre there [[any]] magazines in the living room?\t一般疑问句和否定句里，统统把 some 变成 any。',
+    'L27-L28\tThere be 简答\t简答: Are there any pictures on the wall?\tYes, [[they are]].\tYes, [[there are]].\t简答要沿用 there be 的 there，不能用 they。'
 ].join('\n');
 function ecWbTemplateCSV() {
     const q = s => '"' + String(s).replace(/"/g, '""') + '"';
@@ -12017,7 +12038,8 @@ function ecWbParse(text) {
     const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
     const looksLesson = s => /^(L\s*\d|U\s*\d|Unit\s*\d|Lesson\s*\d|第\s*\d+\s*课|\d+\s*[-~至]\s*\d+\s*课?)/i.test(String(s || '').trim());
     let firstSeen = false;
-    let lastWasFull = false; // 上一行是完整五列时，允许「大白话原因」换行续写
+    let hasQuestion = false; // 表头里出现「题目」→ 六列格式
+    let lastWasFull = false; // 上一行是完整行时，允许「大白话原因」换行续写
     lines.forEach((raw, i) => {
         const line = raw.trim();
         if (!line) return;
@@ -12026,7 +12048,11 @@ function ecWbParse(text) {
         if (!firstSeen) {
             firstSeen = true;
             const joined = cols.join(' ');
-            if (/正确答案/.test(joined) && /课时|知识点|我的答案/.test(joined)) return;
+            if (/正确答案/.test(joined) && /课时|知识点|我的答案/.test(joined)) {
+                hasQuestion = /题目|题干/.test(joined);
+                return;
+            }
+            hasQuestion = cols.length >= 6; // 没表头但第一行就是六列
         }
         if (cols.length < 3) {
             // 大白话解析换行：接到上一行原因后面（表格单元格里换行也不会丢）
@@ -12034,13 +12060,16 @@ function ecWbParse(text) {
             lastWasFull = false;
             errors.push(`第 ${i + 1} 行：列数不足（至少 3 列）`); return;
         }
-        let lesson = '', point = '', mine = '', right = '', why = '';
-        if (cols.length >= 5) { lesson = cols[0]; point = cols[1]; mine = cols[2]; right = cols[3]; why = cols[4]; }
+        let lesson = '', point = '', question = '', mine = '', right = '', why = '';
+        if (cols.length >= 6) { lesson = cols[0]; point = cols[1]; question = cols[2]; mine = cols[3]; right = cols[4]; why = cols[5]; }
+        else if (hasQuestion && cols.length === 5 && looksLesson(cols[0])) { lesson = cols[0]; point = cols[1]; question = cols[2]; mine = cols[3]; right = cols[4]; }
+        else if (hasQuestion && cols.length === 5) { point = cols[0]; question = cols[1]; mine = cols[2]; right = cols[3]; why = cols[4]; }
+        else if (cols.length >= 5) { lesson = cols[0]; point = cols[1]; mine = cols[2]; right = cols[3]; why = cols[4]; }
         else if (cols.length === 4 && looksLesson(cols[0])) { lesson = cols[0]; point = cols[1]; mine = cols[2]; right = cols[3]; }
         else if (cols.length === 4) { point = cols[0]; mine = cols[1]; right = cols[2]; why = cols[3]; }
         else { point = cols[0]; mine = cols[1]; right = cols[2]; }
         if (!point || !mine || !right) { errors.push(`第 ${i + 1} 行：知识点/我的答案/正确答案不能为空`); return; }
-        items.push({ lesson, point, mine, right, why });
+        items.push({ lesson, point, question, mine, right, why });
         lastWasFull = cols.length >= 5 && !!why;
     });
     return { items, errors };
@@ -12062,7 +12091,7 @@ function ecWbAddItems(list) {
         const id = uuid();
         w.items.push({
             id, bookId: it.bookId || '', lessonId: it.lessonId || '', lesson: it.lesson || '',
-            point: it.point, mine: it.mine, right: it.right, why: it.why || '',
+            point: it.point, question: it.question || '', mine: it.mine, right: it.right, why: it.why || '',
             order: nowTs + i, createdAt: nowTs + i, updatedAt: nowTs + i
         });
         const rec = ecFsrsLearn(nowTs);
@@ -12078,7 +12107,7 @@ function ecWbAddItems(list) {
 async function ecWbImportOpen(defaultLessonId, prefill) {
     const p = uiModal({
         title: '📥 批量导入错题',
-        html: '<div class="ec-hint">五列 <b>Tab 分隔</b>（直接从 Excel / WPS 复制粘贴）：<b>课时 | 知识点 | 我的答案 | 正确答案 | 大白话原因</b>。表头可留可删，重复题自动跳过；原因里写 <b>[[词]]</b> 会给重点词加灰底，不写也会自动高亮两句答案里不一样的词。</div>'
+        html: '<div class="ec-hint">六列 <b>Tab 分隔</b>（直接从 Excel / WPS 复制粘贴）：<b>课时 | 知识点 | 题目 | 我的答案 | 正确答案 | 大白话原因</b>。表头可留可删，旧五列格式照样认；重复题自动跳过。答案里用 <b>[[词]]</b> 圈出的错误点会直接打灰底，不写则自动逐词比对高亮。</div>'
             + '<div class="ec-wb-tplbar"><button type="button" class="btn btn-sm btn-secondary" id="ecWbTplFill">📋 填入模板</button><button type="button" class="btn btn-sm btn-secondary" id="ecWbTplCopy">📋 复制模板</button><button type="button" class="btn btn-sm btn-secondary" id="ecWbTplDown">⬇️ CSV 模板</button></div>'
             + ecWbScopeSelectHTML('ecWbScopeSel', defaultLessonId || '', '📚 归到哪本书 / 哪一课（表里写了课时会自动对上目录）')
             + `<textarea id="ecWbImportBox" class="ec-wb-textarea" placeholder="点上面「填入模板」看示例，或直接粘贴五列表格">${prefill ? escapeHtml(EC_WB_TEMPLATE) : ''}</textarea>`,
@@ -12113,16 +12142,22 @@ async function ecWbImportOpen(defaultLessonId, prefill) {
 
 function ecWbFormHTML(it) {
     const escQ = s => escapeHtml(s || '').replace(/"/g, '&quot;');
+    const field = (label, id, ph, val, multi) => `<div class="ec-wb-field"><label>${label}</label>`
+        + (multi
+            ? `<textarea id="${id}" class="ec-wb-input ec-wb-input-multi" placeholder="${ph}">${escQ(val)}</textarea>`
+            : `<input id="${id}" class="ec-wb-input" placeholder="${ph}" value="${escQ(val)}">`)
+        + '</div>';
     return ecWbScopeSelectHTML('ecWbF0', it.lessonId || '', '📚 归到哪本书 / 哪一课')
-        + `<input id="ecWbF1" class="ec-wb-input" placeholder="课时备注（可留空，如 L23-24）" value="${escQ(it.lesson)}">
-        <input id="ecWbF2" class="ec-wb-input" placeholder="知识点（如 名词替代词）*" value="${escQ(it.point)}">
-        <input id="ecWbF3" class="ec-wb-input" placeholder="我当时的答案 *" value="${escQ(it.mine)}">
-        <input id="ecWbF4" class="ec-wb-input" placeholder="正确答案 *" value="${escQ(it.right)}">
-        <input id="ecWbF5" class="ec-wb-input" placeholder="大白话原因（为什么错，可留空）" value="${escQ(it.why)}">`;
+        + field('🗓️ 课时', 'ecWbF1', '如 L23-L24（可留空）', it.lesson)
+        + field('🎯 知识点 *', 'ecWbF2', '如 名词替代词 / There be 否定', it.point)
+        + field('📝 题目 / 题干', 'ecWbF3', '如 中译英：那是她的伞。 / 填空：Give me some glasses. – Which ____?', it.question, true)
+        + field('✍️ 我的答案 *', 'ecWbF4', '当时写错的答案，可用 [[词]] 圈出错误点', it.mine, true)
+        + field('✅ 正确答案 *', 'ecWbF5', '正确写法，可用 [[词]] 圈出关键处', it.right, true)
+        + field('💡 大白话原因', 'ecWbF6', '为什么错，可用 [[词]] 给重点词加灰底', it.why, true);
 }
 function ecWbFormValue() {
     const val = i => { const el = document.getElementById('ecWbF' + i); return el ? String(el.value || '').trim() : ''; };
-    return { scope: val(0), lesson: val(1), point: val(2), mine: val(3), right: val(4), why: val(5) };
+    return { scope: val(0), lesson: val(1), point: val(2), question: val(3), mine: val(4), right: val(5), why: val(6) };
 }
 function ecWbApplyForm(item, v, defaultLessonId) {
     const scope = ecWbScopeOfValue(v.scope || defaultLessonId || '');
@@ -12131,7 +12166,7 @@ function ecWbApplyForm(item, v, defaultLessonId) {
     if (!lessonText && scope.lessonId) { const l = ecLessonById(scope.lessonId); lessonText = l ? l.name : ''; }
     return Object.assign({}, item, {
         bookId: scope.bookId, lessonId: scope.lessonId, lesson: lessonText,
-        point: v.point, mine: v.mine, right: v.right, why: v.why, updatedAt: Date.now()
+        point: v.point, question: v.question || '', mine: v.mine, right: v.right, why: v.why, updatedAt: Date.now()
     });
 }
 async function ecWbAddSingle(defaultLessonId) {
@@ -12185,7 +12220,7 @@ async function ecWbClear() {
 async function ecWbExport() {
     const w = ecWbData();
     if (!w.items.length) { toast('错题集是空的，没有可导出的内容'); return; }
-    const payload = w.items.map(it => ({ book: ecWbBookName(it), lesson: ecWbLessonName(it), point: it.point, mine: it.mine, right: it.right, why: it.why }));
+    const payload = w.items.map(it => ({ book: ecWbBookName(it), lesson: ecWbLessonName(it), point: it.point, question: it.question || '', mine: it.mine, right: it.right, why: it.why }));
     await uiModal({
         title: `📤 导出错题集（${w.items.length} 题）`,
         html: '<div class="ec-hint">长按全选复制，粘贴到备忘录 / 微信文件传输助手保存；换设备时用「导入备份」粘贴回来（会按书本/课时名自动认领）。</div>'
@@ -12196,7 +12231,7 @@ async function ecWbExport() {
 async function ecWbImportJSON() {
     const v = await uiModal({
         title: '📥 导入备份',
-        html: '<div class="ec-hint">粘贴之前「导出备份」的内容（JSON）或五列表格文本；会自动按书本/课时名认领。</div>'
+        html: '<div class="ec-hint">粘贴之前「导出备份」的内容（JSON）或六列表格文本；会自动按书本/课时名认领。</div>'
             + '<textarea id="ecWbImportBox" class="ec-wb-textarea" placeholder=\'[{"lesson":"L23-24","point":"名词替代词","mine":"Which one?","right":"Which ones?"}]\'></textarea>',
         getValue: () => { const el = document.getElementById('ecWbImportBox'); return el ? el.value : ''; },
         okText: '导入'
@@ -12209,7 +12244,7 @@ async function ecWbImportJSON() {
             const arr = JSON.parse(s);
             if (!Array.isArray(arr)) throw new Error('not array');
             list = arr.filter(o => o && o.point && o.mine && o.right).map(o => ({
-                lesson: String(o.lesson || ''), point: String(o.point), mine: String(o.mine), right: String(o.right), why: String(o.why || '')
+                lesson: String(o.lesson || ''), point: String(o.point), question: String(o.question || ''), mine: String(o.mine), right: String(o.right), why: String(o.why || '')
             }));
         } catch (e) { toast('JSON 格式不对，导入失败'); return; }
     } else list = ecWbParse(s).items;
@@ -12621,6 +12656,7 @@ function ecWbItemHTML(it, opts) {
             <span class="ec-wb-status ec-wb-st-${st}">${statusName[st]}</span>
         </div>
         ${o.showPath ? `<div class="ec-wb-loc">📚 ${escapeHtml(ecWbLocationText(it))}</div>` : ''}
+        ${it.question ? `<div class="ec-wb-line"><span class="ec-wb-tag">📝 题目</span><span class="ec-wb-line-txt">${ecWbMarkHTML(it.question)}</span></div>` : ''}
         <div class="ec-wb-line"><span class="ec-wb-tag wrong">✗ 你当时</span><span class="ec-wb-line-txt">${cmp.mine}</span></div>
         <div class="ec-wb-line"><span class="ec-wb-tag right">✓ 正确</span><span class="ec-wb-line-txt">${cmp.right}</span></div>
         ${it.why ? `<div class="ec-wb-line"><span class="ec-wb-tag">💡 原因</span><span class="ec-wb-line-txt">${ecWbWhyHTML(it.why, cmp.words)}</span></div>` : ''}
@@ -12725,9 +12761,10 @@ function ecWbSessionHTML() {
         <div class="ec-wb-bar"><div class="ec-wb-bar-in" style="width:${pct}%"></div></div>
         <div class="ec-wb-chips"><span class="ec-wb-chip">📚 ${escapeHtml(ecWbLocationText(item))}</span></div>
         <div class="ec-wb-block">
-            <div class="ec-wb-block-title">🎯 考点 / 题目</div>
+            <div class="ec-wb-block-title">🎯 知识点</div>
             <div class="ec-wb-point-text">${escapeHtml(item.point)}</div>
         </div>
+        ${item.question ? `<div class="ec-wb-block"><div class="ec-wb-block-title">📝 题目 / 题干</div><div class="ec-wb-question">${ecWbMarkHTML(item.question)}</div></div>` : ''}
         <div class="ec-wb-block cmp">
             <div class="ec-wb-block-title">${s.revealed ? '🔍 逐词核对 · 灰底 = 不一样的地方' : '✍️ 你当时的答案 · 灰底 = 有问题的地方'}</div>
             <div class="ec-wb-cmp">${mineRow}${s.revealed ? rightRow : ''}</div>
@@ -12778,8 +12815,10 @@ function ecMergeWrong(a, b) {
     const tombs = { ...(B.tombs || {}), ...(A.tombs || {}) };
     const hasBind = x => (x && (x.bookId || x.lessonId)) ? 1 : 0;
     const map = new Map();
+    const qPool = new Map(); // 旧版本快照没有 question 字段时，用它兜底补回题目
     (Array.isArray(B.items) ? B.items : []).concat(Array.isArray(A.items) ? A.items : []).forEach(it => {
         if (!it || !it.id) return;
+        if (typeof it.question === 'string' && it.question) qPool.set(it.id, it.question);
         if ((Number(it.updatedAt) || 0) < cut) return;
         const t = Number(tombs[it.id]) || 0;
         if (t && t >= (Number(it.updatedAt) || 0)) return;
@@ -12807,7 +12846,9 @@ function ecMergeWrong(a, b) {
     const useA = (Number(A.autoTaskAt) || 0) >= (Number(B.autoTaskAt) || 0);
     const autoSrc = useA ? A : B;
     return {
-        items: Array.from(map.values()).sort((x, y) => (Number(x.createdAt) || 0) - (Number(y.createdAt) || 0)),
+        items: Array.from(map.values())
+            .map(it => (typeof it.question === 'undefined' && qPool.has(it.id)) ? Object.assign({}, it, { question: qPool.get(it.id) }) : it)
+            .sort((x, y) => (Number(x.createdAt) || 0) - (Number(y.createdAt) || 0)),
         fsrs,
         tombs,
         clearedAt: cut,

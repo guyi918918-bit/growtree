@@ -4730,3 +4730,14 @@ select.input {
     .ec-wb-tplbar .btn { flex: 1 1 30%; }
 }
 
+/* ===== v20261106w：题目字段 + 编辑弹窗字段标题 + [[ ]] 显式标记 ===== */
+.ec-wb-input-multi { min-height: 56px; resize: vertical; line-height: 1.55; }
+.ec-wb-field .ec-wb-input { margin-top: 0; }
+.ec-wb-question { font-size: 14.5px; line-height: 1.75; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+[data-theme="dark"] .ec-wb-question { color: #f5f5f7; }
+[data-theme="dark"] .ec-wb-field label { color: #aaa; }
+/* 字段变多后弹窗不能撑出屏幕：标题/按钮固定，内容区滚动 */
+.ui-modal-card { max-height: 88vh; display: flex; flex-direction: column; }
+.ui-modal-title, .ui-modal-input, .ui-modal-actions { flex-shrink: 0; }
+.ui-modal-msg { overflow-y: auto; min-height: 0; }
+
