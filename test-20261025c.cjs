@@ -1982,9 +1982,9 @@ console.log('—— y：导航修复 / 总览分页 / 加载加固 ——');
     const EC = makeEC();
 
     // 1. 版本链一致
-    ok('z：APP_BUILD 升到 20261106z', /const APP_BUILD = '20261106z';/.test(APP));
-    ok('z：index.html 引用 z 哈希文件', HTML.includes('app.20261106z.js') && HTML.includes('styles.20261106z.css'));
-    ok('y：version.json / SW / SHELL 同步升版', VER.includes('20261106z') && /growtree-shell-v152/.test(SW) && SW.includes("'./app.20261106z.js'") && SW.includes("'./styles.20261106z.css'"));
+    ok('a：APP_BUILD 升到 20261107a', /const APP_BUILD = '20261107a';/.test(APP));
+    ok('a：index.html 引用 a 哈希文件', HTML.includes('app.20261107a.js') && HTML.includes('styles.20261107a.css'));
+    ok('a：version.json / SW / SHELL 同步升版', VER.includes('20261107a') && /growtree-shell-v153/.test(SW) && SW.includes("'./app.20261107a.js'") && SW.includes("'./styles.20261107a.css'"));
 
     // 2. 核心缺陷：真实浏览器复现「点全部错题 → currentModule 变 home → 整页跳欢迎首页」。
     //    直接抽出 tab 分支执行，验证虚拟命名空间不再污染 currentModule。
@@ -2044,7 +2044,7 @@ console.log('—— y：导航修复 / 总览分页 / 加载加固 ——');
     // 5. 加载链路加固：关掉网页重开不再「看得见但点不动」
     ok('y：境外 CDN 依赖清零', !/unpkg|jsdelivr|fonts\.googleapis/.test(HTML));
     ok('y：无用库已移除', !/<script[^>]*(compromise|chart)/.test(HTML));
-    ok('y：必需库本地托管 + defer 不阻塞', HTML.includes('defer src="vendor/lunar.1.7.8.js"') && HTML.includes('defer src="vendor/supabase.2.119.0.js"') && HTML.includes('defer src="app.20261106z.js"'));
+    ok('y：必需库本地托管 + defer 不阻塞', HTML.includes('defer src="vendor/lunar.1.7.8.js"') && HTML.includes('defer src="vendor/supabase.2.119.0.js"') && HTML.includes('defer src="app.20261107a.js"'));
     ok('y：本地库文件存在且含关键符号', fs.existsSync(__dirname + '/vendor/lunar.1.7.8.js') && fs.existsSync(__dirname + '/vendor/supabase.2.119.0.js') && fs.readFileSync(__dirname + '/vendor/supabase.2.119.0.js', 'utf8').includes('createClient'));
     ok('y：启动就绪标记', /window\.__GT_READY__ = true;/.test(APP));
     ok('y：加载失败有重新加载入口', /if \(window\.__GT_READY__\) return;/.test(HTML) && /重新加载/.test(HTML));
@@ -2136,7 +2136,74 @@ console.log('—— z：去压力 / 改名 / 成就多元化 / 氛围升级 —�
     ok('z：暗色 / 手机 / 减少动效适配', /\[data-theme="dark"\] \.ec-cheer-card/.test(CSS) && /@media \(max-width: 600px\)/.test(CSS) && /prefers-reduced-motion/.test(CSS));
     ok('z：CSS 花括号仍平衡', (CSS.match(/{/g) || []).length === (CSS.match(/}/g) || []).length);
     const SWZ = fs.readFileSync(__dirname + '/sw.js', 'utf8');
-    ok('z：SW 只预缓存当前版本', /'\.\/app\.20261106z\.js'/.test(SWZ) && !/'\.\/app\.20261106y\.js'/.test(SWZ));
+    ok('a：SW 只预缓存当前版本', /'\.\/app\.20261107a\.js'/.test(SWZ) && !/'\.\/app\.20261106[yz]\.js'/.test(SWZ));
+}
+
+
+// ============ v20261107a：手机端 UI 适配（375~390px 窄屏） ============
+console.log('—— a：标签不截断 / 按钮不变形 / 首屏更紧凑 ——');
+{
+    const EC = makeEC();
+    const aIdx = CSS.indexOf('v20261107a：手机端 UI 适配');
+    const A = aIdx >= 0 ? CSS.slice(aIdx) : '';
+    ok('a：新增独立手机适配章节且在文件末尾', A.length > 1500 && CSS.indexOf('@media (max-width: 600px)', aIdx) > 0);
+    ok('a：tab-card 改回 block、标签栏撑满（截断的真正根因）',
+        A.includes('.tab-card { display: block; padding: 5px; }') &&
+        A.includes('.tab-card .tab-bar { width: 100%; min-width: 0; box-sizing: border-box; }'));
+    ok('a：主 Tab 等分竖排（图标在上、文字在下）',
+        /\.ec-main-tabs \.tab-btn \{[^}]*flex: 1 1 0[^}]*flex-direction: column[^}]*font-size: 10px/s.test(A));
+    ok('a：主 Tab 文字不换行且齿轮固定窄列',
+        A.includes('.ec-main-tabs .ec-tab-label { white-space: nowrap; font-size: 10px;') &&
+        /\.ec-main-tabs \.ec-tabcfg-btn \{[^}]*flex: 0 0 26px/s.test(A));
+    ok('a：三级子标签等分 + 允许折行（不再横向裁掉「已掌握」）',
+        /\.ec-review-subnav \.tab-btn \{[^}]*display: block[^}]*white-space: normal[^}]*word-break: keep-all/s.test(A));
+    ok('a：两个 tab 栏都去掉了 flex:1 硬挤压', !/flex: 1;[^}]*min-width: 64px/s.test(A));
+    ok('a：错题四个操作改 2×2 网格',
+        A.includes('.ec-wb-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }'));
+    ok('a：操作按钮不变圆、不折三行',
+        /\.ec-wb-actions \.btn \{[^}]*min-height: 40px[^}]*white-space: nowrap[^}]*border-radius: 12px/s.test(A));
+    ok('a：探险地图文案允许完整折行',
+        /\.ec-link-text \{[^}]*white-space: normal[^}]*text-overflow: clip/s.test(A) &&
+        A.includes('.ec-link-item { padding: 8px; gap: 5px; font-size: 11px; }'));
+    ok('a：手机隐藏冗余面包屑', A.includes('.ec-crumb { display: none; }'));
+    ok('a：首屏卡片留白收紧', A.includes('.ec-page .card { padding: 12px; margin-bottom: 10px; }') && A.includes('.ec-hub-note { padding: 8px 11px;'));
+    ok('a：头卡层级更紧凑', A.includes('.ec-energy-label { margin: 7px 0 3px;') && A.includes('.ec-hub .ec-bar { height: 5px; }'));
+    ok('a：「去看看」按钮满宽更好点', /\.ec-hub-advice \.btn \{ flex: 1 1 100%;/.test(A));
+    ok('a：刘海屏底部安全区', A.includes('env(safe-area-inset-bottom, 0px)'));
+    ok('a：上线提示改顶部小胶囊且不拦截点击',
+        A.includes('.player-online { align-items: flex-end; padding-top: 0; padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }') &&
+        A.includes('.player-online.show { pointer-events: none; }') &&
+        A.includes('.player-online-icon { font-size: 16px; margin: 0; }'));
+    ok('a：380px 小屏二次微调', CSS.indexOf('@media (max-width: 380px)', aIdx) > 0 && A.includes('.ec-hub-num { font-size: 17px; }'));
+    ok('a：CSS 花括号仍平衡', (CSS.match(/{/g) || []).length === (CSS.match(/}/g) || []).length);
+    ok('a：桌面端规则未被改动（初级 .tab-btn 仍在）', CSS.indexOf('.tab-btn {') < aIdx);
+
+    // 结构未动：五个主 Tab、五个三级页签、四个操作、四条地图文案全部保留
+    const tabs = EC.ecMainTabsHTML(EC.EC_SUBTABS, 'ec-hub', '<button class="ec-tabcfg-btn">⚙️</button>');
+    ok('a：主 Tab 五个入口一个不少', (tabs.match(/data-tab="/g) || []).length === 5 && tabs.includes('ec-tabcfg-btn'));
+    ok('a：五个新名称完整保留', ['学习看板', '主线任务', '记忆巩固', '查漏补缺', '荣誉战绩'].every(t => tabs.includes(t)));
+    EC.state.currentSubTab = EC.state.currentSubTab || {};
+    EC.state.currentSubTab['ec-wrong-sub'] = 'overview';
+    const wrong = EC.ecRenderWrong();
+    ok('a：三级页签五个名字完整渲染', ['📊 概览', '⏰ 可以回顾', '🗂️ 错题本', '📚 全部错题', '🏆 已掌握'].every(t => wrong.includes(t)));
+    ok('a：查漏补缺四个操作按钮完整', ['开始复习', '批量导入', '导入模板', '记一道'].every(t => wrong.includes(t)));
+    const map = EC.ecLinkCardHTML('');
+    ok('a：探险地图四条完整文案', ['翻开新的一课', '和课文打个招呼', '把小坑变成宝藏', '看看闪光时刻'].every(t => map.includes(t)));
+    ok('a：联动仍只在看板出现', (APP.match(/ecLinkCardHTML\('/g) || []).length === 1);
+    ok('a：统计口径与鼓励文案未被改动', EC.ecHubCounts().achievementTotal === EC.EC_ACHIEVEMENTS.length && EC.ecHeaderHTML().includes('今日份鼓励'));
+
+    // 版本链（本块独立作用域，直接读文件，不依赖其它章节的局部常量）
+    const HTMLA = fs.readFileSync(__dirname + '/index.html', 'utf8');
+    const VERA = fs.readFileSync(__dirname + '/version.json', 'utf8');
+    const SWA = fs.readFileSync(__dirname + '/sw.js', 'utf8');
+    ok('a：APP_BUILD 升到 20261107a', /const APP_BUILD = '20261107a';/.test(APP));
+    ok('a：index.html 引用 a 哈希文件', HTMLA.includes('app.20261107a.js') && HTMLA.includes('styles.20261107a.css'));
+    ok('a：version.json / SW / SHELL 同步升版',
+        VERA.includes('20261107a') && /growtree-shell-v153/.test(SWA) &&
+        SWA.includes("'./app.20261107a.js'") && SWA.includes("'./styles.20261107a.css'"));
+    ok('a：SW 只预缓存当前版本', SWA.includes("'./app.20261107a.js'") && !SWA.includes("'./app.20261106z.js'"));
+    ok('a：推送清单只保留 a + z',
+        (fs.readFileSync(__dirname + '/push-via-api.cjs', 'utf8').match(/KEEP_HASHED = new Set\(\[[\s\S]*?\]\)/)[0].match(/app\.20261107a\.js|app\.20261106z\.js/g) || []).length === 2);
 }
 
 // 等待异步断言后汇总

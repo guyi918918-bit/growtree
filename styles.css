@@ -4996,3 +4996,101 @@ select.input {
 @media (prefers-reduced-motion: reduce) {
     .ec-cheer-emoji, .ec-cheer-spark, .ec-badge-chip, .ec-hub-ico { animation: none !important; transition: none !important; }
 }
+
+/* ==================== v20261107a：手机端 UI 适配 ====================
+   根因：暗色主题下 .tab-btn 是 flex:1，5 个长标签被硬均分到 375px，
+   横排文字（图标 + 4 个汉字约 100px）塞不进 67px 的格子，就溢出压到相邻标签上，
+   于是出现「学习看 / 主线任 / 记忆巩」和图标压字、以及三级页签「已掌握」被裁掉。
+   窄屏改成「图标在上、文字在下」的等分竖排，字号 10px，一眼看全且不重叠。 */
+@media (max-width: 600px) {
+    /* ⓪ 关键前置：暗色主题里 .tab-card 是 flex 容器，内部 .tab-bar 作为 flex item
+       会 shrink-to-fit 到内容宽度（351px 卡片里只占 228px），5 个标签于是各被压到 37px。
+       改回 block 并让标签栏撑满，竖排文字才有足够空间，这是截断/重叠的真正根因。 */
+    .tab-card { display: block; padding: 5px; }
+    .tab-card .tab-bar { width: 100%; min-width: 0; box-sizing: border-box; }
+    .ec-review-subnav .tab-bar { width: 100%; min-width: 0; box-sizing: border-box; }
+    /* ① 主 Tab：等分竖排，数量随用户显隐设置自动伸缩，齿轮固定窄列 */
+    .ec-main-tabs { gap: 3px; padding: 5px 4px; align-items: stretch; border-radius: 16px; }
+    .ec-main-tabs .tab-btn {
+        flex: 1 1 0; min-width: 0; flex-direction: column; align-items: center; justify-content: center;
+        gap: 2px; padding: 6px 1px; font-size: 10px; line-height: 1.15; border-radius: 12px;
+    }
+    .ec-main-tabs .ec-tab-label { white-space: nowrap; font-size: 10px; letter-spacing: -.2px; }
+    .ec-main-tabs .ec-tabcfg-btn {
+        flex: 0 0 26px; width: 26px; height: 26px; margin: 0;
+        align-self: center; font-size: 13px;
+    }
+    /* ② 三级子标签：同样等分，emoji 与中文在空格处自然分两行，不再横向裁切 */
+    .ec-review-subnav { padding: 5px 6px; }
+    .ec-review-subnav .tab-bar { gap: 3px; padding: 4px; border-radius: 14px; }
+    .ec-review-subnav .tab-btn {
+        display: block; flex: 1 1 0; min-width: 0; padding: 6px 1px;
+        font-size: 10px; line-height: 1.3; text-align: center;
+        white-space: normal; word-break: keep-all; border-radius: 11px;
+    }
+    /* ③ 首屏留白收紧：顶栏已显示模块名、Tab 已高亮当前页，面包屑在手机上冗余 */
+    .ec-page .card { padding: 12px; margin-bottom: 10px; }
+    .ec-crumb { display: none; }
+    .ec-page .ec-hint { font-size: 11.5px; line-height: 1.6; }
+    .ec-hub-note { padding: 8px 11px; font-size: 11px; line-height: 1.5; }
+    .ec-head { padding: 12px; }
+    .ec-head-main { gap: 8px; }
+    .ec-head-score { font-size: 14px; }
+    .ec-head-sub { flex-wrap: wrap; gap: 4px 10px; margin: 7px 0 6px; font-size: 11px; }
+    .ec-energy-label { margin: 7px 0 3px; font-size: 10px; }
+    .ec-hub .ec-bar { height: 5px; }
+    .ec-cheer-card { margin: 8px 0 2px; padding: 9px 10px; gap: 8px; border-radius: 12px; }
+    .ec-cheer-emoji { font-size: 21px; }
+    .ec-cheer-text { font-size: 12px; }
+    .ec-hub-title { margin: 10px 0 7px; font-size: 12px; }
+    .ec-hub-grid { gap: 5px; }
+    .ec-hub-cell { padding: 8px 5px; border-radius: 10px; }
+    .ec-hub-ico { font-size: 14px; }
+    .ec-hub-num { font-size: 19px; }
+    .ec-hub-label { font-size: 9.5px; }
+    .ec-hub-advice { margin-top: 8px; padding: 8px 10px; gap: 7px; }
+    .ec-hub-advice-text { font-size: 11px; }
+    .ec-hub-advice .btn { flex: 1 1 100%; text-align: center; }
+    /* ④ 错题概览四个操作：2×2 网格，胶囊不再被压成正圆、文字不再折三行 */
+    .ec-wb-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+    .ec-wb-actions .btn {
+        flex: none; width: 100%; min-height: 40px; padding: 8px 4px;
+        font-size: 11.5px; line-height: 1.3; white-space: nowrap;
+        border-radius: 12px; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* ⑤ 探险地图：保留两列但允许折行，文案不再被省略成「翻开新...」 */
+    .ec-link-grid { gap: 6px; }
+    .ec-link-item { padding: 8px; gap: 5px; font-size: 11px; }
+    .ec-link-text {
+        white-space: normal; overflow: visible; text-overflow: clip;
+        line-height: 1.35; word-break: break-word;
+    }
+    .ec-link-go { font-size: 13px; }
+    .ec-link-head { font-size: 12px; }
+    /* ⑥ 收获时刻 / 紧凑状态条 */
+    .ec-harvest-card .card-header { margin-bottom: 6px; }
+    .ec-badge-chip { padding: 5px 9px; font-size: 10px; }
+    .ec-harvest-line { font-size: 11px; margin: 8px 0; }
+    .ec-mini-bar.card { gap: 7px; padding: 7px 9px; }
+    .ec-mini-todo { font-size: 10.5px; }
+    /* ⑦ 刘海屏底部内容不被 Home Indicator 压住 */
+    #app { padding-bottom: env(safe-area-inset-bottom, 0px); }
+    /* ⑧ 「玩家已上线」原来是全屏居中大卡 + 全屏点击拦截 2.8 秒，
+       手机上会盖住首屏还短暂点不动；改成顶部小胶囊、且不拦截点击。 */
+    .player-online { align-items: flex-end; padding-top: 0; padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+    .player-online.show { pointer-events: none; }
+    .player-online-card {
+        display: flex; align-items: center; gap: 7px;
+        padding: 8px 16px; border-radius: 999px; box-shadow: 0 4px 16px rgba(0,0,0,.22);
+    }
+    .player-online-icon { font-size: 16px; margin: 0; }
+    .player-online-text { font-size: 12px; letter-spacing: 0; }
+}
+@media (max-width: 380px) {
+    .ec-main-tabs { gap: 2px; }
+    .ec-main-tabs .ec-tabcfg-btn { flex-basis: 24px; width: 24px; height: 24px; }
+    .ec-main-tabs .tab-btn, .ec-review-subnav .tab-btn { font-size: 9px; }
+    .ec-main-tabs .ec-tab-label { font-size: 9px; }
+    .ec-hub-label { font-size: 9px; }
+    .ec-hub-num { font-size: 17px; }
+}
