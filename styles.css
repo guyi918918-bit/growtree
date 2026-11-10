@@ -5094,3 +5094,179 @@ select.input {
     .ec-hub-label { font-size: 9px; }
     .ec-hub-num { font-size: 17px; }
 }
+
+/* ===== v20261110a：英语语法地图 + 学习看板说明条换向 ===== */
+/* 原来压在「收获时刻」上面的整块说明，改成横向小条（图标在左、文字在右），挪到地图上方 */
+.ec-hub-note-row {
+    display: flex; align-items: center; gap: 9px;
+    padding: 9px 13px; font-size: 11.5px; line-height: 1.55;
+}
+.ec-hub-note-ico { flex: 0 0 auto; font-size: 16px; line-height: 1; }
+
+/* 课文下方的语法要点 → 一颗颗可点的小标签 */
+.ec-lesson-note.ec-gm-note-wrap {
+    display: flex; flex-wrap: wrap; gap: 5px;
+    margin: 3px 0 4px; padding: 0; background: transparent; border-radius: 0;
+}
+.ec-gm-chip {
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary);
+    border-radius: 999px; padding: 3px 9px; font-size: 11px; line-height: 1.45;
+    cursor: pointer; text-align: left; transition: transform .15s ease, color .15s ease, background .15s ease, border-color .15s ease;
+}
+.ec-gm-chip:hover, .ec-gm-chip:active {
+    color: var(--primary-dark); border-color: rgba(52,199,89,.42);
+    background: var(--primary-light); transform: translateY(-1px);
+}
+
+/* ---- 导图卡片 ---- */
+.ec-gm-card { padding: 14px 15px; }
+.ec-gm-card .card-header { margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
+.ec-gm-sub { font-size: 10.5px; font-weight: 500; color: var(--text-secondary); margin-left: 6px; }
+.ec-gm-head-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.ec-gm-search-row { display: flex; gap: 7px; align-items: center; }
+.ec-gm-search-row .input { flex: 1 1 auto; min-width: 0; font-size: 12.5px; }
+.ec-gm-search-row .btn { flex: 0 0 auto; white-space: nowrap; }
+.ec-gm-search-res {
+    margin-top: 9px; padding: 9px 11px; border-radius: 12px;
+    background: var(--surface-2); font-size: 11.5px; color: var(--text-secondary); line-height: 1.6;
+}
+.ec-gm-res-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.ec-gm-res {
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius: 999px; padding: 5px 10px; font-size: 11px; cursor: pointer;
+}
+.ec-gm-res:hover { border-color: var(--primary); color: var(--primary-dark); }
+.ec-gm-search-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+/* 九大分支：像思维导图的彩色主干 */
+.ec-gm-branches {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px; margin: 11px 0;
+}
+.ec-gm-branch {
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    min-width: 0; padding: 8px 6px; border-radius: 12px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); font-size: 11.5px; font-weight: 700; line-height: 1.35;
+    text-align: center; transition: transform .15s ease, box-shadow .15s ease;
+}
+.ec-gm-branch span { font-size: 14px; }
+.ec-gm-branch:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.07); }
+.ec-gm-branch.on { color: #fff; border-color: transparent; }
+.ec-gm-branch.c0.on { background: #f28aa6; } .ec-gm-branch.c1.on { background: #6aa9ef; }
+.ec-gm-branch.c2.on { background: #62c2a3; } .ec-gm-branch.c3.on { background: #f5ad52; }
+.ec-gm-branch.c4.on { background: #a98be8; } .ec-gm-branch.c5.on { background: #4fb6d8; }
+.ec-gm-branch.c6.on { background: #ec8d7e; } .ec-gm-branch.c7.on { background: #8dc34a; }
+.ec-gm-branch.c8.on { background: #9b93e6; }
+.ec-gm-branch.c0 { border-left: 3px solid #f7b3c6; } .ec-gm-branch.c1 { border-left: 3px solid #a9cdf7; }
+.ec-gm-branch.c2 { border-left: 3px solid #a9ddc9; } .ec-gm-branch.c3 { border-left: 3px solid #f9d29c; }
+.ec-gm-branch.c4 { border-left: 3px solid #cdbcf3; } .ec-gm-branch.c5 { border-left: 3px solid #a3dcec; }
+.ec-gm-branch.c6 { border-left: 3px solid #f4bdb3; } .ec-gm-branch.c7 { border-left: 3px solid #c4e29a; }
+.ec-gm-branch.c8 { border-left: 3px solid #c6c1f2; }
+
+.ec-gm-tools-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; }
+.ec-gm-tools-row .btn { font-size: 11px; }
+.ec-gm-add-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    margin-bottom: 9px; padding: 8px 10px; border-radius: 12px; background: var(--surface-2);
+    font-size: 11.5px; color: var(--text-secondary);
+}
+.ec-gm-add-row .input { flex: 1 1 150px; min-width: 0; font-size: 12px; }
+
+/* 树：逐层缩进 + 主干连接线，深层最多缩进 5 级，手机上不会挤成一条缝 */
+.ec-gm-tree {
+    max-height: 340px; overflow-y: auto; overflow-x: hidden;
+    padding: 4px 2px 6px; border-radius: 12px; background: var(--surface-2);
+}
+.ec-gm-kids { margin-left: 8px; border-left: 1px dashed var(--border); padding-left: 3px; }
+.ec-gm-row {
+    display: flex; align-items: center; gap: 6px; min-width: 0;
+    padding: 6px 7px 6px calc(4px + var(--gm-depth, 0) * 10px);
+    border-radius: 9px; cursor: pointer; transition: background .15s ease;
+}
+.ec-gm-row:hover { background: rgba(0,0,0,.035); }
+.ec-gm-row.is-sel { background: var(--primary-light); }
+.ec-gm-arrow { flex: 0 0 12px; font-size: 10px; color: var(--text-secondary); text-align: center; }
+.ec-gm-title { flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--text); word-break: break-word; line-height: 1.45; }
+.ec-gm-row.c0 .ec-gm-title { font-weight: 800; font-size: 12px; }
+.ec-gm-row.is-sel .ec-gm-title { color: var(--primary-dark); font-weight: 800; }
+.ec-gm-badge {
+    flex: 0 0 auto; font-size: 10px; font-weight: 700; color: var(--primary-dark);
+    background: var(--primary-light); border-radius: 999px; padding: 2px 7px;
+}
+.ec-gm-ops { flex: 0 0 auto; display: flex; gap: 3px; }
+.ec-gm-op {
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary);
+    border-radius: 7px; width: 23px; height: 23px; line-height: 1; font-size: 11px; cursor: pointer; padding: 0;
+}
+.ec-gm-op:hover { color: var(--primary-dark); border-color: var(--primary); }
+.ec-gm-empty, .ec-gm-foot { font-size: 11px; color: var(--text-secondary); line-height: 1.6; }
+.ec-gm-empty { padding: 12px 9px; }
+.ec-gm-foot { margin-top: 9px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+
+/* 选中节点的详情 + 相关课文 */
+.ec-gm-detail { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
+.ec-gm-detail-path { font-size: 10px; color: var(--text-secondary); line-height: 1.5; word-break: break-all; }
+.ec-gm-detail-title { font-size: 13px; font-weight: 800; color: var(--text); margin: 4px 0; }
+.ec-gm-detail-hint { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+.ec-gm-lessons { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+.ec-gm-lesson {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius: 9px; padding: 7px 10px; font-size: 11.5px; cursor: pointer; text-align: left;
+}
+.ec-gm-lesson:hover { border-color: var(--primary); background: var(--primary-light); }
+.ec-gm-lesson span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ec-gm-lesson small { flex: 0 0 auto; color: var(--text-secondary); font-size: 10px; }
+.ec-gm-detail-ops { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.ec-gm-detail-ops .btn { font-size: 11px; }
+.ec-gm-manual { margin-top: 8px; font-size: 10.5px; color: var(--text-secondary); }
+.ec-gm-manual-chip {
+    margin: 3px 4px 0 0; padding: 3px 8px; border-radius: 999px; font-size: 10.5px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer;
+}
+.ec-gm-form label { display: block; margin: 9px 0 4px; font-size: 11.5px; font-weight: 700; color: var(--text); }
+.ec-gm-form .input { width: 100%; box-sizing: border-box; font-size: 12.5px; }
+
+/* 暗色主题 */
+[data-theme="dark"] .ec-gm-chip,
+[data-theme="dark"] .ec-gm-res,
+[data-theme="dark"] .ec-gm-lesson,
+[data-theme="dark"] .ec-gm-branch,
+[data-theme="dark"] .ec-gm-op,
+[data-theme="dark"] .ec-gm-manual-chip { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+[data-theme="dark"] .ec-gm-tree { background: rgba(255,255,255,.035); }
+[data-theme="dark"] .ec-gm-row:hover { background: rgba(255,255,255,.06); }
+[data-theme="dark"] .ec-gm-row.is-sel { background: rgba(52,199,89,.16); }
+[data-theme="dark"] .ec-gm-row.is-sel .ec-gm-title { color: #5be584; }
+[data-theme="dark"] .ec-gm-badge { background: rgba(52,199,89,.18); color: #5be584; }
+[data-theme="dark"] .ec-gm-chip:hover,
+[data-theme="dark"] .ec-gm-lesson:hover { background: rgba(52,199,89,.16); color: #5be584; }
+[data-theme="dark"] .ec-gm-foot,
+[data-theme="dark"] .ec-gm-search-res,
+[data-theme="dark"] .ec-gm-add-row { background: rgba(255,255,255,.05); }
+[data-theme="dark"] .ec-gm-branch.on { color: #12251a; }
+
+/* 手机端：两列分支、字号收紧、操作按钮不挤 */
+@media (max-width: 600px) {
+    .ec-gm-card { padding: 12px; }
+    .ec-gm-card .card-header { margin-bottom: 8px; flex-wrap: nowrap; align-items: center; gap: 6px; }
+    .ec-gm-card .card-title { min-width: 0; flex: 1 1 auto; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ec-gm-sub { display: none; } /* 副标题为修饰文案，手机让位给编辑按钮；说明保留在卡片脚注 */
+    .ec-gm-head-btns { flex: 0 0 auto; }
+    .ec-gm-head-btns .btn { white-space: nowrap; font-size: 10.5px; padding: 6px 9px; }
+    .ec-gm-branches { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    .ec-gm-branch { font-size: 11px; padding: 8px 4px; }
+    .ec-gm-tree { max-height: 300px; }
+    .ec-gm-row { padding-top: 7px; padding-bottom: 7px; }
+    .ec-gm-title { font-size: 11px; }
+    .ec-gm-badge { font-size: 9px; padding: 2px 5px; }
+    .ec-gm-tools-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ec-gm-tools-row .btn { width: 100%; white-space: nowrap; font-size: 10.5px; }
+    .ec-gm-detail-ops .btn { flex: 1 1 45%; }
+    .ec-hub-note-row { padding: 8px 11px; font-size: 11px; }
+    .ec-gm-chip { font-size: 10.5px; padding: 3px 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ec-gm-chip, .ec-gm-branch, .ec-gm-row { transition: none; }
+}

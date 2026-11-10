@@ -6,6 +6,10 @@ const fs = require('fs');
 const APP = fs.readFileSync(__dirname + '/app.js', 'utf8');
 const CSS = fs.readFileSync(__dirname + '/styles.css', 'utf8');
 const HTML = fs.readFileSync(__dirname + '/index.html', 'utf8');
+// 当前版本（从 app.js 读取），历史章节的版本链断言一律改成「自洽检查」，
+// 这样以后升版不用再改一二十处写死的字符串。
+const BUILD = (APP.match(/const APP_BUILD = '([^']+)'/) || [])[1] || '';
+const buildOK = () => HTML.includes('app.' + BUILD + '.js') && HTML.includes('styles.' + BUILD + '.css');
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; } else { fail++; console.log('  ❌ FAIL: ' + name); } };
@@ -22,7 +26,7 @@ ok('initModuleManagerDnD 仍在', /function initModuleManagerDnD/.test(APP));
 ok('CSS 有渐变分组', /\.ec-group-input \.ec-group-head/.test(CSS) && /\.ec-group-output \.ec-group-head/.test(CSS) && /\.ec-group-recite \.ec-group-head/.test(CSS));
 // ① 语法小字
 ok('CSS 有 ec-lesson-note 灰色小字', /\.ec-lesson-note\b/.test(CSS) && /\.ec-lesson-note-lg/.test(CSS));
-ok('课程度名下方渲染 note', APP.includes('ec-lesson-note') && /l\.note \? `<div class="ec-lesson-note">/.test(APP));
+ok('课程度名下方渲染 note（v20261110a 改为可点语法标签）', APP.includes('ec-lesson-note') && /\$\{l\.note \? ecGmNoteHTML\(l\.note\) : ''\}/.test(APP));
 ok('note 编辑入口', /data-action="ec-edit-note"/.test(APP) && /function ecEditLessonNote/.test(APP));
 ok('添加课程可带语法输入', APP.includes('ecLessonNoteInput'));
 ok('批量导入支持 || 带语法', APP.includes("line.indexOf('||')"));
@@ -283,7 +287,7 @@ console.log('—— 语法小字与完成时间 ——');
     EC.state._ecBookId = 'b1';
     let h = EC.ecRenderLessons();
     ok('课程列表显示语法小字', h.includes('ec-lesson-note') && h.includes('be 动词（am/is/are）'));
-    ok('课程度名下方小字为灰色样式类', h.includes('ec-lesson-note">✅ 语法'));
+    ok('课程度名下方语法要点是可点标签', h.includes('ec-gm-note-wrap') && h.includes('data-action="ec-gm-from-note"') && h.includes('✅ 语法'));
     // 编辑面板含语法要点按钮
     EC.state._ecEditLessonId = 'l1';
     h = EC.ecRenderLessons();
@@ -292,7 +296,7 @@ console.log('—— 语法小字与完成时间 ——');
     // 课程详情页大号 note
     EC.state._ecLessonId = 'l1';
     h = EC.ecRenderLesson();
-    ok('详情页显示语法要点', h.includes('ec-lesson-note-lg') && h.includes('Yes/No 回答'));
+    ok('详情页显示语法要点（可点标签）', h.includes('ec-gm-note-wrap') && h.includes('Yes/No 回答'));
     // 打卡完成时间
     EC.ecToggleTask('l1', 'listen-broad');
     h = EC.ecRenderLesson();
@@ -1982,9 +1986,7 @@ console.log('—— y：导航修复 / 总览分页 / 加载加固 ——');
     const EC = makeEC();
 
     // 1. 版本链一致
-    ok('a：APP_BUILD 升到 20261107a', /const APP_BUILD = '20261107a';/.test(APP));
-    ok('a：index.html 引用 a 哈希文件', HTML.includes('app.20261107a.js') && HTML.includes('styles.20261107a.css'));
-    ok('a：version.json / SW / SHELL 同步升版', VER.includes('20261107a') && /growtree-shell-v153/.test(SW) && SW.includes("'./app.20261107a.js'") && SW.includes("'./styles.20261107a.css'"));
+    ok('a：APP_BUILD 与 index/version/SW 版本链自洽', /^\d{8}[a-z]$/.test(BUILD) && buildOK() && VER.includes(BUILD) && SW.includes("'./app." + BUILD + ".js'") && SW.includes("'./styles." + BUILD + ".css'"));
 
     // 2. 核心缺陷：真实浏览器复现「点全部错题 → currentModule 变 home → 整页跳欢迎首页」。
     //    直接抽出 tab 分支执行，验证虚拟命名空间不再污染 currentModule。
@@ -2044,7 +2046,7 @@ console.log('—— y：导航修复 / 总览分页 / 加载加固 ——');
     // 5. 加载链路加固：关掉网页重开不再「看得见但点不动」
     ok('y：境外 CDN 依赖清零', !/unpkg|jsdelivr|fonts\.googleapis/.test(HTML));
     ok('y：无用库已移除', !/<script[^>]*(compromise|chart)/.test(HTML));
-    ok('y：必需库本地托管 + defer 不阻塞', HTML.includes('defer src="vendor/lunar.1.7.8.js"') && HTML.includes('defer src="vendor/supabase.2.119.0.js"') && HTML.includes('defer src="app.20261107a.js"'));
+    ok('y：必需库本地托管 + defer 不阻塞', HTML.includes('defer src="vendor/lunar.1.7.8.js"') && HTML.includes('defer src="vendor/supabase.2.119.0.js"') && HTML.includes('defer src="app.' + BUILD + '.js"'));
     ok('y：本地库文件存在且含关键符号', fs.existsSync(__dirname + '/vendor/lunar.1.7.8.js') && fs.existsSync(__dirname + '/vendor/supabase.2.119.0.js') && fs.readFileSync(__dirname + '/vendor/supabase.2.119.0.js', 'utf8').includes('createClient'));
     ok('y：启动就绪标记', /window\.__GT_READY__ = true;/.test(APP));
     ok('y：加载失败有重新加载入口', /if \(window\.__GT_READY__\) return;/.test(HTML) && /重新加载/.test(HTML));
@@ -2097,7 +2099,9 @@ console.log('—— z：去压力 / 改名 / 成就多元化 / 氛围升级 —�
     ok('z：今日邀请是鼓励语气', /去看看|去逛逛|去玩玩|去寻宝|看荣誉/.test(EC.ecHubAdvice(EC.ecHubCounts()).btn));
     ok('z：引导优先级口径未变', EC.ecHubAdvice({ wrongOverdue: 3, reciteDue: 5, wrongDue: 0, tasks: 2 }).to === 'ec-wrong' && EC.ecHubAdvice({ wrongOverdue: 0, reciteDue: 5, wrongDue: 0, tasks: 2 }).to === 'ec-review');
     ok('z：统计口径原样保留', EC.ecPendingTasks().total === 0 && EC.ecHubCounts().achievementTotal === EC.EC_ACHIEVEMENTS.length);
-    ok('z：压力文案已从渲染层清除', !/待学任务|项待办|已逾期|尽快补|去完成|待解锁|🔗 板块联动/.test(APP));
+    // 语法种子数据里有时态名「过去完成时 / 将来完成进行时」，含「去完成」三字，属于内容不是 UI 文案
+    const APP_RENDER_ONLY = APP.replace(/const EC_GRAMMAR_SEED = \[[\s\S]*?\];/, '');
+    ok('z：压力文案已从渲染层清除', !/待学任务|项待办|已逾期|尽快补|去完成|待解锁|🔗 板块联动/.test(APP_RENDER_ONLY));
 
     // 4. 需求 4/6：成就多元化 + 鼓励进看板 + 好玩氛围
     ok('z：成就扩到 20 枚以上', EC.EC_ACHIEVEMENTS.length >= 20);
@@ -2136,7 +2140,8 @@ console.log('—— z：去压力 / 改名 / 成就多元化 / 氛围升级 —�
     ok('z：暗色 / 手机 / 减少动效适配', /\[data-theme="dark"\] \.ec-cheer-card/.test(CSS) && /@media \(max-width: 600px\)/.test(CSS) && /prefers-reduced-motion/.test(CSS));
     ok('z：CSS 花括号仍平衡', (CSS.match(/{/g) || []).length === (CSS.match(/}/g) || []).length);
     const SWZ = fs.readFileSync(__dirname + '/sw.js', 'utf8');
-    ok('a：SW 只预缓存当前版本', /'\.\/app\.20261107a\.js'/.test(SWZ) && !/'\.\/app\.20261106[yz]\.js'/.test(SWZ));
+    const shellZ = (SWZ.match(/'\.\/(app|styles)\.[^']+\.(js|css)'/g) || []);
+    ok('a：SW 只预缓存当前版本', shellZ.length === 2 && shellZ.every(x => x.includes(BUILD)));
 }
 
 
@@ -2196,15 +2201,203 @@ console.log('—— a：标签不截断 / 按钮不变形 / 首屏更紧凑 —�
     const HTMLA = fs.readFileSync(__dirname + '/index.html', 'utf8');
     const VERA = fs.readFileSync(__dirname + '/version.json', 'utf8');
     const SWA = fs.readFileSync(__dirname + '/sw.js', 'utf8');
-    ok('a：APP_BUILD 升到 20261107a', /const APP_BUILD = '20261107a';/.test(APP));
-    ok('a：index.html 引用 a 哈希文件', HTMLA.includes('app.20261107a.js') && HTMLA.includes('styles.20261107a.css'));
-    ok('a：version.json / SW / SHELL 同步升版',
-        VERA.includes('20261107a') && /growtree-shell-v153/.test(SWA) &&
-        SWA.includes("'./app.20261107a.js'") && SWA.includes("'./styles.20261107a.css'"));
-    ok('a：SW 只预缓存当前版本', SWA.includes("'./app.20261107a.js'") && !SWA.includes("'./app.20261106z.js'"));
-    ok('a：推送清单只保留 a + z',
-        (fs.readFileSync(__dirname + '/push-via-api.cjs', 'utf8').match(/KEEP_HASHED = new Set\(\[[\s\S]*?\]\)/)[0].match(/app\.20261107a\.js|app\.20261106z\.js/g) || []).length === 2);
+    ok('a：APP_BUILD 与版本链一致', /^\d{8}[a-z]$/.test(BUILD) && VERA.includes(BUILD) && HTMLA.includes('app.' + BUILD + '.js'));
+    const shellA = (SWA.match(/'\.\/(app|styles)\.[^']+\.(js|css)'/g) || []);
+    ok('a：SW 只预缓存当前版本', shellA.length === 2 && shellA.every(x => x.includes(BUILD)));
+    const khA = (fs.readFileSync(__dirname + '/push-via-api.cjs', 'utf8').match(/KEEP_HASHED = new Set\(\[[\s\S]*?\]\)/) || [''])[0];
+    ok('a：推送清单保留当前版本', khA.includes('app.' + BUILD + '.js') && khA.includes('styles.' + BUILD + '.css'));
 }
+
+// v20261110a 专用沙箱：把英语打卡代码段装进 Function，导出语法地图相关函数
+function makeGM(overrides) {
+    const inputs = {}, elCache = {};
+    const mockState = Object.assign({
+        data: { engcheck: { books: [], lessons: [], tasks: {}, fsrs: {}, score: 0, achievements: {}, days: {}, streak: 0, bestStreak: 0, lastStudyDate: '' } },
+        currentSubTab: {}, _ecBookId: null, _ecLessonId: null, _ecEditLessonId: null,
+        _gmBranch: null, _gmOpen: {}, _gmSel: null, _gmEditMode: false, _gmQuery: '', _gmAdding: null
+    }, overrides || {});
+    const docMock = {
+        getElementById: id => {
+            if (!elCache[id]) elCache[id] = { value: inputs[id] !== undefined ? inputs[id] : '', checked: false };
+            return elCache[id];
+        },
+        getElementsByName: () => [],
+        addEventListener: () => {},
+        querySelector: () => null
+    };
+    const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render',
+        'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
+        ecCode + '\nreturn { state, ecData, ecGmData, ecGmNorm, ecGmNodeKeys, ecGmChildren, ecGmPath, ecGmFindNode, ecGmSearch, ecGmReveal, ecGmNoteHTML, ecGrammarCardHTML, ecMergeGrammar, ecGmParseMarkdown, ecGmToMarkdown, ecGmReplaceSeed, ecGmAddSave, ecGmDel, ecGmMatchMap, ecRenderLessons, ecRenderLesson, EC_GRAMMAR_SEED };');
+    const inst = fn(mockState,
+        s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+        () => {}, () => {}, () => {}, () => {},
+        async () => true, async () => false,
+        async opts => (opts && opts.getValue) ? opts.getValue() : true,
+        () => 'u' + Math.random().toString(36).slice(2, 9),
+        () => new Date().toISOString(), () => '2026-11-10', d => '2026-11-10',
+        docMock, { getItem: () => null, setItem: () => {} });
+    inst._inputs = inputs;
+    return inst;
+}
+const GM = makeGM();
+
+
+// ============ v20261110a：三个板块改名 / 看板换向 / 可编辑英语语法地图 ============
+console.log('—— v20261110a 改名 + 语法地图 ——');
+{
+    const CSSA = fs.readFileSync(__dirname + '/styles.css', 'utf8');
+    const HTMLB = fs.readFileSync(__dirname + '/index.html', 'utf8');
+    const VERB = fs.readFileSync(__dirname + '/version.json', 'utf8');
+    const SWB = fs.readFileSync(__dirname + '/sw.js', 'utf8');
+    const PUSHB = fs.readFileSync(__dirname + '/push-via-api.cjs', 'utf8');
+    // 静态检查时把种子数据剥掉，避免把「过去完成时」当成 UI 文案
+    const RENDER = APP.replace(/const EC_GRAMMAR_SEED = \[[\s\S]*?\];/, '');
+
+    // ① 三个板块改名（旧数据迁移 + 显示层归一化 + 子 Tab 跟随板块设置）
+    ok('b：默认分类三个新名字', /basic: '工作日打卡',\s*daily: '变美习惯',\s*other: '打败 BOSS'/.test(APP));
+    ok('b：旧名字迁移映射完整', /const CATEGORY_RENAME = \{[\s\S]*?'基础打卡项': '工作日打卡'[\s\S]*?'日常习惯': '变美习惯'[\s\S]*?'其他打卡项': '打败 BOSS'/.test(APP));
+    ok('b：读取层归一化 getCategories', /function getCategories\(\) \{[\s\S]{0,260}categoryDisplayName\(raw\[k\]\)/.test(APP));
+    ok('b：loadState 迁移 categories / checkIns / 流水', /CATEGORY_RENAME\[v\]\) state\.data\.categories\[k\]/.test(APP) &&
+        /CATEGORY_RENAME\[c\.category\]\) c\.category/.test(APP) && /CATEGORY_RENAME\[h\.category\]\) h\.category/.test(APP));
+    ok('b：子 Tab 名字跟着板块设置走', /function checkinCategorySubTabs\(\)/.test(APP) && /validSubTab\('checkin_category', subTabs, 'basic'\)/.test(APP));
+    const renameOnly = APP.slice(APP.indexOf('const CATEGORY_RENAME'), APP.indexOf('function categoryDisplayName'));
+    ok('b：迁移映射覆盖简称与全称', ['基础打卡','基础打卡项','日常习惯','其他打卡','其他打卡项'].every(k => renameOnly.includes("'" + k + "'")));
+    ok('b：映射之后的代码不再使用旧分类名', !/基础打卡项|日常习惯|其他打卡项/.test(APP.slice(APP.indexOf('function categoryDisplayName'))));
+
+    // ② 学习看板：收获时刻上提、说明条换向、语法地图入场、联动卡仍在
+    const hubFn = APP.slice(APP.indexOf('function ecHubPageHTML()'), APP.indexOf('function ecLinkCardHTML'));
+    ok('b：收获时刻排在看板第一张', hubFn.indexOf('ec-harvest-card') < hubFn.indexOf('ecGrammarCardHTML'));
+    ok('b：语法地图嵌在学习看板', /function ecHubPageHTML\(\)[\s\S]{0,900}\$\{ecGrammarCardHTML\(\)\}/.test(APP));
+    ok('b：说明条改成横向小条并下移', hubFn.includes('ec-hub-note-row') && hubFn.indexOf('ec-hub-note-row') > hubFn.indexOf('ecGrammarCardHTML'));
+    ok('b：说明条在探险地图之前', hubFn.indexOf('ec-hub-note-row') < hubFn.indexOf("ecLinkCardHTML('')"));
+    ok('b：联动卡仍只调用一次', (APP.match(/ecLinkCardHTML\('/g) || []).length === 1);
+    ok('b：横向说明条有 CSS', CSSA.includes('.ec-hub-note-row {') && CSSA.includes('.ec-hub-note-ico'));
+    ok('b：首屏无待办压力文案', !/项待办|待学任务|已逾期|待解锁/.test(RENDER));
+
+    // ③ 语法种子：完整导入 9 大分支 / 552 个节点
+    ok('b：种子数据 9 大分支齐备', GM.EC_GRAMMAR_SEED.length === 9 &&
+        ['10种词性','8种句型','9种成分','强调句','虚拟语气','be动词','双否','不定量表达法','倒装句']
+            .every(t => GM.EC_GRAMMAR_SEED.some(x => x[0] === t)));
+    const gd = GM.ecGmData();
+    ok('b：初始框架 553 个节点（552 + 根）', gd.nodes.length === 553);
+    ok('b：根节点是「英语语法」且 9 条主干', gd.root === 'gms_root' &&
+        GM.ecGmChildren().length === 9 && GM.ecGmChildren()[0].t === '10种词性');
+    ok('b：初始 id 确定性（两台设备合并不会重复）', gd.nodes[1].id === 'gms_1' &&
+        GM.ecMergeGrammar(gd, JSON.parse(JSON.stringify(gd))).nodes.length === 553);
+    ok('b：深层大纲保留（名词 → 单复数变化）', JSON.stringify(GM.EC_GRAMMAR_SEED).includes('单复数变化') &&
+        JSON.stringify(GM.EC_GRAMMAR_SEED).includes('过去将来完成进行时'));
+
+    // ④ 归一化 / 匹配 / 课文语法标签
+    ok('b：归一化去掉空格标点与全角', GM.ecGmNorm('be 动词（am/is/are）') === 'be动词amisare' &&
+        GM.ecGmNorm('Yes/No 回答') === 'yesno回答' && GM.ecGmNorm('不定冠词 a / an') === '不定冠词aan');
+    ok('b：课文说法能找到导图节点', GM.ecGmFindNode('be动词（am/is/are）') &&
+        GM.ecGmFindNode('含be动词的一般疑问句').t === '一般疑问句' &&
+        GM.ecGmFindNode('不定冠词 a / an').t === '不定冠词' &&
+        GM.ecGmFindNode('what引导特殊疑问句').t === '特殊疑问句');
+    ok('b：Yes/No 回答能落到「一般疑问句」', GM.ecGmFindNode('Yes/No 回答') && GM.ecGmFindNode('Yes/No 回答').t === '一般疑问句');
+    ok('b：导图里没有的点返回 null（提示可新建）', GM.ecGmFindNode('国籍、品牌表达') === null);
+    ok('b：搜索能命中多个相关节点', GM.ecGmSearch('疑问句').length >= 2);
+    ok('b：搜索把主干排在例句公式前面', GM.ecGmSearch('be动词')[0].t === 'be动词');
+    const noteHTML = GM.ecGmNoteHTML('be动词（am/is/are）：含be动词的一般疑问句：Yes/No 回答');
+    ok('b：课文语法要点拆成可点标签', (noteHTML.match(/ec-gm-from-note/g) || []).length === 3 &&
+        noteHTML.includes('data-q="be动词（am/is/are）"') && noteHTML.includes('ec-gm-note-wrap'));
+    ok('b：标签内容做了 HTML 转义', GM.ecGmNoteHTML('<script>x</script>').includes('&lt;script&gt;'));
+    ok('b：导图卡片渲染 9 个分支 + 搜索 + 树', (() => {
+        const card = GM.ecGrammarCardHTML();
+        return (card.match(/data-action="ec-gm-branch"/g) || []).length === 9 &&
+            card.includes('id="ecGmQ"') && card.includes('ec-gm-tree') && card.includes('id="ecGmCard"');
+    })());
+
+    // ⑤ 与课文联动：导图 → 课文、课文 → 导图
+    const d2 = GM.ecData();
+    d2.books.push({ id: 'bk1', name: '新概念英语第一册', order: 1, createdAt: 'x' });
+    d2.lessons.push({ id: 'ls1', bookId: 'bk1', name: 'L1、L2 Excuse me! Is this your…?', note: 'be动词（am/is/are）：含be动词的一般疑问句：Yes/No回答', order: 1, createdAt: 'x' });
+    d2.lessons.push({ id: 'ls2', bookId: 'bk1', name: 'L5、L6 Nice to meet you.', note: '不定冠词 a / an；选择疑问句；国籍、品牌表达', order: 2, createdAt: 'x' });
+    const mm = GM.ecGmMatchMap();
+    const beNode = GM.ecGmFindNode('be动词（am/is/are）');
+    const qNode = GM.ecGmFindNode('含be动词的一般疑问句');
+    ok('b：导图节点列出相关课文', (mm.get(beNode.id) || []).some(x => x.id === 'ls1') &&
+        (mm.get(qNode.id) || []).some(x => x.id === 'ls1'));
+    ok('b：不冠词节点关联到 L5/L6', (mm.get(GM.ecGmFindNode('不定冠词 a / an').id) || []).some(x => x.id === 'ls2'));
+    GM.state._ecBookId = 'bk1';
+    const lessonHTML = GM.ecRenderLessons();
+    ok('b：课文列表语法小字变成导图入口', lessonHTML.includes('ec-gm-from-note') && lessonHTML.includes('L1、L2'));
+    GM.state._ecLessonId = 'ls1';
+    ok('b：课文详情也有导图入口', GM.ecRenderLesson().includes('ec-gm-from-note'));
+    GM.state._ecLessonId = null;
+    GM.state._gmQuery = 'be动词';
+    ok('b：搜索结果可跳节点', GM.ecGrammarCardHTML().includes('data-action="ec-gm-reveal"'));
+    GM.state._gmQuery = '';
+    GM.state._gmSel = beNode.id;
+    ok('b：选中节点显示「去课文」按钮', GM.ecGrammarCardHTML().includes('data-action="ec-gm-open-lesson"'));
+    GM.state._gmSel = null;
+
+    // ⑥ 可编辑：增 / 删 / 改名 / Markdown 导入导出 / 恢复
+    const beforeAdd = GM.ecGmData().nodes.length;
+    GM._inputs['ecGmNewTitle'] = '国籍、品牌表达';
+    GM.ecGmAddSave(beNode.id);
+    const added = GM.ecGmData().nodes.find(n => n.t === '国籍、品牌表达');
+    ok('b：可以新增语法点', GM.ecGmData().nodes.length === beforeAdd + 1 && added && added.pid === beNode.id);
+    ok('b：新点能被课文说法找到', GM.ecGmFindNode('国籍、品牌表达') && GM.ecGmFindNode('国籍、品牌表达').id === added.id);
+    GM.ecGmDel(added.id);
+    ok('b：删除写墓碑且不再出现', !GM.ecGmData().nodes.some(n => n.id === added.id) && GM.ecGmData().tombs[added.id] > 0);
+    const md = GM.ecGmToMarkdown();
+    ok('b：导出 Markdown 含分支与缩进列表', md.startsWith('# 英语语法\n## 10种词性') && md.includes('  - ') && md.includes('### 名词noun'));
+    const parsed = GM.ecGmParseMarkdown('## 我的框架\n### 小类\n- 一点\n  - 细一点');
+    ok('b：导入解析保留层级', JSON.stringify(parsed) === JSON.stringify([['我的框架', [['小类', [['一点', [['细一点']]]]]]]]));
+    GM.ecGmReplaceSeed(GM.ecGmParseMarkdown(md));
+    ok('b：导入替换后框架完整且旧节点有墓碑', GM.ecGmData().nodes.length === 553 &&
+        GM.ecGmChildren().length === 9 && Object.keys(GM.ecGmData().tombs).length >= 553);
+    GM.ecGmReplaceSeed(GM.EC_GRAMMAR_SEED);
+    ok('b：恢复初始框架正常', GM.ecGmData().nodes.length === 553 && GM.ecGmChildren()[0].t === '10种词性');
+
+    // ⑦ 跨端合并（同步架构铁律：新字段必须能挡住旧快照）
+    const A = { root: 'r1', nodes: [{ id: 'r1', pid: null, t: '英语语法', at: 0 }, { id: 'a', pid: 'r1', t: '旧名字', at: 10 }, { id: 'b', pid: 'r1', t: '要删的', at: 10 }], tombs: {}, seeded: true, at: '2026-11-10T00:00:00.000Z' };
+    const B = { root: 'r1', nodes: [{ id: 'r1', pid: null, t: '英语语法', at: 0 }, { id: 'a', pid: 'r1', t: '新名字', at: 20 }, { id: 'c', pid: 'r1', t: '另一台新增', at: 20 }], tombs: { b: 30 }, seeded: true, at: '2026-11-10T01:00:00.000Z' };
+    const merged = GM.ecMergeGrammar(A, B);
+    ok('b：合并按时间戳新者胜', merged.nodes.find(n => n.id === 'a').t === '新名字');
+    ok('b：合并保留对端新增节点', merged.nodes.some(n => n.id === 'c'));
+    ok('b：墓碑挡住已删除节点', !merged.nodes.some(n => n.id === 'b'));
+    ok('b：合并只留一个根', merged.nodes.filter(n => !n.pid).length === 1 && merged.root);
+    ok('b：engcheck 两个合并分支都带 grammar', (APP.match(/merged\.grammar = ecMergeGrammar\(win\.grammar, lose\.grammar\)/g) || []).length === 2);
+    ok('b：语法改动走 ecAfterAction（保存+同步+重绘）', /function ecGmTouch\(\)[\s\S]{0,120}g\.at = now\(\)/.test(APP) &&
+        /ecGmAddSave[\s\S]{0,900}ecAfterAction\(/.test(APP));
+
+    // ⑧ 事件与样式
+    ['ec-gm-mode','ec-gm-branch','ec-gm-node','ec-gm-search','ec-gm-from-note','ec-gm-create',
+     'ec-gm-open-lesson','ec-gm-add-save','ec-gm-edit','ec-gm-del','ec-gm-link','ec-gm-unlink',
+     'ec-gm-import','ec-gm-export','ec-gm-expand','ec-gm-collapse','ec-gm-reset','ec-gm-reveal'
+    ].forEach(a => ok('b：动作已接线 ' + a, APP.includes("action === '" + a + "'")));
+    ok('b：回车提交搜索/新增', APP.includes("e.target.id === 'ecGmQ'") && APP.includes("e.target.id === 'ecGmNewTitle'"));
+    ok('b：CSS 语法地图样式齐备', ['.ec-gm-card','.ec-gm-branches','.ec-gm-tree','.ec-gm-row','.ec-gm-detail','.ec-gm-chip','.ec-gm-form']
+        .every(k => CSSA.includes(k)));
+    ok('b：CSS 暗色 + 手机 + 减动效覆盖', CSSA.slice(CSSA.indexOf('v20261110a')).includes('[data-theme="dark"] .ec-gm-chip') &&
+        CSSA.slice(CSSA.indexOf('v20261110a')).includes('@media (max-width: 600px)') &&
+        CSSA.slice(CSSA.indexOf('v20261110a')).includes('prefers-reduced-motion'));
+    ok('b：CSS 花括号平衡', (CSSA.match(/{/g) || []).length === (CSSA.match(/}/g) || []).length);
+    // 手机端卡头：标题单行省略 + 隐藏修饰副标题 + 编辑按钮同行，避免「网」字孤行与按钮独占一行
+    const gmMobile = CSSA.slice(CSSA.lastIndexOf('@media (max-width: 600px)'));
+    ok('b：手机端语法地图卡头不换行', /\.ec-gm-card \.card-header \{[^}]*flex-wrap: nowrap/.test(gmMobile));
+    ok('b：手机端标题单行省略', /\.ec-gm-card \.card-title \{[^}]*text-overflow: ellipsis/.test(gmMobile));
+    ok('b：手机端隐藏修饰副标题', /\.ec-gm-sub \{ display: none; \}/.test(gmMobile));
+    ok('b：手机端编辑按钮与标题同行', /\.ec-gm-head-btns \{ flex: 0 0 auto; \}/.test(gmMobile) &&
+        /\.ec-gm-head-btns \.btn \{[^}]*white-space: nowrap/.test(gmMobile));
+
+    // ⑨ 版本链
+    ok('b：APP_BUILD = 20261110a', /const APP_BUILD = '20261110a';/.test(APP));
+    ok('b：index / version / SW 同步', HTMLB.includes('app.20261110a.js') && HTMLB.includes('styles.20261110a.css') &&
+        VERB.includes('20261110a') && /growtree-shell-v154/.test(SWB) &&
+        SWB.includes("'./app.20261110a.js'") && SWB.includes("'./styles.20261110a.css'"));
+    ok('b：SW 只预缓存当前版本', !SWB.includes("'./app.20261107a.js'"));
+    ok('b：推送清单保留 a + 上一版', /KEEP_HASHED = new Set\(\[[\s\S]*?app\.20261110a\.js[\s\S]*?app\.20261107a\.js[\s\S]*?\]\)/.test(PUSHB));
+    const crypto = require('crypto');
+    ['app.20261110a.js','styles.20261110a.css'].forEach((f, i) => {
+        const src = fs.readFileSync(__dirname + '/' + (i ? 'styles.css' : 'app.js'));
+        const dst = fs.readFileSync(__dirname + '/' + f);
+        ok('b：哈希文件与工作副本一致 ' + f, crypto.createHash('md5').update(src).digest('hex') === crypto.createHash('md5').update(dst).digest('hex'));
+    });
+}
+
 
 // 等待异步断言后汇总
 setTimeout(() => {
