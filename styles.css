@@ -5355,8 +5355,72 @@ select.input {
     .ec-gm-ol-row { font-size: 10.5px; padding-left: calc(3px + var(--gm-d, 0) * 8px); }
     .ec-gm-ol-sec > summary { font-size: 11.5px; }
 }
+/* ===== v20261110e：语法地图独立成顶层标签 + 学习看板入口 + 双栏布局 ===== */
+.ec-gm-layout {
+    display: grid;
+    grid-template-columns: minmax(250px, 320px) 1fr;
+    gap: 16px;
+    align-items: start;
+    margin-top: 10px;
+}
+.ec-gm-nav { min-width: 0; }
+.ec-gm-detailpane { min-width: 0; }
+/* 宽屏：左栏（章节+树）独立滚动，右栏详情吸附视口，点节点不用来回翻 */
+@media (min-width: 860px) {
+    .ec-gm-nav {
+        max-height: calc(100vh - 150px);
+        overflow: auto;
+        padding-right: 4px;
+    }
+    .ec-gm-detailpane {
+        position: sticky;
+        top: 8px;
+        max-height: calc(100vh - 120px);
+        overflow: auto;
+        padding-left: 4px;
+    }
+    /* 导航栏里章节网格 2 列更透气 */
+    .ec-gm-nav .ec-gm-branches { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 859px) {
+    .ec-gm-layout { grid-template-columns: 1fr; gap: 12px; }
+    .ec-gm-detailpane { position: static; max-height: none; overflow: visible; }
+}
+/* 箭头平滑展开：始终用 ▸，展开时旋转 90° 即 ▾ */
+.ec-gm-arrow.open { transform: rotate(90deg); }
+.ec-gm-arrow.leaf { opacity: .35; }
+/* 行 hover / 选中、详情入场过渡更顺滑 */
+.ec-gm-row { transition: background .15s ease; }
+.ec-gm-detail { animation: ecGmFade .16s ease; }
+@keyframes ecGmFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+/* 学习看板：清爽的「学习入口」卡片 */
+.ec-hub-launch { margin-top: 10px; }
+.ec-hub-launch-hd { font-size: 13px; font-weight: 800; color: var(--text); margin-bottom: 10px; }
+.ec-hub-launch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+}
+.ec-hub-launch-card {
+    display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
+    text-align: left; padding: 14px;
+    border: 1px solid var(--border); border-radius: 14px;
+    background: var(--surface); cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.ec-hub-launch-card:hover, .ec-hub-launch-card:active {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, .08);
+    border-color: var(--primary);
+}
+.ec-hub-launch-ico { font-size: 22px; line-height: 1; }
+.ec-hub-launch-name { font-size: 13px; font-weight: 800; color: var(--text); }
+.ec-hub-launch-hint { font-size: 10.5px; color: var(--text-secondary); line-height: 1.45; }
+
 @media (prefers-reduced-motion: reduce) {
-    .ec-gm-chip, .ec-gm-branch, .ec-gm-row { transition: none; }
+    .ec-gm-chip, .ec-gm-branch, .ec-gm-row, .ec-gm-arrow { transition: none; }
+    .ec-gm-detail { animation: none; }
+    .ec-hub-launch-card { transition: none; }
 }
 
 /* ===== v20261110d：系统讲义正文 + 原样对照表 ===== */

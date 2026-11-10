@@ -1262,7 +1262,7 @@ ok('清空课文同时清中文和英文', /if \(l\.zh\) \{ l\.zh = ''; l\.zhAt 
 
 // ============ v20261026p：复习日历预览 + 子标签显示设置 ============
 console.log('—— 复习日历预览 / 子标签设置（v20261026p）——');
-ok('EC_SUBTABS 四个子标签齐全', /const EC_SUBTABS = \[/.test(APP) && /id: 'ec-books', name: '主线任务'/.test(APP) && /id: 'ec-achieve', name: '荣誉战绩'/.test(APP));
+ok('EC_SUBTABS 五个子标签齐全（含独立语法地图）', /const EC_SUBTABS = \[/.test(APP) && /id: 'ec-books', name: '主线任务'/.test(APP) && /id: 'ec-grammar', name: '语法地图'/.test(APP) && /id: 'ec-achieve', name: '荣誉战绩'/.test(APP));
 ok('子标签配置存 engcheck.tabCfg（order/hidden/at）', /d\.tabCfg = \{ order: \[\], hidden: \[\], at: 0 \}/.test(APP) && /function ecTabCfgGet/.test(APP));
 ok('渲染改用配置：ecTabCfgVisible + ⚙️ 弹窗按钮', /const tabs = ecTabCfgVisible\(\);/.test(APP) && /class="ec-tabcfg-btn/.test(APP) && /data-action="ec-tabcfg-open"/.test(APP));
 ok('⚙️ 改为弹窗：打开函数与刷新函数存在', /function ecOpenTabCfg/.test(APP) && /function ecTabCfgRefreshIfModal/.test(APP) && /uiModal\(\{ title: '⚙️ 子标签显示设置'/.test(APP));
@@ -1291,17 +1291,17 @@ ok('复习中心渲染含面包屑与子导航', /英语打卡 › 记忆巩固/
 {
     const EC = makeEC();
     // ---- 子标签配置：默认顺序 / 隐藏 / 排序 / 保底 ----
-    ok('EC_SUBTABS 导出 4 项且顺序默认', EC.EC_SUBTABS.length === 4 && EC.EC_SUBTABS.map(t => t.id).join(',') === 'ec-books,ec-review,ec-wrong,ec-achieve');
-    ok('默认全部显示且顺序不变', EC.ecTabCfgVisible().map(t => t.id).join(',') === 'ec-books,ec-review,ec-wrong,ec-achieve');
+    ok('EC_SUBTABS 导出 5 项且语法地图紧挨主线任务', EC.EC_SUBTABS.length === 5 && EC.EC_SUBTABS.map(t => t.id).join(',') === 'ec-books,ec-grammar,ec-review,ec-wrong,ec-achieve');
+    ok('默认全部显示且顺序不变（语法地图在主线任务后）', EC.ecTabCfgVisible().map(t => t.id).join(',') === 'ec-books,ec-grammar,ec-review,ec-wrong,ec-achieve');
     EC.ecTabCfgToggleShow('ec-wrong');
-    ok('取消勾选即隐藏', EC.ecTabCfgVisible().map(t => t.id).join(',') === 'ec-books,ec-review,ec-achieve');
+    ok('取消勾选即隐藏', EC.ecTabCfgVisible().map(t => t.id).join(',') === 'ec-books,ec-grammar,ec-review,ec-achieve');
     ok('隐藏项仍可在设置面板里调顺序（不删数据）', EC.ecTabCfgAll().map(t => t.id).includes('ec-wrong'));
     EC.ecTabCfgMove('ec-achieve', 'up');
-    ok('▲ 上移生效', EC.ecTabCfgVisible().map(t => t.id).join(',') === 'ec-books,ec-achieve,ec-review');
+    ok('▲ 上移生效', EC.ecTabCfgVisible().map(t => t.id).join(',') === 'ec-books,ec-grammar,ec-achieve,ec-review');
     EC.ecTabCfgMove('ec-books', 'down');
-    ok('▼ 下移生效（第 1 个变化）', EC.ecTabCfgVisible()[0].id === 'ec-achieve');
+    ok('▼ 下移生效（第 1 个变化）', EC.ecTabCfgVisible()[0].id === 'ec-grammar');
     EC.ecTabCfgMove('ec-achieve', 'up');
-    ok('已在第一位时上移无副作用', EC.ecTabCfgVisible()[0].id === 'ec-achieve');
+    ok('已在第一位时上移无副作用', EC.ecTabCfgVisible()[0].id === 'ec-grammar');
     EC.ecTabCfgToggleShow('ec-wrong');
     ok('再勾选即恢复显示（回到 config 顺序位）', EC.ecTabCfgVisible().map(t => t.id).includes('ec-wrong'));
     ok('配置带 at 时间戳（跨设备取新）', EC.ecTabCfgGet().at > 0);
@@ -1321,7 +1321,7 @@ ok('复习中心渲染含面包屑与子导航', /英语打卡 › 记忆巩固/
     EC2.ecTabCfgToggleShow('ec-review');
     ok('隐藏当前标签后跳转到可见标签', EC2.state.currentSubTab.engcheck === 'ec-books');
     EC2.ecTabCfgToggleShow('ec-books');
-    ok('把书单也隐藏后跳到下一个可见标签', EC2.state.currentSubTab.engcheck === 'ec-wrong');
+    ok('把书单也隐藏后跳到下一个可见标签', EC2.state.currentSubTab.engcheck === 'ec-grammar');
 }
 {
     const EC = makeEC();
@@ -2036,8 +2036,9 @@ console.log('—— y：导航修复 / 总览分页 / 加载加固 ——');
     ok('y：紧凑条可一键回总览', mini.includes('data-tab="ec-hub"') && mini.includes('学习看板'));
     ok('y：紧凑条不含大四格（不重复占位）', !mini.includes('ec-hub-cell') && !mini.includes('ec-hub-grid'));
     const hubPage = EC.ecHubPageHTML();
-    // v20261110b：看板正文精简为「面包屑 + 语法地图」，说明小条与探险地图整块移除
-    ok('y：总览页只留语法地图', hubPage.includes('学习看板') && hubPage.includes('ec-gm-card') &&
+    // v20261110e：语法地图独立成顶层标签，看板改为清爽的「学习入口」仪表盘
+    ok('y：总览页为入口页（面包屑 + 入口卡，语法地图在标签栏）', hubPage.includes('学习看板') && hubPage.includes('ec-hub-launch') &&
+        hubPage.includes('data-tab="ec-grammar"') && !hubPage.includes('ec-gm-card') &&
         !hubPage.includes('ec-link-card') && !hubPage.includes('ec-hub-note') && !hubPage.includes('ec-harvest-card'));
     ok('y：原四格与引导按钮全部保留', (EC.ecHeaderHTML().match(/data-action="ec-go"/g) || []).length === 5);
 
@@ -2193,10 +2194,10 @@ console.log('—— a：标签不截断 / 按钮不变形 / 首屏更紧凑 —�
     ok('a：CSS 花括号仍平衡', (CSS.match(/{/g) || []).length === (CSS.match(/}/g) || []).length);
     ok('a：桌面端规则未被改动（初级 .tab-btn 仍在）', CSS.indexOf('.tab-btn {') < aIdx);
 
-    // 结构未动：五个主 Tab、五个三级页签、四个操作、四条地图文案全部保留
+    // 结构未动：六个主 Tab（含独立语法地图）、五个三级页签、四个操作、四条地图文案全部保留
     const tabs = EC.ecMainTabsHTML(EC.EC_SUBTABS, 'ec-hub', '<button class="ec-tabcfg-btn">⚙️</button>');
-    ok('a：主 Tab 五个入口一个不少', (tabs.match(/data-tab="/g) || []).length === 5 && tabs.includes('ec-tabcfg-btn'));
-    ok('a：五个新名称完整保留', ['学习看板', '主线任务', '记忆巩固', '查漏补缺', '荣誉战绩'].every(t => tabs.includes(t)));
+    ok('a：主 Tab 六个入口一个不少', (tabs.match(/data-tab="/g) || []).length === 6 && tabs.includes('ec-tabcfg-btn'));
+    ok('a：六个新名称完整保留', ['学习看板', '主线任务', '语法地图', '记忆巩固', '查漏补缺', '荣誉战绩'].every(t => tabs.includes(t)));
     EC.state.currentSubTab = EC.state.currentSubTab || {};
     EC.state.currentSubTab['ec-wrong-sub'] = 'overview';
     const wrong = EC.ecRenderWrong();
@@ -2279,7 +2280,7 @@ console.log('—— v20261110a 改名 + 语法地图 ——');
 
     // ② 学习看板（v20261110b 起）：只留语法地图，说明小条与探险地图已整块移除
     const hubFn = APP.slice(APP.indexOf('function ecHubPageHTML()'), APP.indexOf('function ecLinkCardHTML'));
-    ok('b：语法地图嵌在学习看板', /function ecHubPageHTML\(\)[\s\S]{0,900}\$\{ecGrammarCardHTML\(\)\}/.test(APP));
+    ok('b：语法地图独立为顶层标签（renderEngCheckPage 路由）', /function renderEngCheckPage\(tab\)[\s\S]{0,400}if \(tab === 'ec-grammar'\) return ecGrammarCardHTML\(\)/.test(APP));
     ok('b：看板不再渲染说明小条 / 探险地图 / 收获时刻', !hubFn.includes('ec-hub-note-row') &&
         !hubFn.includes("ecLinkCardHTML('')") && !hubFn.includes('ec-harvest-card'));
     ok('b：联动卡函数保留但全站 0 处调用', /function ecLinkCardHTML\(/.test(APP) && (APP.match(/ecLinkCardHTML\('/g) || []).length === 0);
@@ -2438,7 +2439,7 @@ console.log('—— v20261110b 看板精简 / 收获时刻搬家 ——');
 
     // ① 看板正文只剩语法地图
     const hubB = ECB.ecHubPageHTML();
-    ok('c：看板保留面包屑与语法地图', hubB.includes('学习看板') && hubB.includes('ec-gm-card'));
+    ok('c：看板为清爽入口页（面包屑 + 入口卡，语法地图在标签栏）', hubB.includes('学习看板') && hubB.includes('ec-hub-launch') && hubB.includes('data-tab="ec-grammar"'));
     ok('c：说明小条已从看板彻底移除', !hubB.includes('ec-hub-note') && !APPB.includes('这里只放收获和鼓励'));
     ok('c：探险地图已从看板彻底移除', !hubB.includes('ec-link-card') && !hubB.includes('今日探险地图'));
     ok('c：收获时刻已从看板移除', !hubB.includes('ec-harvest-card') && !hubB.includes('🏅 收获时刻'));
@@ -2561,9 +2562,9 @@ console.log('—— v20261110d 系统讲义 / 表格 / 迁移 ——');
         /@media \(max-width: 600px\)[\s\S]*?\.ec-gm-table \{ min-width: 380px/.test(CSS) &&
         (CSS.match(/{/g) || []).length === (CSS.match(/}/g) || []).length);
     ok('d：表格窄屏横向滚动不裁内容', /\.ec-gm-table-wrap \{[^}]*overflow-x: auto/.test(CSS));
-    ok('d：版本链升到 20261110d / SW v157', BUILD === '20261110d' && VERD.includes(BUILD) &&
-        buildOK() && SWD.includes('growtree-shell-v157') && SWD.includes("'./app." + BUILD + ".js'"));
-    ok('d：推送清单保留当前 d + 线上上一版 b', PUSHD.includes("'app.20261110d.js'") && PUSHD.includes("'app.20261110b.js'"));
+    ok('d：版本链升到 20261110e / SW v158', BUILD === '20261110e' && VERD.includes(BUILD) &&
+        buildOK() && SWD.includes('growtree-shell-v158') && SWD.includes("'./app." + BUILD + ".js'"));
+    ok('d：推送清单保留当前 e + 线上上一版 d', PUSHD.includes("'app.20261110e.js'") && PUSHD.includes("'app.20261110d.js'"));
     const crypto2 = require('crypto');
     ['app.' + BUILD + '.js', 'styles.' + BUILD + '.css'].forEach((f, i) => {
         const src = fs.readFileSync(__dirname + '/' + (i ? 'styles.css' : 'app.js'));
