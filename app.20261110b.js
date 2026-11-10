@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261107a';
+const APP_BUILD = '20261110b';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -247,7 +247,7 @@ const TODAY_HOLIDAYS = {
     '12-25': '圣诞节'
 };
 
-// 打卡项默认模板：基础打卡项 / 日常习惯 / 其他打卡项，内容取自用户的「习惯打卡系统表格.xlsx」
+// 打卡项默认模板：工作日打卡 / 变美习惯 / 打败 BOSS，内容取自用户的「习惯打卡系统表格.xlsx」
 const DEFAULT_CHECKINS = {
     basic: [],
     daily: [],
@@ -286,19 +286,31 @@ function flowerLevelsGuide() {
 
 // 打卡分类（二级目录）默认值，用户可在「板块管理」中增删改
 const DEFAULT_CHECKIN_CATEGORIES = {
-    basic: '基础打卡项',
-    daily: '日常习惯',
-    other: '其他打卡项'
+    basic: '工作日打卡',
+    daily: '变美习惯',
+    other: '打败 BOSS'
 };
 const DEFAULT_CATEGORY_ORDER = ['basic', 'daily', 'other'];
+// v20261110a：用户要求三个板块改名。旧数据里存的仍是旧名字，这里做「显示名归一化」——
+// 只把恰好等于旧默认名的板块显示成新名字，用户自己改过的名字原样保留。
+// 放在读取层还能挡住云端旧快照把名字带回来（云端合并后 state.data.categories 可能仍是旧值）。
+const CATEGORY_RENAME = {
+    '基础打卡': '工作日打卡', '基础打卡项': '工作日打卡',
+    '日常习惯': '变美习惯',
+    '其他打卡': '打败 BOSS', '其他打卡项': '打败 BOSS'
+};
+function categoryDisplayName(v) { return CATEGORY_RENAME[v] || v; }
 
 // 旧版默认四板块（仅用于数据迁移）
 const OLD_DEFAULT_CATS = { health: '健康', beauty: '变美', study: '学习', hot: '其他' };
 const OLD_DEFAULT_ITEM_NAMES = ['喝水达标','今天没吃零食','早睡（23:00前）','运动10分钟','认真护肤','搭配今日穿搭','化个精致的妆','听10分钟书','口语练习10分钟','背10个单词','看一条新闻','了解一个热点话题'];
 function getCategories() {
-    return state.data.categories && Object.keys(state.data.categories).length
+    const raw = state.data.categories && Object.keys(state.data.categories).length
         ? state.data.categories
         : DEFAULT_CHECKIN_CATEGORIES;
+    const out = {};
+    Object.keys(raw).forEach(k => { out[k] = categoryDisplayName(raw[k]); });
+    return out;
 }
 function getCategoryOrder() {
     const cats = getCategories();
@@ -2660,6 +2672,8 @@ const state = {
     _ecAddOpen: false,
     _ecHeadEdit: false,
     _ecTabCfg: false,
+    _gmBranch: null, _gmOpen: {}, _gmSel: null, _gmEditMode: false,
+    _gmQuery: '', _gmAdding: null,
     _loadingHot: false,
     _waterMode: null,
     _waterSelected: new Set(),
@@ -2948,15 +2962,15 @@ function migrateData() {
         state.data.categories = { ...DEFAULT_CHECKIN_CATEGORIES };
         state.data.categoryOrder = [...DEFAULT_CATEGORY_ORDER];
     }
-    // 旧版四板块（健康/变美/学习/其他）→ 新版三板块（基础打卡项/日常习惯/其他打卡项）
+    // 旧版四板块（健康/变美/学习/其他）→ 新版三板块（工作日打卡/变美习惯/打败 BOSS）
     if (state.data.categories && Object.keys(state.data.categories).length === 4 &&
         OLD_DEFAULT_CATS.health === state.data.categories.health &&
         OLD_DEFAULT_CATS.beauty === state.data.categories.beauty &&
         OLD_DEFAULT_CATS.study === state.data.categories.study &&
         OLD_DEFAULT_CATS.hot === state.data.categories.hot) {
-        // 用户自定义（非旧默认名单）的打卡项保留，归入「其他打卡项」
+        // 用户自定义（非旧默认名单）的打卡项保留，归入「打败 BOSS」
         const custom = state.data.checkIns.filter(c => !OLD_DEFAULT_ITEM_NAMES.includes(c.name));
-        custom.forEach(c => { c.module = 'other'; c.category = '其他打卡项'; });
+        custom.forEach(c => { c.module = 'other'; c.category = '打败 BOSS'; });
         state.data.checkIns = custom;
         state.data.categories = { ...DEFAULT_CHECKIN_CATEGORIES };
         state.data.categoryOrder = [...DEFAULT_CATEGORY_ORDER];
@@ -2973,6 +2987,14 @@ function migrateData() {
     }
     state.data.categories = cleanedCats;
     state.data.categoryOrder = [...DEFAULT_CATEGORY_ORDER];
+    // v20261110a：三个板块改名，把旧默认名一次性写成新名字（自定义名字不动）。
+    // 打卡项徽标 / 积分流水里的分类文字也一起更新，避免新旧名字混着显示。
+    Object.keys(state.data.categories).forEach(k => {
+        const v = state.data.categories[k];
+        if (CATEGORY_RENAME[v]) state.data.categories[k] = CATEGORY_RENAME[v];
+    });
+    state.data.checkIns.forEach(c => { if (CATEGORY_RENAME[c.category]) c.category = CATEGORY_RENAME[c.category]; });
+    (state.data.points.history || []).forEach(h => { if (CATEGORY_RENAME[h.category]) h.category = CATEGORY_RENAME[h.category]; });
     // 兼容老版 checkIns：补齐 category，并把三档难度转为单一可自定义积分
     state.data.checkIns.forEach(c => {
         if (!c.category) c.category = getCategories()[c.module] || '其他';
@@ -4129,10 +4151,10 @@ function compressImageFile(file, cb) {
 
 // ==================== 数据操作 ====================
 
-// 确保存在一个「喝水」联动打卡项：优先在「其他打卡项」里找/创建。
+// 确保存在一个「喝水」联动打卡项：优先在「打败 BOSS」里找/创建。
 function ensureWaterCheckIn() {
     const cats = getCategories();
-    const otherCat = cats.other || '其他打卡项';
+    const otherCat = cats.other || '打败 BOSS';
     let target = state.data.checkIns.find(c => /喝水/.test(c.name) && c.module === 'other');
     if (!target) {
         target = state.data.checkIns.find(c => /喝水/.test(c.name));
@@ -4408,7 +4430,7 @@ function awardCourage(n) {
     return awarded > 0; // 是否获得额外星
 }
 
-// 判断某天「基础打卡项」板块是否全部完成
+// 判断某天「工作日打卡」板块是否全部完成
 function isBasicModuleAllDone(date) {
     const basicItems = state.data.checkIns.filter(c => c.module === 'basic');
     if (!basicItems.length) return false;
@@ -4422,7 +4444,7 @@ function isBasicModuleAllDone(date) {
 // 规则（与段位一致，按赛季）：星能只统计「当前赛季」的打卡记录，每个新赛季自动清零重算。
 // 但删除习惯不会抹掉它在本赛季已贡献的星能——软删除（进回收站）只是把习惯从列表隐藏，
 // 其本赛季的历史打卡记录仍保留在流水里，继续计入星能；只有从回收站「彻底删除」才会移除记录。
-// 「全勤打卡」仅指：当天「基础打卡项」板块全部完成；日常习惯和其他打卡项作为加分项。
+// 「全勤打卡」仅指：当天「工作日打卡」板块全部完成；变美习惯和打败 BOSS作为加分项。
 function recalcCourage() {
     const g = state.data.game;
     const cap = getCourageCap();
@@ -4442,7 +4464,7 @@ function recalcCourage() {
     const activeAllFourDates = [];
     Object.entries(byDate).forEach(([date, d]) => {
         total += d.count * COURAGE_PER_ITEM;
-        // 全勤打卡：当天「基础打卡项」全部完成，额外 +10 星能
+        // 全勤打卡：当天「工作日打卡」全部完成，额外 +10 星能
         if (isBasicModuleAllDone(date)) {
             total += COURAGE_ALL4_BONUS;
             activeAllFourDates.push(date);
@@ -4464,8 +4486,8 @@ function recalcCourage() {
 }
 
 // 每日完成度奖励 + 星能 + 全勤成就，在每次「打卡/取消打卡」后调用
-// 「全勤」以「基础打卡项」板块为口径：基础打卡项全部完成 = 今日全勤（+10）；
-// 日常习惯和其他打卡项作为加分项：任一板块完成过半即 +5。
+// 「全勤」以「工作日打卡」板块为口径：工作日打卡全部完成 = 今日全勤（+10）；
+// 变美习惯和打败 BOSS作为加分项：任一板块完成过半即 +5。
 function recalcDailyCompletionBonus() {
     const todayD = today();
     const cats = getCategories();
@@ -4475,14 +4497,14 @@ function recalcDailyCompletionBonus() {
         .filter(h => h.date === todayD && h.type === 'base')
         .map(h => h.checkInId));
 
-    // 1) 基础打卡项全部完成 = 今日全勤 +10
+    // 1) 工作日打卡全部完成 = 今日全勤 +10
     const basicItems = state.data.checkIns.filter(c => c.module === 'basic');
     if (basicItems.length > 0 && basicItems.every(it => doneIds.has(it.id))) {
         addPointsEntry({ points: DAILY_FULL_BONUS, type: 'dailyfull', date: todayD, reason: '今日全勤' });
         return; // 全勤日不再叠加日常/其他的过半加分
     }
 
-    // 2) 日常习惯 / 其他打卡项 完成过半 = 加分 +5（基础仅设全勤口径，不设过半奖励）
+    // 2) 变美习惯 / 打败 BOSS 完成过半 = 加分 +5（基础仅设全勤口径，不设过半奖励）
     for (const mod of getCategoryOrder()) {
         if (mod === 'basic') continue;
         const items = state.data.checkIns.filter(c => c.module === mod);
@@ -4509,7 +4531,7 @@ function gameOnCheckIn(date) {
         toast(`🌟 +${COURAGE_PER_ITEM} 星能 (${g.courage}/${cap})`);
     }
 
-    // 2) 全勤打卡：当天「基础打卡项」全部完成，额外 +10 星能（每天一次）
+    // 2) 全勤打卡：当天「工作日打卡」全部完成，额外 +10 星能（每天一次）
     if (isBasicModuleAllDone(todayD) && !g.allFourCourageDates.includes(todayD)) {
         g.allFourCourageDates.push(todayD);
         const s2 = awardCourage(COURAGE_ALL4_BONUS);
@@ -4751,7 +4773,7 @@ function setCheckInState(item, date, done, double) {
 }
 
 // 核心：打卡 / 取消（自定义积分，无固定三档；支持指定日期）
-// 同名跨板块打卡项（如「基础打卡项↔日常习惯」中的"洗漱"）会同步为相同状态
+// 同名跨板块打卡项（如「工作日打卡↔变美习惯」中的"洗漱"）会同步为相同状态
 function doCheckIn(id, dateStr) {
     const item = state.data.checkIns.find(x => x.id === id);
     if (!item) return;
@@ -4762,7 +4784,7 @@ function doCheckIn(id, dateStr) {
     const nowDone = !baseEntry;
     // 先处理当前项
     setCheckInState(item, date, nowDone, double);
-    // 再同步所有同名、不同板块的打卡项（双向：在基础打卡或日常习惯任一处勾选都同步）
+    // 再同步所有同名、不同板块的打卡项（双向：在基础打卡或变美习惯任一处勾选都同步）
     const linked = state.data.checkIns.filter(c => c.id !== item.id && c.name === item.name && c.module !== item.module);
     linked.forEach(l => setCheckInState(l, date, nowDone, double));
     afterCheckIn(nowDone, nowDone ? (parseInt(item.points) || 10) * mult : 0, date, item.stars, item);
@@ -5434,7 +5456,7 @@ function rankCourageCard() {
             <div class="card-header"><div class="card-title">🌟 星能</div><span class="rank-tag">满 ${COURAGE_STAR} 自动 +1 星</span></div>
             <div class="courage-num">${courage} <small>/ ${cap}</small></div>
             <div class="progress-bar"><div class="progress-fill" style="width:${pct}%;background:linear-gradient(90deg,#ffb020,#ff7a00)"></div></div>
-            <div class="rank-rule">每完成 1 项打卡 +5；基础打卡项全勤额外 +10。${canStar ? ('攒满 ' + COURAGE_STAR + ' 自动白嫖 1 颗星 🎉') : ('（当前段位上限 ' + cap + '，升到黄金段位后即可攒满加星）')}</div>
+            <div class="rank-rule">每完成 1 项打卡 +5；工作日打卡全勤额外 +10。${canStar ? ('攒满 ' + COURAGE_STAR + ' 自动白嫖 1 颗星 🎉') : ('（当前段位上限 ' + cap + '，升到黄金段位后即可攒满加星）')}</div>
         </div>
     `;
 }
@@ -5526,8 +5548,8 @@ function rankRulesCard() {
             <p><b>💡 积分兑换规则：</b>${escapeHtml(getExchangeRuleText())}。积分只用于兑换你设定的心愿，系统不折算现金。<b>1 星 = 100 积分</b>，例如：倔强青铜 Ⅲ → Ⅱ 需要 4 星 = 400 积分。</p>
             <p><b>🏅 段位阶梯：</b>倔强青铜·萌芽新手 → 秩序白银·自律学徒 → 荣耀黄金·坚持达人 → 尊贵铂金·习惯大师 → 永恒钻石·掌控精英 → 至尊星耀·自律宗师 → 最强王者·无限巅峰。每大段含 Ⅲ→Ⅱ→Ⅰ 三个小段，青铜/白银每小段 4 星，黄金/铂金/钻石每小段 5 星，星耀每小段 6 星，王者无上限累计星数。</p>
             <p><b>🌟 升段与积分：</b>段位只看「累计获得积分」。你每天打卡获得的积分会自动换算成星星：累计 100 积分 = 1 星。花掉积分兑换心愿只会减少「可用积分」，不会掉星、不会掉段。</p>
-            <p><b>🌟 星能：</b>每完成 1 项打卡 +5 星能；「基础打卡项」板块全部完成即全勤打卡，额外 +10 星能。星能按赛季计算，每个新赛季自动清零重算（与段位一样会更新），但删除习惯不会抹掉它在本赛季已贡献的星能。星能上限随段位提升：青铜 60 / 白银 80 / 黄金及以上 100+。攒满 100 自动消耗并额外 +1 星（低段位上限不足则无法触发，升到黄金即可开始白嫖星）。</p>
-            <p><b>📊 每日完成度奖励：</b>打卡是本分，完成度才是激励。当天「基础打卡项」全部完成即全勤，额外 +10 积分；日常习惯或其他打卡项任一完成过半，加 +5 积分（多板块同时过半可叠加）。取消打卡后会自动重新计算并降级/撤销。</p>
+            <p><b>🌟 星能：</b>每完成 1 项打卡 +5 星能；「工作日打卡」板块全部完成即全勤打卡，额外 +10 星能。星能按赛季计算，每个新赛季自动清零重算（与段位一样会更新），但删除习惯不会抹掉它在本赛季已贡献的星能。星能上限随段位提升：青铜 60 / 白银 80 / 黄金及以上 100+。攒满 100 自动消耗并额外 +1 星（低段位上限不足则无法触发，升到黄金即可开始白嫖星）。</p>
+            <p><b>📊 每日完成度奖励：</b>打卡是本分，完成度才是激励。当天「工作日打卡」全部完成即全勤，额外 +10 积分；变美习惯或打败 BOSS任一完成过半，加 +5 积分（多板块同时过半可叠加）。取消打卡后会自动重新计算并降级/撤销。</p>
             <p><b>🔥 连胜加星：</b>连续打卡 3/7/14/30 天，分别额外 +1/2/3/5 星；连续 30 天解锁专属称号「常胜将军」。漏打卡不会扣星，但会中断连胜。</p>
             <p><b>🏆 成就系统：</b>累计打卡天数、连续打卡天数、单日全部习惯完成、早起首卡、首次达到铂金/王者段位、用星能白嫖星星等，均可解锁成就称号与积分奖励。</p>
             <p><b>📅 赛季制：</b>每 3 个月为一个赛季（${seasonNames}）。赛季末按本赛季达到的最高段位发放积分+称号奖励；新赛季开始时高段位（王者/星耀/钻石）回退 2 个大段，中下游（铂金/黄金/白银）回退 1 个大段，青铜不变。赛季继承只影响当前段位，不会删除或重置历史打卡积分、积分流水和兑换记录。</p>
@@ -5684,7 +5706,7 @@ function homeOverviewBody(checkedDays, doubleToday, doubleDayNum) {
     const available = earned - used;
     const lv = getLevel(earned);
     const streak = getCurrentStreak();
-    // 「今日小树」只挂钩「基础打卡项」板块，动态跟随用户新增/删减的基础习惯
+    // 「今日小树」只挂钩「工作日打卡」板块，动态跟随用户新增/删减的基础习惯
     const basicItems = state.data.checkIns.filter(c => c.module === 'basic').sort((a, b) => a.order - b.order);
     const total = basicItems.length;
     const doneIds = new Set(state.data.points.history.filter(h => h.date === today() && h.type === 'base').map(h => h.checkInId));
@@ -5693,10 +5715,10 @@ function homeOverviewBody(checkedDays, doubleToday, doubleDayNum) {
     const dateStr = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
 
     const todayMsg = total === 0
-        ? '先去「认真打卡」里添加几个基础打卡项吧～'
+        ? '先去「认真打卡」里添加几个工作日打卡吧～'
         : pct === 100
-            ? '今天的基础打卡项全部完成，小树长得枝繁叶茂啦！🌟'
-            : `今天基础打卡项已完成 ${doneToday}/${total}，小树正在悄悄长大 🌱`;
+            ? '今天的工作日打卡全部完成，小树长得枝繁叶茂啦！🌟'
+            : `今天工作日打卡已完成 ${doneToday}/${total}，小树正在悄悄长大 🌱`;
 
     return `
         <div class="card home-hero apple-hero">
@@ -5713,7 +5735,7 @@ function homeOverviewBody(checkedDays, doubleToday, doubleDayNum) {
             <div class="home-tree-right">
                 <div class="home-tree-title">今日小树</div>
                 <div class="home-tree-msg">${todayMsg}</div>
-                ${total ? `<div class="home-tree-sub">共 ${total} 个基础打卡项 · 已完成 ${doneToday} 个</div>` : ''}
+                ${total ? `<div class="home-tree-sub">共 ${total} 个工作日打卡 · 已完成 ${doneToday} 个</div>` : ''}
                 <button class="btn btn-primary apple-cta" data-action="tab" data-module="checkin">继续打卡 →</button>
             </div>
         </div>
@@ -6383,17 +6405,22 @@ function checkInItemRow(item, date, opts = {}) {
     `;
 }
 
-// 按板块（基础打卡项 / 日常习惯 / 其他打卡项），子 Tab 切换（参考「综合热榜」布局）
-const CHECKIN_CATEGORY_SUBTABS = [
-    { id: 'basic', name: '基础打卡项' },
-    { id: 'daily', name: '日常习惯' },
-    { id: 'other', name: '其他打卡项' }
-];
+// 按板块（工作日打卡 / 变美习惯 / 打败 BOSS），子 Tab 切换（参考「综合热榜」布局）
+// 名字从板块设置实时读取，用户在「板块管理」里改名后这里会跟着变
+function checkinCategorySubTabs() {
+    const cats = getCategories();
+    return [
+        { id: 'basic', name: cats.basic || '工作日打卡' },
+        { id: 'daily', name: cats.daily || '变美习惯' },
+        { id: 'other', name: cats.other || '打败 BOSS' }
+    ];
+}
 function renderCheckInCategory() {
-    const tab = validSubTab('checkin_category', CHECKIN_CATEGORY_SUBTABS, 'basic');
+    const subTabs = checkinCategorySubTabs();
+    const tab = validSubTab('checkin_category', subTabs, 'basic');
     const subTabsHtml = `
         <div class="card tab-card sub-tab-card">
-            ${CHECKIN_CATEGORY_SUBTABS.map(t => `<button class="tab-btn ${tab === t.id ? 'active' : ''}" data-action="tab" data-module="checkin" data-tab="category" data-subtab="${t.id}">${t.name}</button>`).join('')}
+            ${subTabs.map(t => `<button class="tab-btn ${tab === t.id ? 'active' : ''}" data-action="tab" data-module="checkin" data-tab="category" data-subtab="${t.id}">${escapeHtml(t.name)}</button>`).join('')}
         </div>
     `;
     return `${subTabsHtml}${categoryItemsBody(tab)}`;
@@ -6404,7 +6431,7 @@ function categoryItemsBody(mod) {
     const cats = getCategories();
     const mode = state._checkinMode || null;
     if (mod === 'other') {
-        // 其他打卡项按花朵数分组折叠
+        // 打败 BOSS按花朵数分组折叠
         return otherCategoryBody(cats, mode);
     }
     const items = state.data.checkIns.filter(c => c.module === mod).sort((a, b) => a.order - b.order);
@@ -6433,7 +6460,7 @@ function categoryItemsBody(mod) {
     `;
 }
 
-// 其他打卡项按花朵数（1~5）分组折叠
+// 打败 BOSS按花朵数（1~5）分组折叠
 function otherCategoryBody(cats, mode) {
     const allItems = state.data.checkIns.filter(c => c.module === 'other').sort((a, b) => a.order - b.order);
     const sortActive = mode === 'sort';
@@ -6474,7 +6501,7 @@ function otherCategoryBody(cats, mode) {
         <div class="card cat-block">
             <div class="card-header">
                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                    <div class="card-title">${escapeHtml(cats.other || '其他打卡项')}</div>
+                    <div class="card-title">${escapeHtml(cats.other || '打败 BOSS')}</div>
                     <span style="font-size:13px;color:var(--text-secondary)">${doneToday}/${allItems.length} 已完成</span>
                 </div>
                 <button class="btn btn-sm ${sortActive ? 'btn-primary' : 'btn-secondary'}" data-action="checkin-mode" data-mode="sort">↕️ 顺序调整</button>
@@ -6649,7 +6676,7 @@ function renderCheckInMore() {
         </div>
     `;
     return `
-        ${ruleCard('🎮', '基础打卡规则', `
+        ${ruleCard('🎮', '工作日打卡规则', `
             <div class="rule-body">
                 <div class="rule-item"><span class="rule-icon">🌸</span><div><strong>花朵定级积分</strong><p>每项习惯用 🌸 定级（1-5 朵），分数自动对应 1/3/6/10/15 分；打卡一次即得对应满分。</p></div></div>
                 <div class="rule-item"><span class="rule-icon">✅</span><div><strong>完成即打卡</strong><p>点击文字后的圆圈完成打卡，再次点击可取消。</p></div></div>
@@ -6663,9 +6690,9 @@ function renderCheckInMore() {
         ${ruleCard('🔥', '打卡奖励规则', `
             <div class="rule-body">
                 <div class="rule-item"><span class="rule-icon">🔥</span><div><strong>连续打卡奖励</strong><p>连续 3/7/14/21/30 天分别额外 +5/+15/+25/+40/+80 分。</p></div></div>
-                <div class="rule-item"><span class="rule-icon">📊</span><div><strong>每日完成度奖励</strong><p>当天「基础打卡项」全部完成（全勤），额外 +10 分；日常习惯或其他打卡项任一完成过半，加 +5 分。</p></div></div>
+                <div class="rule-item"><span class="rule-icon">📊</span><div><strong>每日完成度奖励</strong><p>当天「工作日打卡」全部完成（全勤），额外 +10 分；变美习惯或打败 BOSS任一完成过半，加 +5 分。</p></div></div>
                 <div class="rule-item"><span class="rule-icon">💎</span><div><strong>双倍积分日</strong><p>每月固定一天双倍积分，当天所有打卡积分翻倍。</p></div></div>
-                <div class="rule-item"><span class="rule-icon">🌟</span><div><strong>星能</strong><p>每完成 1 项打卡 +5 星能；「基础打卡项」全部完成即全勤打卡，额外 +10。满 100 自动 +1 星。星能按赛季计算，每个新赛季清零重算。</p></div></div>
+                <div class="rule-item"><span class="rule-icon">🌟</span><div><strong>星能</strong><p>每完成 1 项打卡 +5 星能；「工作日打卡」全部完成即全勤打卡，额外 +10。满 100 自动 +1 星。星能按赛季计算，每个新赛季清零重算。</p></div></div>
             </div>
         `)}
 
@@ -6679,7 +6706,7 @@ function renderCheckInMore() {
         ${ruleCard('📝', '其他补充规则', `
             <div class="rule-body">
                 <div class="rule-item"><span class="rule-icon">🔁</span><div><strong>补打卡</strong><p>每周可用 50 积分补回昨日，保住连续记录。</p></div></div>
-                <div class="rule-item"><span class="rule-icon">💧</span><div><strong>喝水联动</strong><p>在「其他打卡项」中自动创建「喝水 1500ml」（2花）。当日喝水累计达到目标后自动完成；删除喝水记录导致未达标时自动取消。</p></div></div>
+                <div class="rule-item"><span class="rule-icon">💧</span><div><strong>喝水联动</strong><p>在「打败 BOSS」中自动创建「喝水 1500ml」（2花）。当日喝水累计达到目标后自动完成；删除喝水记录导致未达标时自动取消。</p></div></div>
                 <div class="rule-item"><span class="rule-icon">⭐</span><div><strong>积分兑换规则</strong><p>${escapeHtml(getExchangeRuleText())}。积分只用于兑换你设定的心愿，不折算现金。</p></div></div>
             </div>
         `)}
@@ -10933,6 +10960,7 @@ function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
         merged.clearedAt = taskCut;
         merged.fsrsClearedAt = fsrsCut;
         merged.wrongbk = ecMergeWrong(win.wrongbk, lose.wrongbk); // 错题集跨设备合并（墓碑+清零分界线+FSRS 取新）
+        merged.grammar = ecMergeGrammar(win.grammar, lose.grammar); // 语法地图（按 id 时间戳 + 墓碑合并）
         merged.updatedAt = newerAt;
         return merged;
     }
@@ -10955,6 +10983,7 @@ function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
     merged.days = { ...(lose.days || {}), ...(win.days || {}) };
     if ((lose.lastStudyDate || '') > (win.lastStudyDate || '')) merged.lastStudyDate = lose.lastStudyDate;
     merged.wrongbk = ecMergeWrong(win.wrongbk, lose.wrongbk); // 错题集跨设备合并（墓碑+清零分界线+FSRS 取新）
+    merged.grammar = ecMergeGrammar(win.grammar, lose.grammar); // 语法地图（按 id 时间戳 + 墓碑合并）
     merged.tabCfg = ecMergeTabCfg(win.tabCfg, lose.tabCfg); // 子标签显示设置：按修改时间取新
     merged.updatedAt = newerAt;
     return merged;
@@ -13025,7 +13054,19 @@ function ecGo(to, opts) {
         state._ecLessonId = o.lesson || (o.sub === 'books' ? null : state._ecLessonId);
     }
     render();
-    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { /* ignore */ }
+    ecScrollTop();
+}
+// 页面真正的滚动容器是 .content（html/body 是 overflow:hidden），
+// 只调 window.scrollTo 不会回到顶部；跨模块跳转 / 从导图去课文都要靠它。
+function ecScrollTop() {
+    try {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        const cont = document.querySelector && document.querySelector('.content');
+        if (cont) {
+            if (cont.scrollTo) cont.scrollTo({ top: 0, behavior: 'smooth' });
+            else cont.scrollTop = 0;
+        }
+    } catch (e) { /* ignore */ }
 }
 // 主 Tab 栏：去掉数字待办徽标（99+ / 18 这类数字只会制造压力），保留好玩的悬停提示
 function ecMainTabsHTML(tabs, current, extraHTML) {
@@ -13126,23 +13167,30 @@ function ecMiniBarHTML() {
         <button class="ec-mini-go" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1">📊 学习看板 ›</button>
     </div>`;
 }
-// 学习看板正文：收获时刻 + 随手一课 + 探险地图（都不带待办数字）
-function ecHubPageHTML() {
+// 收获时刻（v20261110b：按用户要求从「学习看板」搬进「荣誉战绩」）
+// inAchieve=true 时不显示「看看我的荣誉墙」——已经在荣誉战绩页了，避免自己跳自己。
+function ecHarvestCardHTML(inAchieve) {
     const c = ecHubCounts();
-    return `<div class="ec-crumb">英语打卡 › 学习看板</div>
-    <div class="card ec-hub-note">这里只放收获和鼓励：想学哪一格就点哪一格，四个板块的功能互相打通，学完回来数字会自己长大 🌱</div>
-    <div class="card ec-harvest-card">
+    return `<div class="card ec-harvest-card">
         <div class="card-header"><div class="card-title">🏅 收获时刻</div><span class="ec-card-note">已点亮 ${c.achievements}/${c.achievementTotal} 枚</span></div>
         ${ecRecentBadgesHTML(3)}
         <div class="ec-harvest-line">${ecHarvestLine(c)}</div>
-        <div class="ec-harvest-btns">
-            <button class="btn btn-sm btn-primary" data-action="ec-go" data-to="ec-achieve" data-sub="">看看我的荣誉墙 ›</button>
+        <div class="ec-harvest-btns${inAchieve ? ' is-single' : ''}">
+            ${inAchieve ? '' : '<button class="btn btn-sm btn-primary" data-action="ec-go" data-to="ec-achieve" data-sub="">看看我的荣誉墙 ›</button>'}
             <button class="btn btn-sm btn-secondary" data-action="ec-go" data-to="ec-books" data-sub="books">🎲 随手翻一课</button>
         </div>
-    </div>
-    ${ecLinkCardHTML('')}`;
+    </div>`;
 }
-// 探险地图：只在学习看板出现，纯导航不带数字；记忆巩固 / 查漏补缺不再显示联动卡
+// 学习看板正文（v20261110b）：只留英语语法地图。
+// 用户要求删掉「说明小条 + 今日探险地图」整块、把「收获时刻」搬进荣誉战绩。
+// 四个板块的导航仍由顶部主 Tab 与头卡「🌈 我的成长收成」四格承担，跳转功能一个不少。
+function ecHubPageHTML() {
+    return `<div class="ec-crumb">英语打卡 › 学习看板</div>
+    ${ecGrammarCardHTML()}`;
+}
+// 探险地图：v20261110b 起学习看板不再渲染（用户要求整块去掉）。
+// 函数本体保留作可复用组件与历史回归测试夹具，不再出现在任何页面。
+// 联动跳转仍统一走 ecGo + data-action="ec-go"。
 function ecLinkCardHTML(current) {
     const items = [
         { to: 'ec-books', sub: 'books', icon: '📚', text: '主线任务 · 翻开新的一课' },
@@ -13155,6 +13203,546 @@ function ecLinkCardHTML(current) {
         <div class="ec-link-grid">${items.map(x => `<button class="ec-link-item" data-action="ec-go" data-to="${x.to}" data-sub="${x.sub}"><span class="ec-link-ico">${x.icon}</span><span class="ec-link-text">${x.text}</span><span class="ec-link-go">›</span></button>`).join('')}</div>
     </div>`;
 }
+// ==================== v20261110a：可编辑英语语法地图 + 课文双向联动 ====================
+// 数据源：用户整理的《英语语法.md》（9 大分支 / 552 个节点），编译成嵌套数组作为初始框架。
+// 存储：state.data.engcheck.grammar = { root, nodes:[{id,pid,t,o,alias,links,at}], tombs, seeded, at }
+//   · 初始框架用确定性 id（gms_*），两台设备各自生成也能合并成同一棵树，不会重复。
+//   · 用户增删改 / 导入 Markdown / 恢复初始后，旧 id 一律写墓碑、新节点用唯一 id，
+//     合并时墓碑会挡住对端旧快照，避免「删了又被同步回来」或「导入后框架被顶掉」。
+//   · 课文 note（语法要点）按分号拆成可点的小标签 → 跳到导图对应节点；
+//     导图节点按「标题 + 自定义关键词」匹配课文 note → 列出相关课文，点一下回到课文。
+//     两边说法不完全一样时，可在编辑模式里补关键词 / 手动关联课文 / 直接新建节点。
+const EC_GRAMMAR_SEED = [["10种词性",[["名词noun",[["可数名词",[["单/复皆可，可以加数词计算",[["单复数变化",[["s/x/ch/sh结尾+es"],["o结尾不是外来词或缩写词+es"],["辅音+y、y-i+es",[["city_cities"]]],["元音+y、加s",[["boy_boys"]]],["f/fe结尾",[["f-v=es",[["half_halves"]]],["+s",[["roof_roofs"]]]]],["ch结尾发/k/+s",[["stomach_stomachs"]]],["辅音+oo、加s",[["bamboo_bamboos"]]],["辅音+o、加es",[["echo_echoes"]]]]]]]]],["不可数名词",[["只能单数，不可以加数词计算"]]],["名词所有格",[["单数名词s结尾+‘s"],["复数名词s结尾+’"],["of所有格，中英语序相反"],["'s+of双重所有格",[["of+名词's所有格"],["of+名词性物主代词"]]]]],["主谓一致",[["单复数一致",[["国家机构书名等专有名词，谓单"],["many a.../more than one+名词做主语，谓单"],["one and a half+复数名词做主语，谓单"],["钱时间距离做整体，谓单"],["加减乘除，谓单"],["each/one/no one、some(any、no、every）+body（one、thing）作主语或限定词，谓单"],["one of+复数名词，谓单"],["含有集体概念的名词，整体-单、个体-复"],["含有单复数形式一样的名词做主语，判断"],["a number of+可数名词复数做主语，谓单"],["a/an+单名+or two做主语，谓单"],["分数、百分比+of+名词短语做主语，谓语动词与of后面名词保持单复数一致"],["few many/several/all some后加名词做主语，谓复"],["就近原则",[["四除",[["but/except/besides/in addition to"]]],["五和",[["with/along with/together with/combined with/as well as"]]],["包括",[["including"]]],["而不是",[["rather than/instead of"]]]]]]]]]]],["动词verb",[["分类",[["实意动词：表示动词、及物动词（vt.）、不及物动词（vi.）",[["come,read,go,watch,play,fly"],["否定do、does、did后面加not"],["疑问词when/where/who/what/how"]]],["系动词：引导表语或者表语从句"],["静态动词：表示拥有、情感、思想"],["动词短语：动词+介词或者动词+副词"],["助动词：协助主要动词构成谓语的词，没有实际意思，不能单独用，构成时态、语态、否定句、强调句、疑问句",[["have做助动词，构成完成时"],["do做助动词，构成疑问句、否定句、强调句"],["be做助动词，构成进行时或被动语态"]]],["情态动词：有含义，要和动词原形在一起构成谓语",[["can、could表示推测、允许、能力"],["may、might表示推测、允许、请求、祝愿"],["must表示肯定推测、命令"],["should、shall、ought to表示推测、需要、征求意见"],["would、will表示将要、请求、意愿"],["be able to能够、have to必须、had better最好"],["had better最好，would rather宁愿宁可都+动词原形"]]]]],["形式",[["动词原形",[["助动词或情态动词一起构成谓语"],["祈使句的谓语动词"],["感官动词的宾语与宾补构成逻辑上的主谓关系，表示动作的最后结果或全过程时，作宾的动词用原形"],["实意动词后的宾语与作宾补的动词构成逻辑上的主谓关系"],["两个以上的并列不定式用and或or连接起来"],["在why  not...和why...句型中，not和why后跟动词原形，构成反问，表示建议、劝告、责备或提醒"],["动词help后是宾+宾补，其宾补由动词充当时"],["do、does、did与动词原形连用"],["不定式作介词but和except的宾语，当其前有实意动词do时，后面的动词不定式要省略to"]]],["第三人称单数",[["一般现在时，主语为第三人称单数，谓语要用第三人称单数"]]],["动名词和现在分词",[["动名词：名词的作用，在句中充当主语、定语、表语"],["现在分词：构成进行时态，与助动词be搭配构成句子谓语，在句中还可以充当定语、表语、状语",[["变化规则",[["直接+ing"],["动词以不发音的e结尾，去e加ing"],["重读闭音节的动词，双写词尾字母加ing"],["以ie结尾的动词，变y再加ing"]]]]]]],["过去式和过去分词",[["过去式：单独做谓语，表示过去某个时间发生动作"],["过去分词：动词的非谓语形式，表示被动或者完成"]]]]],["时态",[["一般过去时",[["肯定：主语+动词过去分词"],["否定：主语+did+not+动词原形"],["疑问：疑问句+did+主语+动词原形"]]],["一般现在时",[["肯定：主语为第三人称单数时，动词第三人称单数，其他动词原形"],["否定：主语+do、does+not+谓语动词原形"],["疑问：疑问句+do、does+主语+谓语动词原形"]]],["一般将来时",[["肯定：主语+will+动词原形"],["否定：主语+will+not+动词原形"],["疑问：疑问句+will+主语+动词原形"]]],["现在进行时",[["肯定：主语+be动词+动词现在分词（be+doing）"],["否定：主语+be动词+not+动词现在分词"],["疑问：疑问句+be动词+主语+动词现在分词"]]],["过去完成时",[["肯定：主语+had+动词过去分词"],["否定：主语+had+not+动词过去分词"],["疑问：疑问句+had+主语+动词过去分词"]]],["现在完成时",[["肯定：主语+have、has+动词过去分词"],["否定：主语+have、has+not+动词过去分词"],["疑问：疑问句+have、has+主语+动词过去分词"]]],["将来进行时",[["肯定：主语+will be+动词现在分词"],["否定：主语+will be+not+动词现在分词"],["疑问：疑问句+will be+主语+动词现在分词"]]],["将来完成时",[["肯定：主语+will have+动词过去分词"],["否定：主语+will have+not+动词过去分词"],["疑问：疑问句+will have+主语+动词过去分词"]]],["将来完成进行时",[["肯定：主语+will have been+动词现在分词"],["否定：主语+will have been+not+动词现在分词"],["疑问：疑问句+will have been+主语+动词现在分词"]]],["过去完成进行时",[["肯定：主语+had been+动词现在分词"],["否定：主语+had been+not+动词现在分词"],["疑问：疑问句+had been+主语+动词现在分词"]]],["过去进行时",[["肯定：主语+was、were+动词现在分词"],["否定：主语+was、were+not+动词现在分词"],["疑问：疑问句+was、were+主语+动词现在分词"]]],["现在完成进行时",[["肯定：主语+have been+动词现在分词"],["否定：主语+have been+not+动词现在分词"],["疑问：疑问句+have been+主语+动词现在分词"]]],["一般过去将来时",[["肯定：主语+would+动词原形"],["否定：主语+would+not+动词原形"],["疑问：疑问句+would+主语+动词原形"]]],["过去将来进行时",[["肯定：主语+would be+动词现在分词"],["否定：主语+would be+not+动词现在分词"],["疑问：疑问句+would be+主语+动词现在分词"]]],["过去将来完成进行时",[["肯定：主语+would have been+动词现在分词"],["否定：主语+would have been+not+动词现在分词"],["疑问：疑问句+would have been+主语+动词现在分词"]]],["过去将来完成时",[["肯定：主语+would have+动词过去分词"],["否定：主语+would have+not+动词过去分词"],["疑问：疑问句+would have+主语+动词过去分词"]]]]],["语态",[["主动改被动",[["主动句的宾语改为被动句的主语"],["主动句的谓语动词改为被动句谓语形式be+过去分词，时态不变、人称和单复数变"],["主动句的主语前加by，放谓语之后，变化人称宾格"],["其他句子成分不变"]]],["被动语态",[["一般现在时：am、is、are+过去分词"],["一般过去时：was、were+过去分词"],["一般将来时：will be+过去分词"],["现在进行时：am、is、are+being+过去分词"],["现在完成时：have、has+been+过去分词"],["过去完成时：had+been+过去分词"],["情态动词：can、could、should、would等+be+过去分词"]]],["双宾的被动语态形式",[["把间接宾语改成被动语态的主语，直接宾语留着原位"],["把直接宾语改成被动语态的主语，间接宾语前+to、for"]]],["宾补的被动语态形式",[["主动语态的宾语改成主语，宾补在被动语态中做主语的宾补"]]],["动名词的被动语态形式",[["动词短语要当成一个动词，变动词部分过去分词，"]]]]],["非谓语动词",[["不定式",[["to+不定式",[["当使役动词、感官动词用于被动语态时，要补上在主动语态中省略的to"]]],["没有to动词不定式",[["跟助动词can、might、should"],["跟感官动词see、watch、hear"],["跟使役动词let、make、have"],["跟why（not）"],["跟know（完成式、过去式）"],["介词except、but"],["主语部分带do不定式作表语"],["当两个或多个作用相同的不定式并列式，第一个不定式前用to，其余to可省"]]],["做句子成分",[["主语、宾语、表语、定语、状语、宾补"]]]]],["动名词",[["动词+ing",[["主语、表语、宾语、定语宾补"]]]]],["现在分词",[["动词+ing",[["状语、表语、定语、宾补"]]]]],["过去分词",[["动词+ed",[["表语、定语、状语、宾补"]]]]],["独立主格结构",[["不定式的独立主格结构",[["表示还未发生的行为或状态，作原因状语或条件状语"]]],["现在分词的独立主格结构",[["作时间、方式、伴随、原因、条件状语"]]],["过去分词的独立主格结构",[["作时间伴随原因条件状语"]]]]]]]]],["形容词adjective",[["顺序",[["限定词",[["描绘词",[["大小长短",[["形状重量",[["状态",[["新旧",[["颜色",[["图案",[["国籍",[["物质",[["类别"]]]]]]]]]]]]]]]]]]]]]]],["用法",[["定语",[["表语",[["宾语补足语",[["状语",[["一类人"]]]]]]]]]]],["比较级",[["单音节和少数双音节词、比较级加er最高级加est"],["元音加辅音字母结尾，双写辅音字母，比较+er最高+est"],["e结尾，比较+r最高+st"],["y结尾，y-i,比较+er最高+est"],["多音节词，比较more最高most"],["more than+名词=not only（不仅、不只）"],["more than+数词=over（超过）"],["more than+形容词=very（非常）"],["more......than",[["表示比。。。。多"],["与其。。。。不如。。。"]]],["no more than",[["只有、仅仅"]]],["not more than",[["不超过"]]],["no more....than=neither......nor（既不是也不是）"],["not moe.....than=not so....as（不如）"],["less than表示少于"],["no less than表示多达"],["not less than表示不少于"],["no less。。。than表示和什么一样"],["too much表示太多了，修饰名词表示数量"],["much too表示过分，修饰形容词或副词"],["比较级and比较级，表示越来越"],["the比较级。。。the比较级，表示越怎么越怎么"]]],["易混",[["good用在定语或者表语、well用在状语"],["nice表示令人愉快，指物外表、fine表示身体好天气好"],["lonely表示孤独的，真的孤独、alone表示独自的，不一定孤独"],["quick和fast表示速度快、soon表示时间快"],["living表示活着的存在的、alive表示活着的人、live表示活着的东西现在直播的、lively表示活泼的生动的"]]]]],["数词numeral",[["基数词",[["作nu.",[["前+数词，后不能+S"]]],["作n.",[["表时刻",[["电话号码",[["价格",[["小数"]]]]]]]]]]],["序数词",[["时间日期",[["楼层",[["几分之几"]]]]]]]]],["冠词article",[["定冠词",[["不定冠词",[["零冠词"]]]]],["表示这个",[["后+单/复名/不可名"]]],["指人和物",[["后+单/可数名",[["辅音前+a,元音前+an"]]]]]]],["代词pronoun",[["人称代词",[["主格，做主语、表语"],["宾格，作及物动词、介词后面宾语"]]],["物主代词",[["形容词性物主代词修饰名词（表示某人的）",[["单数形式my,your,his,her,its,one's"],["复数形式our,your,their"]]],["名词性物主代词相当于名词",[["单数形式mine,yours,his,hers,its,one's"],["复数形式ours,yours,theirs"]]]]],["反身代词（某人自己）",[["作宾语，指一个动作反馈到动作发出者身上"],["作同位语，表强调、解释说明、强调名词或代词"],["myself,yourself,herself,himself,itself,yourselves,ourselves,themselves"]]],["指示代词",[["this/that/such/same/it"],["these/those"]]],["疑问代词",[["不分单复数"]]],["不定代词",[["代替或修饰不确定的人或物，可作主语、宾语、表语、定语、状语"]]],["相互代词",[["相互关系"]]],["关系代词",[["引导定语从句，充当定语从句成分"]]],["连接代词",[["引导名词性从句（主语从句、宾语从句、表语从句）"]]],["主格代词（作主语）",[["l,he,she,it,you,we,they"]]],["宾格代词（作宾语）",[["me,him,her,it,you,us,them"]]]]],["副词adverb",[["分类",[["时间副词，表示时间或频率"],["地点副词，表示地点或位置"],["方式副词，表示行为方式"],["程度副词，表示动作程度"],["疑问副词，引导特殊疑问句"],["强调副词，强调形容词或动词"],["连接副词，引导主语从句宾语从句表语从句或者并列结构"],["关系副词，引导定语从句"],["句子副词，修饰句子"]]],["结构",[["ly结尾的副词，大多数形容词+ly等于副词"],["y结尾，y-i+ly"],["本身ly结尾的形容词，不能变成副词或者长一样"],["本身就是副词，不是形容词变得"],["副词比较级变化，规则和形容词比较级一样"]]],["用法",[["谓语动词和宾语之间不能加副词、地点副词放句首时候句子要倒装"],["作状语、表语、定语、宾语补足语"]]],["易混",[["too：肯定句和疑问句句尾，用逗号隔开"],["also：肯定句的谓语动词之前，系动词之后"],["either：否定句句尾，用逗号隔开"],["nor：放在句首"],["sometimes：有时候",[["sometime：未来的某个时候",[["some times：很多次",[["some time：一些时间"]]]]]]],["father、further",[["地点距离远，两词都可、表更多、额外用further、具体的远两词都可、抽象的远用further"]]],["most（名词、形容词、副词）表示最、很、十分"],["mostly（副词）表示主要地、大部分地"]]]]],["介词preposition",[["分类",[["结构分",[["单个介词",[["at、in、of、after"]]],["合成介词",[["into、inside、outside"]]],["分词介词",[["including、considering"]]],["短语介词",[["in front of、accord to"]]]]],["词义分",[["地点、方向、时间、方式、涉及、目地、原因、比较、伴随"]]]]],["用法",[["同位语",[["宾语补足语",[["表语",[["状语",[["定语"]]]]]]]]]]]]],["连词conjunction"],["感叹词interjection"]]],["8种句型",[["简单句分类",[["陈述句",[["肯定式"],["肯定变否定",[["助动词（do）+否定词（not）"]]]]],["疑问句",[["一般疑问句"],["陈述句变一般疑问句",[["提前助动词"],["提前系动词"],["提前情态动词"]]],["特殊疑问句"],["选择疑问句"],["反义疑问句",[["祈使句",[["let's开头shall we结尾"],["let us开头will you结尾"]]],["有must",[["must表必须"]]],["感叹句",[["前肯后否"]]],["否定词",[["hardly",[["never",[["seldom",[["little",[["few",[["nowhere"]]]]]]]]]]]]],["复合句",[["双主语提问与主句相关（除宾从）"]]],["宾语从句",[["和从句相关"]]]]]]],["感叹句",[["what",[["what+a/an+adj+可名单+主+谓"],["what+adj+不可名/名复+主+谓"]]],["how",[["how+adj/adv+主+谓"],["how+adj+a/an+可名单+主+谓"]]],["语气词"],["感叹号"]]],["祈使句",[["命令",[["警告",[["请求",[["祝愿"]]]]]]]]]]],["复合句",[["名词性从句",[["主语从句",[["引导词",[["连词：that、whether"],["代词：who、whoever、whom、whose、what、whatever、which、whichever"],["副词：when、where、how、why、whenever、wherever、however"]]],["形式主语it"],["形式主语和强调句的区别"]]],["宾语从句",[["引导词",[["副词：when、where、how、why"],["代词：who、whose、what、which"],["连词：that（常省略）、whether、if"]]]]],["表语从句",[["引导词",[["that"],["whether、as、as if"],["who、whom、whose、what、which做主语和宾语"],["where、when、why、how"],["because"],["一些表示建议劝说命令的名词后面"]]]]],["同位语从句",[["引导词",[["that、whether"],["what、who、whom、whose、which"],["when、where、how、why"]]]]]]],["定语从句",[["先行词+关系词+从句",[["修饰人who、whose、whom、that"],["修饰物which、that、whose"],["修饰其他when、where、why"]]]]],["状语从句",[["时间",[["when、as、while、as soon as、before、since、after、until"]]],["地点",[["where"]]],["原因",[["because、since、as"]]],["目的",[["so that、in order that"]]],["结果",[["so.....that、such.....that"]]],["条件",[["if、unless"]]],["让步",[["though、although、even if、even though"]]],["比较",[["as（同比较级）、that（不同程度的比较）"]]],["方式",[["as、as if、how"]]]]]]],["简单句",[["主+谓",[["the universe remains."]]],["主+谓+宾",[["he took his bag and left."]]],["主+系+表",[["the food is delicious."]]],["主+谓+宾+宾补",[["we made him our monitor."]]],["主+谓+间接宾语+直接宾语",[["hei father bought her a dicitionary."]]]]]]],["9种成分",[["subject主语"],["attribute定语"],["subject complement表语"],["predicate谓语"],["adverbial状语"],["double object双宾语"],["object宾语"],["object complement宾语补足语"],["appositive同位语"]]],["强调句",[["陈述句",[["it+is/was+被强调部分+that/who/whom/which+其余部分"]]],["疑问句",[["一般疑问句",[["is/was it+被强调部分+that/who/whom+其余部分"]]],["特殊疑问句",[["疑问词+is/was it+that/who/whom+其余部分"]]]]],["助动词do/does/did强调谓语动词"]]],["虚拟语气",[["without。。。would+动词原形"],["if引导从句动词过去式，主句would、should、could、might+动词原形",[["与现在事实相反"]]],["if引导从句had+动词过去分词，主句would、should、could、might+have+动词过去分词",[["与过去事实相反"]]]]],["be动词",[["be"],["is",[["isn't"]]],["am",[["am not"]]],["are",[["aren't"]]],["was",[["wasn't"]]],["were",[["weren't"]]],["being"],["been"],["后面接名词、形容词、地点副词和短语作补充说明"],["be动词提前表示疑问"]]],["双否",[["no one could deny the fact that。。。没人能否认"],["there is no denying that。。。不可否认"]]],["不定量表达法",[["both两者都，either两者之一，neither两者都不"],["some、any“一些”，some用肯定句，any用否定句和疑问句"],["most作形容词表示大部分的，后接复数名词，every表示“每一个，所有”后接单数名词，all表示“所有”，后接可数名词复数和不可数名词单数"],["many修饰可数名词“许多”，much修饰不可数名词“许多”，a lot of、plenty of均可修饰可数和不可数名词"],["a few肯定含义“几个”，few否定含义“没几个”均和可数名词连用"],["a little肯定含义“一点儿”，little否定含义“没多点”均可和不可数名词连用"],["none和no one“一个也不，一点也不”，none可以接of短语，动词可用单数也可复数，no one不能接of短语，动词只能单数"]]],["倒装句",[["全部倒装",[["将句子的谓语全部置于主语之前",[["there be"],["时间地点副词或介词短语在句首"],["so、nor、either"]]]]],["部分倒装",[["句子谓语一部分（助动词、情态动词、be动词）置于主语之前",[["only修饰的状语在句首"],["某些否定意义的词在句首"],["not only...but also、not only...but ...as well、no sooner ...that、hardly...when在句首，只是前半部分倒装"],["as引导的让步状语从句，谓语动词以后部分倒装"],["省略if的虚拟语气，were、had、should等在主语前放在句首"],["so+形容词或副词在句首"],["表达祝愿的一些句子"]]]]]]]];
+
+const EC_GM_ICONS = ['🔤', '🧩', '🧱', '✨', '💭', '🅱️', '🚫', '⚖️', '🔄'];
+// 这些标题太泛，不参与自动匹配课文，否则每一课都会被误关联
+const EC_GM_GENERIC = new Set(['分类', '用法', '顺序', '结构', '易混', '形式', '时态', '语态', '其他', '疑问', '肯定', '否定', '肯定式', '做句子成分', '疑问词', '词义分', '结构分']);
+// 课文里常见的另一种说法 → 补到节点的匹配关键词里（用户还能在编辑弹窗里自己加）
+const EC_GM_ALIASES = {
+    'be动词': ['amisare'],
+    '一般现在时': ['present simple'],
+    '一般疑问句': ['yesno回答'],
+    '特殊疑问句': ['what引导', 'wh疑问'],
+    '不定冠词': ['a/an'],
+    '人称代词': ['人称代词主格', '主格代词', '宾格代词'],
+    '现在进行时': ['be+doing'],
+    '一般过去时': ['past simple'],
+    '一般将来时': ['will+动词原形'],
+    '现在完成时': ['have/has+过去分词'],
+    '被动语态': ['be+过去分词'],
+    '强调句': ['itiswas'],
+    '名词性物主代词': ['mine/yours/his/hers'],
+    '形容词性物主代词': ['my/your/his/her'],
+    '反身代词': ['myself/yourself']
+};
+
+function ecGmAttr(s) {
+    return escapeHtml(String(s == null ? '' : s)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+// 归一化：全角转半角、去空白与标点，中文按字、英文按词连成一串，便于互相包含判断
+function ecGmNorm(s) {
+    return String(s == null ? '' : s)
+        .replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+        .replace(/\u3000/g, ' ')
+        .toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/[()[\]{}<>《》「」『』“”‘’"'.,;:!?、，；：。！？/\\|｜~_\-—+=*#@$%^&]/g, '');
+}
+function ecGmNodeKeys(n) {
+    const keys = [];
+    const t = ecGmNorm(n.t);
+    if (t && t.length >= 3 && !EC_GM_GENERIC.has(String(n.t).trim())) keys.push(t);
+    (EC_GM_ALIASES[String(n.t).trim()] || []).forEach(k => { const v = ecGmNorm(k); if (v.length >= 3) keys.push(v); });
+    String(n.alias || '').split(/[；;，,｜|]+/).forEach(a => { const v = ecGmNorm(a); if (v.length >= 3) keys.push(v); });
+    return keys;
+}
+
+function ecGmRootId(g) { return g.root || (g.nodes.find(n => !n.pid) || {}).id || ''; }
+function ecGmSeed(g, seed, prefix, ts) {
+    const T = ts || Date.now();
+    const pfx = prefix || 'gms_';          // 初始框架固定前缀 → 跨设备生成同一批 id
+    const rootId = pfx + 'root';
+    let seq = 0;
+    const nodes = [{ id: rootId, pid: null, t: '英语语法', o: 0, at: 0 }];
+    const walk = (arr, pid) => (arr || []).forEach((it, i) => {
+        const title = (Array.isArray(it) ? String(it[0] || '') : String(it || '')).trim();
+        if (!title) return;
+        const id = pfx + (++seq).toString(36);
+        nodes.push({ id: id, pid: pid, t: title, o: i, at: T });
+        const kids = Array.isArray(it) ? it[1] : null;
+        if (Array.isArray(kids) && kids.length) walk(kids, id);
+    });
+    walk(seed || EC_GRAMMAR_SEED, rootId);
+    g.root = rootId;
+    g.nodes = nodes;
+    g.seeded = true;
+    g.at = now();
+}
+function ecGmData() {
+    const d = ecData();
+    if (!d.grammar || typeof d.grammar !== 'object') d.grammar = {};
+    const g = d.grammar;
+    if (!Array.isArray(g.nodes)) g.nodes = [];
+    if (!g.tombs || typeof g.tombs !== 'object') g.tombs = {};
+    if (!g.seeded || !g.nodes.length) ecGmSeed(g);
+    return g;
+}
+function ecGmChildren(pid) {
+    const g = ecGmData();
+    const key = pid === undefined ? ecGmRootId(g) : pid;
+    return g.nodes.filter(n => n.pid === key).sort((a, b) => (Number(a.o) || 0) - (Number(b.o) || 0));
+}
+function ecGmNode(id) { return ecGmData().nodes.find(n => n.id === id) || null; }
+function ecGmPath(n) {
+    if (!n) return [];
+    const g = ecGmData(), byId = new Map(g.nodes.map(x => [x.id, x]));
+    const out = []; let cur = n, guard = 0;
+    while (cur && guard++ < 30) { out.unshift(cur.t); cur = cur.pid ? byId.get(cur.pid) : null; }
+    return out;
+}
+function ecGmBranchOf(n) {
+    const g = ecGmData(), byId = new Map(g.nodes.map(x => [x.id, x])), rootId = ecGmRootId(g);
+    let cur = n, guard = 0;
+    while (cur && cur.pid && cur.pid !== rootId && guard++ < 30) cur = byId.get(cur.pid);
+    return (cur && cur.pid === rootId) ? cur : null;
+}
+function ecGmColorIdx(n) {
+    const b = ecGmBranchOf(n);
+    if (!b) return 0;
+    const i = ecGmChildren().findIndex(x => x.id === b.id);
+    return i < 0 ? 0 : i % 9;
+}
+// 合并：按 id 取时间戳新者胜；墓碑挡住对端旧快照；初始框架未被删除时不会重复
+function ecMergeGrammar(a, b) {
+    const A = (a && typeof a === 'object' && Array.isArray(a.nodes)) ? a : null;
+    const B = (b && typeof b === 'object' && Array.isArray(b.nodes)) ? b : null;
+    if (!A) return B || undefined;
+    if (!B) return A;
+    const tombs = Object.assign({}, A.tombs || {});
+    Object.keys(B.tombs || {}).forEach(k => {
+        if ((Number(B.tombs[k]) || 0) > (Number(tombs[k]) || 0)) tombs[k] = B.tombs[k];
+    });
+    const map = new Map();
+    [A.nodes, B.nodes].forEach(arr => (arr || []).forEach(n => {
+        if (!n || !n.id) return;
+        const old = map.get(n.id);
+        if (!old || (Number(n.at) || 0) > (Number(old.at) || 0)) map.set(n.id, n);
+    }));
+    let nodes = Array.from(map.values()).filter(n => !(Number(tombs[n.id]) || 0));
+    // 导入 / 恢复框架会换一批新 id，旧 root 带墓碑；这里只保留真正还在的根节点，
+    // 若两端各导入过不同版本则以时间较新的 root 为准，避免出现两个根导致目录空白。
+    const roots = nodes.filter(n => !n.pid).sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0));
+    const root = (roots[0] || {}).id || A.root || B.root || 'gms_root';
+    nodes = nodes.filter(n => n.pid || n.id === root);
+    if (!nodes.some(n => n.id === root)) nodes.unshift({ id: root, pid: null, t: '英语语法', o: 0, at: 0 });
+    return { root, nodes, tombs, seeded: true, at: String(A.at || '') > String(B.at || '') ? A.at : (B.at || A.at) };
+}
+
+// ---------- 课文 ↔ 导图 匹配 ----------
+function ecGmLessonIndex() {
+    return ecData().lessons.filter(l => l && String(l.note || '').trim()).map(l => ({
+        id: l.id,
+        name: l.name,
+        book: (ecBookById(l.bookId) || {}).name || '',
+        norm: ecGmNorm(l.note)
+    }));
+}
+function ecGmMatches(idx, n) {
+    const keys = ecGmNodeKeys(n);
+    const manual = Array.isArray(n.links) ? n.links : [];
+    return idx.filter(x => manual.indexOf(x.id) >= 0 || keys.some(k => k && x.norm.indexOf(k) >= 0));
+}
+function ecGmMatchMap() {
+    const g = ecGmData(), idx = ecGmLessonIndex(), m = new Map();
+    g.nodes.forEach(n => m.set(n.id, ecGmMatches(idx, n)));
+    return m;
+}
+function ecGmFindNode(term) {
+    const q = ecGmNorm(term);
+    if (!q) return null;
+    let best = null, score = 0;
+    ecGmData().nodes.forEach(n => {
+        if (!n.pid) return;
+        ecGmNodeKeys(n).forEach(k => {
+            let s = 0;
+            if (k === q) s = 100 + k.length;
+            else if (k.length >= 3 && q.indexOf(k) >= 0) s = 70 + k.length;
+            else if (q.length >= 3 && k.indexOf(q) >= 0) s = 55 + q.length;
+            if (s > score) { score = s; best = n; }
+        });
+    });
+    return score >= 60 ? best : null;
+}
+function ecGmSearch(q) {
+    const nq = ecGmNorm(q);
+    if (!nq) return [];
+    const g = ecGmData(), byId = new Map(g.nodes.map(x => [x.id, x]));
+    const depthOf = n => { let d = 0, cur = n, guard = 0; while (cur && cur.pid && guard++ < 30) { d++; cur = byId.get(cur.pid); } return d; };
+    const hits = g.nodes.filter(n => n.pid && (ecGmNorm(n.t).indexOf(nq) >= 0 || ecGmNorm(n.alias).indexOf(nq) >= 0));
+    // 完全同名 > 以关键词开头 > 其它；同档里越靠主干、名字越短的排越前，
+    // 否则搜「be 动词」会先蹦出一串「肯定：主语+be 动词+…」的例句公式。
+    const rank = n => {
+        const t = ecGmNorm(n.t);
+        return (t === nq ? 0 : t.indexOf(nq) === 0 ? 1 : 2) * 1000 + depthOf(n) * 20 + t.length;
+    };
+    return hits.sort((a, b) => rank(a) - rank(b)).slice(0, 40);
+}
+function ecGmReveal(id) {
+    const g = ecGmData(), byId = new Map(g.nodes.map(x => [x.id, x])), rootId = ecGmRootId(g);
+    state._gmOpen = state._gmOpen || {};
+    let cur = byId.get(id), guard = 0;
+    while (cur && guard++ < 30) {
+        state._gmOpen[cur.id] = true;
+        if (cur.pid === rootId) state._gmBranch = cur.id;
+        cur = cur.pid ? byId.get(cur.pid) : null;
+    }
+    state._gmSel = id;
+    state._gmQuery = '';
+}
+// 课文下方灰色语法小字 → 可点的小标签
+function ecGmNoteHTML(note) {
+    const raw = String(note == null ? '' : note).trim();
+    if (!raw) return '';
+    const parts = raw.split(/[；;：:｜|]+/).map(x => x.trim()).filter(Boolean);
+    const list = parts.length ? parts : [raw];
+    return '<div class="ec-lesson-note ec-gm-note-wrap">' + list.map(p =>
+        '<button class="ec-gm-chip" data-action="ec-gm-from-note" data-q="' + ecGmAttr(p) + '" title="在语法地图里看这个知识点">🧠 ' + escapeHtml(p) + '</button>'
+    ).join('') + '</div>';
+}
+
+// ---------- 导图正文 ----------
+function ecGmSearchHTML(q) {
+    if (!q) return '';
+    const hits = ecGmSearch(q);
+    if (!hits.length) {
+        return '<div class="ec-gm-search-res">暂时没有「' + escapeHtml(q) + '」这个语法点。课文里的说法和框架不完全一样很正常，随手把它加进地图就好 🌱' +
+            '<div class="ec-gm-search-acts"><button class="btn btn-sm btn-primary" data-action="ec-gm-create" data-q="' + ecGmAttr(q) + '">＋ 新建「' + escapeHtml(q) + '」</button>' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-clear-q">清空搜索</button></div></div>';
+    }
+    return '<div class="ec-gm-search-res">找到 ' + hits.length + ' 个相关语法点，点一下就能跳到它在框架里的位置：</div>' +
+        '<div class="ec-gm-res-chips">' + hits.slice(0, 24).map(n =>
+            '<button class="ec-gm-res" data-action="ec-gm-reveal" data-id="' + ecGmAttr(n.id) + '">' + escapeHtml(ecGmPath(n).slice(1).join(' › ')) + '</button>'
+        ).join('') + '</div>' +
+        '<div class="ec-gm-search-acts"><button class="btn btn-sm btn-secondary" data-action="ec-gm-clear-q">清空搜索</button></div>';
+}
+function ecGmDetailHTML(sel, matchMap, edit) {
+    if (!sel) return '<div class="ec-gm-empty">点一个分支展开框架，再点具体的语法点；和它有关的课文会自动列在下面 📖</div>';
+    const path = ecGmPath(sel);
+    const lessons = matchMap.get(sel.id) || [];
+    const manual = Array.isArray(sel.links) ? sel.links : [];
+    return '<div class="ec-gm-detail">' +
+        '<div class="ec-gm-detail-path">' + path.map(t => escapeHtml(t)).join(' › ') + '</div>' +
+        '<div class="ec-gm-detail-title">🧩 ' + escapeHtml(sel.t) + '</div>' +
+        '<div class="ec-gm-detail-hint">' + (lessons.length ? '这些课文里出现过它，点一下就回到课文' : '还没有课文和它牵上手，可以在课文里点语法点过来看看') + '</div>' +
+        (lessons.length ? '<div class="ec-gm-lessons">' + lessons.slice(0, 24).map(x =>
+            '<button class="ec-gm-lesson" data-action="ec-gm-open-lesson" data-id="' + ecGmAttr(x.id) + '">' +
+            '<span>📖 ' + escapeHtml(x.name) + '</span><small>' + escapeHtml(x.book) + ' ›</small></button>'
+        ).join('') + '</div>' : '') +
+        (edit ? '<div class="ec-gm-detail-ops">' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-edit" data-id="' + ecGmAttr(sel.id) + '">✏️ 改名字/关键词</button>' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-add-form" data-id="' + ecGmAttr(sel.id) + '">＋ 加子节点</button>' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-link" data-id="' + ecGmAttr(sel.id) + '">🔗 手动关联课文</button>' +
+            (sel.pid ? '<button class="btn btn-sm btn-danger" data-action="ec-gm-del" data-id="' + ecGmAttr(sel.id) + '">🗑️ 删除</button>' : '') +
+            '</div>' : '') +
+        (edit && manual.length ? '<div class="ec-gm-manual">手动关联：' + manual.map(lid => {
+            const l = ecLessonById(lid);
+            return l ? '<button class="ec-gm-manual-chip" data-action="ec-gm-unlink" data-id="' + ecGmAttr(sel.id) + '" data-l="' + ecGmAttr(lid) + '" title="点一下取消关联">' + escapeHtml(l.name) + ' ✕</button>' : '';
+        }).join('') + '</div>' : '') +
+        '</div>';
+}
+function ecGrammarCardHTML() {
+    const g = ecGmData();
+    const branches = ecGmChildren();
+    const matchMap = ecGmMatchMap();
+    const edit = !!state._gmEditMode;
+    const q = state._gmQuery || '';
+    const open = state._gmOpen || (state._gmOpen = {});
+    const branch = state._gmBranch || (branches[0] ? branches[0].id : '');
+    const sel = state._gmSel ? ecGmNode(state._gmSel) : null;
+    const adding = state._gmAdding || '';
+    const renderNode = (n, depth) => {
+        const kids = ecGmChildren(n.id);
+        const isOpen = !!open[n.id];
+        const cnt = (matchMap.get(n.id) || []).length;
+        const c = ecGmColorIdx(n);
+        return '<div class="ec-gm-node">' +
+            '<div class="ec-gm-row c' + c + (sel && sel.id === n.id ? ' is-sel' : '') + '" style="--gm-depth:' + Math.min(depth, 5) + '" data-action="ec-gm-node" data-id="' + ecGmAttr(n.id) + '">' +
+            '<span class="ec-gm-arrow">' + (kids.length ? (isOpen ? '▾' : '▸') : '·') + '</span>' +
+            '<span class="ec-gm-title">' + escapeHtml(n.t) + '</span>' +
+            (cnt ? '<span class="ec-gm-badge" title="相关课文">📖 ' + cnt + '</span>' : '') +
+            (edit ? '<span class="ec-gm-ops">' +
+                '<button class="ec-gm-op" data-action="ec-gm-add-form" data-id="' + ecGmAttr(n.id) + '" title="加子节点">＋</button>' +
+                '<button class="ec-gm-op" data-action="ec-gm-edit" data-id="' + ecGmAttr(n.id) + '" title="编辑">✏️</button>' +
+                '<button class="ec-gm-op" data-action="ec-gm-del" data-id="' + ecGmAttr(n.id) + '" title="删除">🗑️</button>' +
+                '</span>' : '') +
+            '</div>' +
+            (isOpen && kids.length ? '<div class="ec-gm-kids">' + kids.map(k => renderNode(k, depth + 1)).join('') + '</div>' : '') +
+            '</div>';
+    };
+    const branchNode = ecGmNode(branch);
+    const tree = branchNode ? renderNode(branchNode, 0) : '<div class="ec-gm-empty">还没有分支，去导入一份 Markdown 吧 🌱</div>';
+    return '<div class="card ec-gm-card" id="ecGmCard">' +
+        '<div class="card-header">' +
+        '<div class="card-title">🧠 英语语法地图 <span class="ec-gm-sub">点一点，把学过的串成一张网</span></div>' +
+        '<div class="ec-gm-head-btns">' +
+        '<button class="btn btn-sm ' + (edit ? 'btn-primary' : 'btn-secondary') + '" data-action="ec-gm-mode">' + (edit ? '✓ 完成编辑' : '✏️ 编辑框架') + '</button>' +
+        '</div></div>' +
+        '<div class="ec-gm-search-row">' +
+        '<input type="text" class="input" id="ecGmQ" placeholder="搜语法点，如 be动词" value="' + ecGmAttr(q) + '">' +
+        '<button class="btn btn-sm btn-secondary" data-action="ec-gm-search">🔍 找一找</button>' +
+        (q ? '<button class="btn btn-sm btn-secondary" data-action="ec-gm-clear-q">清空</button>' : '') +
+        '</div>' +
+        ecGmSearchHTML(q) +
+        '<div class="ec-gm-branches">' + branches.map((b, i) =>
+            '<button class="ec-gm-branch c' + (i % 9) + (branch === b.id ? ' on' : '') + '" data-action="ec-gm-branch" data-id="' + ecGmAttr(b.id) + '">' +
+            '<span>' + EC_GM_ICONS[i % 9] + '</span>' + escapeHtml(b.t) + '</button>'
+        ).join('') + '</div>' +
+        (edit ? '<div class="ec-gm-tools-row">' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-import">📥 导入 Markdown</button>' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-export">📤 导出备份</button>' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-expand">🌳 展开本分支</button>' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-collapse">收起</button>' +
+            '<button class="btn btn-sm btn-danger" data-action="ec-gm-reset">↺ 恢复初始框架</button>' +
+            '</div>' : '') +
+        (adding ? '<div class="ec-gm-add-row"><span>在「' + escapeHtml((ecGmNode(adding) || {}).t || '') + '」下添加：</span>' +
+            '<input type="text" class="input" id="ecGmNewTitle" maxlength="60" placeholder="新语法点名称，如 Yes/No 回答">' +
+            '<button class="btn btn-sm btn-primary" data-action="ec-gm-add-save" data-id="' + ecGmAttr(adding) + '">添加</button>' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-add-cancel">取消</button></div>' : '') +
+        '<div class="ec-gm-tree">' + tree + '</div>' +
+        ecGmDetailHTML(sel, matchMap, edit) +
+        '<div class="ec-gm-foot">💡 课文里的语法小字可以点，会跳到这张图；图里每个点也会列出相关课文。说法对不上时，开「编辑框架」补关键词或自己加一个点就好。</div>' +
+        '</div>';
+}
+
+// ---------- 导图编辑动作 ----------
+function ecGmTouch() {
+    const g = ecGmData();
+    g.at = now();
+}
+function ecGmAddSave(pid) {
+    const v = String((document.getElementById('ecGmNewTitle') || {}).value || '').trim().slice(0, 60);
+    if (!v) { toast('先写个名字吧 🌱'); return; }
+    const g = ecGmData();
+    const sibs = ecGmChildren(pid);
+    const node = { id: uuid(), pid: pid || ecGmRootId(g), t: v, o: sibs.length ? Math.max.apply(null, sibs.map(s => Number(s.o) || 0)) + 1 : 0, at: Date.now() };
+    g.nodes.push(node);
+    state._gmOpen = state._gmOpen || {};
+    state._gmOpen[pid] = true;
+    state._gmAdding = null;
+    state._gmSel = node.id;
+    ecGmTouch();
+    ecAfterAction('✅ 已加入语法地图：' + v);
+}
+function ecGmIsDescendant(candidateId, ancestorId) {
+    const g = ecGmData(), byId = new Map(g.nodes.map(x => [x.id, x]));
+    let cur = byId.get(candidateId), guard = 0;
+    while (cur && cur.pid && guard++ < 30) {
+        if (cur.pid === ancestorId) return true;
+        cur = byId.get(cur.pid);
+    }
+    return false;
+}
+function ecGmEdit(id) {
+    const g = ecGmData(), n = ecGmNode(id);
+    if (!n) return;
+    const opts = g.nodes.filter(x => x.id !== id && !ecGmIsDescendant(x.id, id)).map(x =>
+        '<option value="' + ecGmAttr(x.id) + '"' + (n.pid === x.id ? ' selected' : '') + '>' + escapeHtml(ecGmPath(x).join(' › ')) + '</option>'
+    ).join('');
+    uiModal({
+        title: '✏️ 编辑语法点',
+        html: '<div class="ec-gm-form">' +
+            '<label>名称</label><input type="text" class="input" id="ecGmEditTitle" maxlength="60" value="' + ecGmAttr(n.t) + '">' +
+            '<label>关联关键词（用「；」分开，课文说法不一样时写在这里）</label>' +
+            '<input type="text" class="input" id="ecGmEditAlias" maxlength="200" placeholder="如：Yes/No 回答；be 动词疑问句" value="' + ecGmAttr(n.alias || '') + '">' +
+            '<label>放在哪个节点下面</label><select class="input" id="ecGmEditParent">' + opts + '</select>' +
+            '<div class="ec-hint">改完会自动同步到其它设备；关键词只是用来匹配课文，不会改动课文内容。</div></div>',
+        getValue: () => {
+            const t = String((document.getElementById('ecGmEditTitle') || {}).value || '').trim();
+            if (!t) return null;
+            return {
+                t: t.slice(0, 60),
+                alias: String((document.getElementById('ecGmEditAlias') || {}).value || '').trim().slice(0, 200),
+                pid: String((document.getElementById('ecGmEditParent') || {}).value || '') || n.pid
+            };
+        },
+        okText: '保存'
+    }).then(v => {
+        if (!v) return;
+        n.t = v.t; n.alias = v.alias; n.pid = v.pid; n.at = Date.now();
+        ecGmTouch();
+        state._gmSel = n.id;
+        ecAfterAction('已保存语法点');
+    });
+}
+function ecGmDel(id) {
+    const g = ecGmData(), rootId = ecGmRootId(g);
+    if (!id || id === rootId) { toast('根框架不能删哦'); return; }
+    const ids = new Set();
+    const collect = x => { if (ids.has(x)) return; ids.add(x); ecGmChildren(x).forEach(c => collect(c.id)); };
+    collect(id);
+    const ts = Date.now();
+    ids.forEach(x => { g.tombs[x] = ts; });
+    g.nodes = g.nodes.filter(n => !ids.has(n.id));
+    if (state._gmSel && ids.has(state._gmSel)) state._gmSel = null;
+    if (state._gmAdding && ids.has(state._gmAdding)) state._gmAdding = null;
+    ecGmTouch();
+    ecAfterAction('已删除这个语法点');
+}
+function ecGmReplaceSeed(seed) {
+    const g = ecGmData(), ts = Date.now();
+    g.nodes.forEach(n => { g.tombs[n.id] = ts; });   // 旧节点全部写墓碑，挡住其它设备的旧快照
+    ecGmSeed(g, seed, 'gmi' + ts.toString(36) + '_', ts);
+    state._gmBranch = null; state._gmOpen = {}; state._gmSel = null;
+    state._gmQuery = ''; state._gmAdding = null;
+    ecGmTouch();
+}
+function ecGmParseMarkdown(text) {
+    const root = [], stack = [];
+    const add = (depth, title) => {
+        const node = { t: title, k: [] };
+        let p = null;
+        for (let d = depth - 1; d >= 0; d--) { if (stack[d]) { p = stack[d]; break; } }
+        (p ? p.k : root).push(node);
+        stack.length = depth;
+        stack[depth] = node;
+    };
+    String(text || '').split(/\r?\n/).forEach(ln => {
+        if (!ln.trim()) return;
+        let m;
+        if ((m = ln.match(/^##\s+(.+)$/))) add(0, m[1].trim());
+        else if ((m = ln.match(/^###\s+(.+)$/))) add(1, m[1].trim());
+        else if ((m = ln.match(/^(\s*)-\s+(.+)$/))) add(2 + Math.floor(m[1].replace(/\t/g, '  ').length / 2), m[2].trim());
+    });
+    const pack = arr => arr.map(n => n.k.length ? [n.t, pack(n.k)] : [n.t]);
+    return pack(root);
+}
+function ecGmToMarkdown() {
+    const out = ['# 英语语法'];
+    const walk = (n, depth) => {
+        if (depth === 0) out.push('## ' + n.t);
+        else if (depth === 1) out.push('### ' + n.t);
+        else out.push('  '.repeat(Math.min(depth - 2, 10)) + '- ' + n.t);
+        ecGmChildren(n.id).forEach(k => walk(k, depth + 1));
+    };
+    ecGmChildren().forEach(b => walk(b, 0));
+    return out.join('\n');
+}
+function ecGmImport() {
+    uiModal({
+        title: '📥 导入 Markdown 语法框架',
+        html: '<div class="ec-gm-form"><div class="ec-hint">支持「## 大分支 / ### 小类 / - 列表（缩进表示层级）」，和最初的《英语语法.md》格式一样。导入会替换当前整张图，建议先「导出备份」。</div>' +
+            '<textarea id="ecGmImportTA" rows="12" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;line-height:1.6" placeholder="## 10种词性&#10;### 名词noun&#10;- 可数名词&#10;  - 单复数变化"></textarea></div>',
+        getValue: () => {
+            const v = String((document.getElementById('ecGmImportTA') || {}).value || '').trim();
+            return v || null;
+        },
+        okText: '替换整张图'
+    }).then(v => {
+        if (!v) return;
+        const seed = ecGmParseMarkdown(v);
+        if (!seed.length) { toast('没识别到内容，请检查格式'); return; }
+        ecGmReplaceSeed(seed);
+        ecAfterAction('✅ 语法框架已更新');
+    });
+}
+function ecGmExport() {
+    const text = ecGmToMarkdown();
+    uiModal({
+        title: '📤 导出语法框架（Markdown）',
+        html: '<div class="ec-gm-form"><div class="ec-hint">已全选，直接复制保存即可；之后可以用「导入 Markdown」恢复。</div>' +
+            '<textarea id="ecGmExportTA" rows="12" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;line-height:1.6">' + escapeHtml(text) + '</textarea></div>',
+        getValue: () => true,
+        okText: '完成'
+    });
+    setTimeout(() => { const ta = document.getElementById('ecGmExportTA'); if (ta && ta.select) { try { ta.select(); } catch (e) { /* ignore */ } } }, 60);
+}
+function ecGmLink(id) {
+    const n = ecGmNode(id);
+    if (!n) return;
+    const lessons = ecData().lessons;
+    if (!lessons.length) { toast('先去「主线任务」添加几节课吧'); return; }
+    const opts = lessons.map(l => '<option value="' + ecGmAttr(l.id) + '">' + escapeHtml(((ecBookById(l.bookId) || {}).name || '') + ' › ' + l.name) + '</option>').join('');
+    uiModal({
+        title: '🔗 手动关联课文',
+        html: '<div class="ec-gm-form"><label>选一节课，把它和「' + escapeHtml(n.t) + '」牵上手</label>' +
+            '<select class="input" id="ecGmLinkSel">' + opts + '</select>' +
+            '<div class="ec-hint">关联后这一课会出现在这个语法点下面；点标签上的 ✕ 可取消。</div></div>',
+        getValue: () => String((document.getElementById('ecGmLinkSel') || {}).value || '') || null,
+        okText: '关联'
+    }).then(v => {
+        if (!v) return;
+        n.links = Array.isArray(n.links) ? n.links : [];
+        if (n.links.indexOf(v) < 0) n.links.push(v);
+        n.at = Date.now();
+        ecGmTouch();
+        ecAfterAction('✅ 已关联这一课');
+    });
+}
+function ecGmCreate(q) {
+    const term = String(q || '').trim();
+    if (!term) return;
+    const branches = ecGmChildren();
+    const opts = branches.map(b => '<option value="' + ecGmAttr(b.id) + '">' + escapeHtml(b.t) + '</option>').join('');
+    uiModal({
+        title: '➕ 把语法点加进地图',
+        html: '<div class="ec-gm-form">' +
+            '<label>语法点名称</label><input type="text" class="input" id="ecGmCreateTitle" maxlength="60" value="' + ecGmAttr(term) + '">' +
+            '<label>放在哪个大分支下面</label><select class="input" id="ecGmCreateParent">' + opts + '</select>' +
+            '<div class="ec-hint">加好以后，这个语法点就会和课文里的说法对上啦。</div></div>',
+        getValue: () => {
+            const t = String((document.getElementById('ecGmCreateTitle') || {}).value || '').trim();
+            if (!t) return null;
+            return { t: t.slice(0, 60), pid: String((document.getElementById('ecGmCreateParent') || {}).value || '') };
+        },
+        okText: '加入地图'
+    }).then(v => {
+        if (!v) return;
+        const g = ecGmData();
+        const pid = v.pid || ecGmRootId(g);
+        const sibs = ecGmChildren(pid);
+        const node = { id: uuid(), pid, t: v.t, o: sibs.length, at: Date.now() };
+        g.nodes.push(node);
+        state._gmQuery = '';
+        ecGmReveal(node.id);
+        ecGmTouch();
+        ecAfterAction('✅ 已加入语法地图：' + v.t);
+    });
+}
+function ecGmFromNote(q) {
+    const term = String(q || '').trim();
+    state.currentSubTab = state.currentSubTab || {};
+    state.currentSubTab.engcheck = 'ec-hub';
+    state._wbSession = null;
+    state._gmQuery = '';
+    const hit = ecGmFindNode(term);
+    if (hit) {
+        ecGmReveal(hit.id);
+        toast('🧠 找到啦：' + hit.t);
+    } else {
+        state._gmQuery = term;
+        state._gmSel = null;
+    }
+    render();
+    setTimeout(() => { const c = document.getElementById('ecGmCard'); if (c && c.scrollIntoView) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+}
+function ecGmOpenLesson(id) {
+    const l = ecLessonById(id);
+    if (!l) { toast('这一课已经不在书单里啦'); return; }
+    ecGo('ec-books', { book: l.bookId, lesson: l.id, sub: '' });
+}
+function ecGmExpand(branchId, on) {
+    const g = ecGmData();
+    state._gmOpen = state._gmOpen || {};
+    if (!on) { state._gmOpen = {}; if (branchId) state._gmOpen[branchId] = true; render(); return; }
+    const walk = id => {
+        const kids = ecGmChildren(id);
+        if (kids.length) state._gmOpen[id] = true;
+        kids.forEach(k => walk(k.id));
+    };
+    walk(branchId || ecGmRootId(g));
+    render();
+}
+
 // 成就对应的温柔落点，让荣誉墙也能反哺另外几个板块
 function ecAchieveGo(id) {
     if (id === 'first-recite' || id === 'recite-master' || id === 'recite10' || id === 'master10') return { to: 'ec-review', sub: 'due' };
@@ -13341,7 +13929,7 @@ function ecRenderLessons() {
             <div class="ec-lesson-main" data-action="ec-open-lesson" data-id="${l.id}">
                 <div class="ec-lesson-info">
                     <div class="ec-lesson-name">${locked ? '<span class="ec-lock" title="还没开始这一课">🔒</span>' : ''}${escapeHtml(l.name)}${allDone ? ' <span class="ec-done-flag">✅</span>' : ''}</div>
-                    ${l.note ? `<div class="ec-lesson-note">${escapeHtml(l.note)}</div>` : ''}
+                    ${l.note ? ecGmNoteHTML(l.note) : ''}
                     <div class="ec-lesson-meta">任务 ${pg.done}/${pg.total}${allDone ? ' · 已完成' : ''} · ${reciteTag}${ecWbBadgeHTML(l.id)}</div>
                 </div>
                 <div class="ec-lesson-side">
@@ -13675,7 +14263,7 @@ function ecRenderLesson() {
             <div class="card-title">${escapeHtml(book ? book.name : '')} › ${escapeHtml(lesson.name)}</div>
             <button class="btn btn-sm btn-secondary" data-action="ec-back-lessons">‹ 返回课程</button>
         </div>
-        ${lesson.note ? `<div class="ec-lesson-note ec-lesson-note-lg">${escapeHtml(lesson.note)}</div>` : ''}
+        ${lesson.note ? ecGmNoteHTML(lesson.note) : ''}
         <div class="ec-hint">三级目录：每节课按「听 / 读 / 说 / 写」打卡，再加一整篇课文背诵（FSRS 复习）。</div>
     </div>
     ${ecRecitePanel(lesson.id)}
@@ -13898,6 +14486,7 @@ function ecRenderAchieve() {
     const wc = ecWbCounts(ecWbData().items);
     const achPct = Math.round(c.achievements / c.achievementTotal * 100);
     return `
+    ${ecHarvestCardHTML(true)}
     <div class="card">
         <div class="card-header"><div class="card-title">📊 学习数据</div><span class="ec-card-note">累计</span></div>
         <div class="ec-stats">
@@ -13938,7 +14527,6 @@ function ecRenderAchieve() {
     <div class="card">
         <div class="card-header"><div class="card-title">🏆 荣誉墙</div><span class="ec-card-note">已点亮 ${c.achievements}/${c.achievementTotal} 枚</span></div>
         <div class="ec-ach-progress"><div class="ec-ach-progress-fill" style="width:${achPct}%"></div></div>
-        <div class="ec-harvest-line">${ecHarvestLine(c)}</div>
         ${unlocked.length ? `<div class="ec-ach-group-title">✨ 已点亮（${unlocked.length}）· 每一枚都是认真走过的路</div>${groupByCat(unlocked, true)}` : '<div class="ec-hint">第一枚徽章正在路上，随便逛逛就会遇见 🌱</div>'}
         ${locked.length ? `<div class="ec-ach-group-title">🌱 即将点亮（${locked.length}）· 不急，慢慢来就好</div>${groupByCat(locked, false)}` : '<div class="ec-hint">全部徽章都点亮啦，太厉害了 🎉</div>'}
     </div>`;
@@ -14056,6 +14644,60 @@ document.addEventListener('click', async e => {
     if (action === 'ec-wb-move-sel') { ecWbMoveSelected(); return; }
     if (action === 'ec-wb-move-up') { ecWbMoveItem(el.dataset.id, 'up'); return; }
     if (action === 'ec-wb-move-down') { ecWbMoveItem(el.dataset.id, 'down'); return; }
+    // v20261110a：英语语法地图（可编辑框架 + 课文双向联动）
+    if (action === 'ec-gm-mode') { state._gmEditMode = !state._gmEditMode; render(); return; }
+    if (action === 'ec-gm-branch') {
+        state._gmBranch = el.dataset.id || '';
+        state._gmOpen = state._gmOpen || {};
+        state._gmOpen[state._gmBranch] = true;
+        state._gmSel = state._gmBranch;
+        state._gmQuery = '';
+        render(); return;
+    }
+    if (action === 'ec-gm-node') {
+        const gid = el.dataset.id || '';
+        state._gmOpen = state._gmOpen || {};
+        state._gmOpen[gid] = !state._gmOpen[gid];
+        state._gmSel = gid;
+        render(); return;
+    }
+    if (action === 'ec-gm-search') {
+        state._gmQuery = String((document.getElementById('ecGmQ') || {}).value || '').trim().slice(0, 60);
+        render(); return;
+    }
+    if (action === 'ec-gm-clear-q') { state._gmQuery = ''; render(); return; }
+    if (action === 'ec-gm-reveal') {
+        ecGmReveal(el.dataset.id || ''); render();
+        const gc = document.getElementById('ecGmCard');
+        if (gc && gc.scrollIntoView) gc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+    }
+    if (action === 'ec-gm-from-note') { ecGmFromNote(el.dataset.q || ''); return; }
+    if (action === 'ec-gm-create') { ecGmCreate(el.dataset.q || ''); return; }
+    if (action === 'ec-gm-open-lesson') { ecGmOpenLesson(el.dataset.id || ''); return; }
+    if (action === 'ec-gm-add-form') { state._gmAdding = el.dataset.id || ''; state._gmEditMode = true; render(); return; }
+    if (action === 'ec-gm-add-cancel') { state._gmAdding = null; render(); return; }
+    if (action === 'ec-gm-add-save') { ecGmAddSave(el.dataset.id || ''); return; }
+    if (action === 'ec-gm-edit') { ecGmEdit(el.dataset.id || ''); return; }
+    if (action === 'ec-gm-del') { ecGmDel(el.dataset.id || ''); return; }
+    if (action === 'ec-gm-link') { ecGmLink(el.dataset.id || ''); return; }
+    if (action === 'ec-gm-unlink') {
+        const un = ecGmNode(el.dataset.id || '');
+        if (un && Array.isArray(un.links)) {
+            un.links = un.links.filter(x => x !== el.dataset.l);
+            un.at = Date.now(); ecGmTouch(); ecAfterAction('已取消关联');
+        }
+        return;
+    }
+    if (action === 'ec-gm-import') { ecGmImport(); return; }
+    if (action === 'ec-gm-export') { ecGmExport(); return; }
+    if (action === 'ec-gm-expand') { ecGmExpand(state._gmBranch, true); return; }
+    if (action === 'ec-gm-collapse') { ecGmExpand(state._gmBranch, false); return; }
+    if (action === 'ec-gm-reset') {
+        uiConfirm('恢复成最初整理的 9 大分支 / 552 个语法点？当前自己加的点和关键词会被替换（建议先「导出备份」）。', { isDanger: true, okText: '恢复' })
+            .then(yes => { if (yes) { ecGmReplaceSeed(EC_GRAMMAR_SEED); ecAfterAction('✅ 已恢复初始语法框架'); } });
+        return;
+    }
 });
 
 // 可以回顾页「按书本 / 课时筛选」下拉（select 不走 click 委托）
@@ -14065,6 +14707,17 @@ document.addEventListener('change', e => {
     if (el.dataset.wbFilter === 'book') { state._wbFilterBookId = el.value || ''; state._wbFilterLessonId = ''; }
     else state._wbFilterLessonId = el.value || '';
     render();
+});
+
+// 语法地图：搜索框与新增输入框回车即提交（输入框本身不是按钮，click 委托收不到）
+document.addEventListener('keydown', e => {
+    if (!e || e.key !== 'Enter' || !e.target || !e.target.id) return;
+    if (e.target.id === 'ecGmQ' || e.target.id === 'ecGmNewTitle') {
+        e.preventDefault();
+        const sel = e.target.id === 'ecGmQ' ? '[data-action="ec-gm-search"]' : '[data-action="ec-gm-add-save"]';
+        const btn = document.querySelector && document.querySelector(sel);
+        if (btn && btn.click) btn.click();
+    }
 });
 
 

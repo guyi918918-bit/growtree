@@ -1,14 +1,14 @@
 // 顾一的成长小树 · Service Worker
-// v20261110a：
+// v20261110b：
 //  · 带构建号的 app.<build>.js / styles.<build>.css 和本地 vendor 库内容永不变 → 缓存优先。
 //    第二次打开直接从本地读，不再每次重新下载近 800KB（慢网 / 断网时不会「点不进去」）。
 //  · index.html / version.json 仍走网络优先，保证新版本部署后及时生效；断网回退本地缓存。
 //  · 只缓存完整的 200 响应，避免把半截文件写进缓存。
 
-const CACHE = 'growtree-shell-v154';
+const CACHE = 'growtree-shell-v155';
 const SHELL = [
   './', './index.html',
-  './app.20261110a.js', './styles.20261110a.css',
+  './app.20261110b.js', './styles.20261110b.css',
   './vendor/lunar.1.7.8.js', './vendor/supabase.2.119.0.js',
   './yuejixiangshou.html', './repair.html', './manifest.json'
 ];

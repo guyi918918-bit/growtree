@@ -14,18 +14,18 @@ if (!TOKEN) { console.error('缺少 GH_PAT 环境变量'); process.exit(1); }
 // 不必每次重传（否则几十个 600~800KB blob 会拖慢推送并提高失败率）。
 const FILES = [
     'app.js', 'styles.css', 'index.html', 'sw.js', 'version.json',
-    'app.20261110a.js', 'styles.20261110a.css',
+    'app.20261110b.js', 'styles.20261110b.css',
     'vendor/lunar.1.7.8.js', 'vendor/supabase.2.119.0.js',
     'test-20261025c.cjs', 'push-via-api.cjs'
 ];
-// 历史哈希文件清理：只保留当前 20261110a 与上一版 20261107a（离线回退用），其余从远程 tree 删除。
+// 历史哈希文件清理：只保留当前 20261110b 与上一版 20261110a（离线回退用），其余从远程 tree 删除。
 // Git 历史仍完整保留，任何旧版本都能从旧 commit 找回；体积从约 96MB 降到约 2MB。
 const KEEP_HASHED = new Set([
-    'app.20261110a.js', 'styles.20261110a.css',
-    'app.20261107a.js', 'styles.20261107a.css'
+    'app.20261110b.js', 'styles.20261110b.css',
+    'app.20261110a.js', 'styles.20261110a.css'
 ]);
 
-const MESSAGE = "feat: 三板块改名 + 学习看板换向 + 可编辑英语语法地图（双向联动课文）v20261110a\n\n【用户反馈】\n1. 认真打卡三个板块改名：基础打卡 → 工作日打卡、日常习惯 → 变美习惯、其他打卡 → 打败 BOSS。\n2. 学习看板「收获时刻」往上提，说明卡换方向（改成横向小条并下移到探险地图上方）。\n3. 把用户整理的《英语语法.md》（9 大分支 / 552 个节点）嵌进英语打卡「学习看板」，\n   并且要能编辑、能和课文里已导入的语法要点互相跳转。\n\n【实现】\n1. 分类改名：默认值 + 界面文案全量替换；新增 CATEGORY_RENAME 读取层归一化与 loadState\n   一次性迁移（categories / checkIns 徽标 / 积分流水），用户自定义过的板块名不动，\n   云端旧快照也不会把名字带回来；子 Tab 名字改为实时读板块设置。\n2. 看板顺序：收获时刻 → 英语语法地图 → 横向说明小条 → 今日探险地图；\n   联动卡仍只此一处，统计口径与鼓励式文案未改。\n3. 语法地图（state.data.engcheck.grammar）：\n   · 种子编译成 9 大分支 / 552 节点的嵌套数组，确定性 id（gms_*），跨设备自动合并成同一棵树。\n   · 彩色分支卡 + 可展开树 + 搜索 + 节点详情；每个点自动按「标题 + 内置别名 + 自定义关键词」\n     匹配课文 note，列出相关课文，点一下经 ecGo 直达该课详情。\n   · 课文列表 / 详情的灰色语法小字改成一颗颗可点标签，点标签切到学习看板并展开对应节点；\n     找不到时给「新建这个语法点」按钮，说法不一致也能补上。\n   · 编辑模式：改名 / 改关键词 / 换父节点 / 加子节点 / 删除（子树写墓碑）/\n     手动关联或取消关联课文 / 导入导出 Markdown / 恢复初始框架 / 展开收起。\n   · 同步：ecMergeGrammar 按 id 时间戳新者胜 + 墓碑，ecMergeEngcheck 两个分支都带上；\n     导入/恢复会给旧节点写墓碑并换唯一 id 前缀，防旧快照顶掉新框架。\n4. 样式：九色主干、树形连接线、暗色主题、600px 手机两列分支与 2 列工具按钮、\n   prefers-reduced-motion；深层缩进最多 5 级避免窄屏挤成一条缝。\n   手机端卡头 nowrap + 标题省略 + 隐藏修饰副标题，修掉「网」字孤行与编辑按钮独占一行。\n5. 页面真实滚动容器是 .content（html/body overflow:hidden），ecGo 回顶改走 ecScrollTop()，\n   同时滚 window 与 .content，避免跨板块跳转后停在半屏。\n\n【验证】test-20261025c.cjs 934 通过 / 0 失败（新增 v20261110a 章节：改名迁移、看板顺序、\n553 节点种子、归一化与匹配、双向联动、增删改/导入导出/恢复、跨端合并、事件接线、\n手机卡头 CSS 断言、CSS 与版本链哈希一致性）。真实无头 Chrome / CDP 复测：READY=true、\n9 大分支、553 节点、搜索排序、双向跳转、编辑模式、375×812 无横向溢出、JS 错误 0；\n桌面/手机首屏与语法地图卡片已截图核对。\n\n【版本链】SW growtree-shell-v154；index 引用 app/styles.20261110a；\nKEEP_HASHED 保留当前 20261110a 与上一版 20261107a，z 由 tree sha:null 自动删除。";
+const MESSAGE = "feat: 学习看板精简 + 收获时刻搬进荣誉战绩 v20261110b\n\n【用户反馈（两张截图）】\n1. 学习看板里的「🌱 这里只放收获和鼓励…」说明小条 + 「🧭 今日探险地图」整块不要了。\n2. 「🏅 收获时刻」整卡移到「荣誉战绩」里面；搬过去后自动精简按钮，\n   去掉「看看我的荣誉墙」（已在荣誉页，避免自己跳自己），保留「🎲 随手翻一课」。\n\n【实现】\n1. ecHubPageHTML() 正文只留英语语法地图：删除说明小条与探险地图渲染。\n   四个板块的导航仍由顶部主 Tab 和头卡「🌈 我的成长收成」四格承担，跳转功能一个不少。\n2. 抽出 ecHarvestCardHTML(inAchieve)，在 ecRenderAchieve() 顶部渲染收获时刻；\n   inAchieve=true 时不渲染自我跳转按钮，并去掉荣誉墙卡里重复的同一句成长小结。\n3. ecLinkCardHTML() 函数本体保留作可复用组件与历史回归测试夹具，不再出现在任何页面；\n   联动跳转仍统一走 ecGo + data-action=\"ec-go\"。\n4. 样式：移除说明小条专用 CSS；新增 .ec-harvest-btns.is-single .btn，\n   避免收获卡在窄屏被 flex:1 拉成整行。\n\n【验证】test-20261025c.cjs 全过；真实无头 Chrome / CDP 复测桌面与 375px 手机：\n看板只留语法地图、荣誉战绩页顶部有收获时刻、无自我跳转按钮、无 JS 错误、无横向溢出。\n\n【版本链】APP_BUILD / index / version.json 升到 20261110b；SW growtree-shell-v155；\nKEEP_HASHED 保留当前 20261110b 与上一版 20261110a，更旧版本由 tree sha:null 自动删除。";
 
 
 async function api(method, endpoint, body, attempt = 0) {

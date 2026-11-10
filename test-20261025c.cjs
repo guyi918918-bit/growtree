@@ -1897,7 +1897,8 @@ console.log('—— x：四模块联动 ——');
     ok('x：页内旧头卡调用已全部移除', !APP.includes('${ecHeaderHTML()}'));
     ok('x：Tab 栏换成带徽标版本', /ecMainTabsHTML\(tabs, tab, extra\)/.test(APP) && /data-action="tab" data-module="engcheck"/.test(APP));
     ok('x：ec-go 统一跳转动作分发', /action === 'ec-go'/.test(APP) && /ecGo\(el\.dataset\.to/.test(APP));
-    ok('z：联动卡只在看板出现（两页已移除）', (APP.match(/ecLinkCardHTML\('/g) || []).length === 1);
+    // v20261110b：探险地图整块从看板移除，函数本体保留作可复用组件，但全站不再调用
+    ok('z：联动卡函数仍在且全站 0 处调用', /function ecLinkCardHTML\(/.test(APP) && (APP.match(/ecLinkCardHTML\('/g) || []).length === 0);
     ok('x：刷题残留仍为 0', !/EC_QUIZ_BUILTIN|ecQuizStart|ecRenderQuiz/.test(APP));
     ok('x：背诵打分函数未丢', /function ecReciteAction/.test(APP));
 
@@ -2035,7 +2036,9 @@ console.log('—— y：导航修复 / 总览分页 / 加载加固 ——');
     ok('y：紧凑条可一键回总览', mini.includes('data-tab="ec-hub"') && mini.includes('学习看板'));
     ok('y：紧凑条不含大四格（不重复占位）', !mini.includes('ec-hub-cell') && !mini.includes('ec-hub-grid'));
     const hubPage = EC.ecHubPageHTML();
-    ok('y：总览页带说明与四板块联动', hubPage.includes('学习看板') && hubPage.includes('ec-link-card') && hubPage.includes('ec-hub-note'));
+    // v20261110b：看板正文精简为「面包屑 + 语法地图」，说明小条与探险地图整块移除
+    ok('y：总览页只留语法地图', hubPage.includes('学习看板') && hubPage.includes('ec-gm-card') &&
+        !hubPage.includes('ec-link-card') && !hubPage.includes('ec-hub-note') && !hubPage.includes('ec-harvest-card'));
     ok('y：原四格与引导按钮全部保留', (EC.ecHeaderHTML().match(/data-action="ec-go"/g) || []).length === 5);
 
     // 4. 样式
@@ -2083,8 +2086,8 @@ console.log('—— z：去压力 / 改名 / 成就多元化 / 氛围升级 —�
     ok('z：记忆巩固无联动卡', !rv.includes('ec-link-card') && !rv.includes('板块联动'));
     ok('z：查漏补缺无联动卡', !wo.includes('ec-link-card') && !wo.includes('板块联动'));
     const hp = EC.ecHubPageHTML();
-    ok('z：联动只在看板以探险地图出现', hp.includes('ec-link-card') && hp.includes('今日探险地图'));
-    ok('z：全站只剩 1 处联动卡调用', (APP.match(/ecLinkCardHTML\('/g) || []).length === 1);
+    ok('z：看板已无探险地图与说明小条', !hp.includes('ec-link-card') && !hp.includes('今日探险地图') && !hp.includes('ec-hub-note'));
+    ok('z：全站 0 处联动卡调用', (APP.match(/ecLinkCardHTML\('/g) || []).length === 0);
     ok('z：ec-go 跳转仍完整可用', /action === 'ec-go'/.test(APP) && /function ecGo\(/.test(APP) && /function ecAchieveGo\(/.test(APP));
 
     // 3. 需求 2/3：首屏不再出现任何待办数字、徽标、催办文案
@@ -2110,7 +2113,9 @@ console.log('—— z：去压力 / 改名 / 成就多元化 / 氛围升级 —�
     ok('z：每日鼓励语池与确定性', EC.EC_CHEERS.length >= 12 && EC.EC_CHEERS.includes(EC.ecDailyCheer()) && EC.ecDailyCheer() === EC.ecDailyCheer());
     const cheer = EC.ecCheerCardHTML();
     ok('z：今日份鼓励卡', cheer.includes('今日份鼓励') && cheer.includes(EC.ecDailyCheer()));
-    ok('z：成长能量条与收获时刻', hh.includes('成长能量') && hp.includes('收获时刻') && hp.includes('随手翻一课'));
+    // v20261110b：收获时刻搬进荣誉战绩页，看板不再显示
+    ok('z：成长能量条与收获时刻', hh.includes('成长能量') && !hp.includes('收获时刻') &&
+        EC.ecRenderAchieve().includes('收获时刻') && EC.ecRenderAchieve().includes('随手翻一课'));
     ok('z：无徽章时给温柔兜底', EC.ecRecentBadgesHTML(3).includes('第一枚徽章正在路上'));
     d.achievements['first-book'] = new Date().toISOString();
     d.achievements['first-task'] = Date.now();
@@ -2194,7 +2199,7 @@ console.log('—— a：标签不截断 / 按钮不变形 / 首屏更紧凑 —�
     ok('a：查漏补缺四个操作按钮完整', ['开始复习', '批量导入', '导入模板', '记一道'].every(t => wrong.includes(t)));
     const map = EC.ecLinkCardHTML('');
     ok('a：探险地图四条完整文案', ['翻开新的一课', '和课文打个招呼', '把小坑变成宝藏', '看看闪光时刻'].every(t => map.includes(t)));
-    ok('a：联动仍只在看板出现', (APP.match(/ecLinkCardHTML\('/g) || []).length === 1);
+    ok('a：全站 0 处联动卡调用', (APP.match(/ecLinkCardHTML\('/g) || []).length === 0);
     ok('a：统计口径与鼓励文案未被改动', EC.ecHubCounts().achievementTotal === EC.EC_ACHIEVEMENTS.length && EC.ecHeaderHTML().includes('今日份鼓励'));
 
     // 版本链（本块独立作用域，直接读文件，不依赖其它章节的局部常量）
@@ -2264,14 +2269,13 @@ console.log('—— v20261110a 改名 + 语法地图 ——');
     ok('b：迁移映射覆盖简称与全称', ['基础打卡','基础打卡项','日常习惯','其他打卡','其他打卡项'].every(k => renameOnly.includes("'" + k + "'")));
     ok('b：映射之后的代码不再使用旧分类名', !/基础打卡项|日常习惯|其他打卡项/.test(APP.slice(APP.indexOf('function categoryDisplayName'))));
 
-    // ② 学习看板：收获时刻上提、说明条换向、语法地图入场、联动卡仍在
+    // ② 学习看板（v20261110b 起）：只留语法地图，说明小条与探险地图已整块移除
     const hubFn = APP.slice(APP.indexOf('function ecHubPageHTML()'), APP.indexOf('function ecLinkCardHTML'));
-    ok('b：收获时刻排在看板第一张', hubFn.indexOf('ec-harvest-card') < hubFn.indexOf('ecGrammarCardHTML'));
     ok('b：语法地图嵌在学习看板', /function ecHubPageHTML\(\)[\s\S]{0,900}\$\{ecGrammarCardHTML\(\)\}/.test(APP));
-    ok('b：说明条改成横向小条并下移', hubFn.includes('ec-hub-note-row') && hubFn.indexOf('ec-hub-note-row') > hubFn.indexOf('ecGrammarCardHTML'));
-    ok('b：说明条在探险地图之前', hubFn.indexOf('ec-hub-note-row') < hubFn.indexOf("ecLinkCardHTML('')"));
-    ok('b：联动卡仍只调用一次', (APP.match(/ecLinkCardHTML\('/g) || []).length === 1);
-    ok('b：横向说明条有 CSS', CSSA.includes('.ec-hub-note-row {') && CSSA.includes('.ec-hub-note-ico'));
+    ok('b：看板不再渲染说明小条 / 探险地图 / 收获时刻', !hubFn.includes('ec-hub-note-row') &&
+        !hubFn.includes("ecLinkCardHTML('')") && !hubFn.includes('ec-harvest-card'));
+    ok('b：联动卡函数保留但全站 0 处调用', /function ecLinkCardHTML\(/.test(APP) && (APP.match(/ecLinkCardHTML\('/g) || []).length === 0);
+    ok('b：说明小条专用 CSS 已清理', !CSSA.includes('.ec-hub-note-row {') && !CSSA.includes('.ec-hub-note-ico'));
     ok('b：首屏无待办压力文案', !/项待办|待学任务|已逾期|待解锁/.test(RENDER));
 
     // ③ 语法种子：完整导入 9 大分支 / 552 个节点
@@ -2383,19 +2387,65 @@ console.log('—— v20261110a 改名 + 语法地图 ——');
     ok('b：手机端编辑按钮与标题同行', /\.ec-gm-head-btns \{ flex: 0 0 auto; \}/.test(gmMobile) &&
         /\.ec-gm-head-btns \.btn \{[^}]*white-space: nowrap/.test(gmMobile));
 
-    // ⑨ 版本链
-    ok('b：APP_BUILD = 20261110a', /const APP_BUILD = '20261110a';/.test(APP));
-    ok('b：index / version / SW 同步', HTMLB.includes('app.20261110a.js') && HTMLB.includes('styles.20261110a.css') &&
-        VERB.includes('20261110a') && /growtree-shell-v154/.test(SWB) &&
-        SWB.includes("'./app.20261110a.js'") && SWB.includes("'./styles.20261110a.css'"));
-    ok('b：SW 只预缓存当前版本', !SWB.includes("'./app.20261107a.js'"));
-    ok('b：推送清单保留 a + 上一版', /KEEP_HASHED = new Set\(\[[\s\S]*?app\.20261110a\.js[\s\S]*?app\.20261107a\.js[\s\S]*?\]\)/.test(PUSHB));
+    // ⑨ 版本链（动态读 BUILD，以后升版不用再改写死字符串）
+    ok('b：APP_BUILD 格式正确', /^\d{8}[a-z]$/.test(BUILD) && APP.includes("const APP_BUILD = '" + BUILD + "';"));
+    ok('b：index / version / SW 同步', HTMLB.includes('app.' + BUILD + '.js') && HTMLB.includes('styles.' + BUILD + '.css') &&
+        VERB.includes(BUILD) && /growtree-shell-v\d+/.test(SWB) &&
+        SWB.includes("'./app." + BUILD + ".js'") && SWB.includes("'./styles." + BUILD + ".css'"));
+    ok('b：SW 只预缓存当前版本', ((SWB.match(/'\.\/(app|styles)\.[^']+\.(js|css)'/g) || [])).every(x => x.includes(BUILD)));
+    ok('b：推送清单包含当前版本哈希文件', PUSHB.includes("'app." + BUILD + ".js'") && PUSHB.includes("'styles." + BUILD + ".css'") &&
+        /KEEP_HASHED = new Set\(\[[\s\S]*?app\.\d{8}[a-z]\.js[\s\S]*?\]\)/.test(PUSHB));
     const crypto = require('crypto');
-    ['app.20261110a.js','styles.20261110a.css'].forEach((f, i) => {
+    ['app.' + BUILD + '.js', 'styles.' + BUILD + '.css'].forEach((f, i) => {
         const src = fs.readFileSync(__dirname + '/' + (i ? 'styles.css' : 'app.js'));
         const dst = fs.readFileSync(__dirname + '/' + f);
         ok('b：哈希文件与工作副本一致 ' + f, crypto.createHash('md5').update(src).digest('hex') === crypto.createHash('md5').update(dst).digest('hex'));
     });
+}
+
+// ============ v20261110b：学习看板精简 + 收获时刻搬进荣誉战绩 ============
+console.log('—— v20261110b 看板精简 / 收获时刻搬家 ——');
+{
+    const ECB = makeEC();
+    const APPB = APP, CSSB = CSS;
+    const VERC = fs.readFileSync(__dirname + '/version.json', 'utf8');
+    const SWC = fs.readFileSync(__dirname + '/sw.js', 'utf8');
+    const PUSHC = fs.readFileSync(__dirname + '/push-via-api.cjs', 'utf8');
+
+    // ① 看板正文只剩语法地图
+    const hubB = ECB.ecHubPageHTML();
+    ok('c：看板保留面包屑与语法地图', hubB.includes('学习看板') && hubB.includes('ec-gm-card'));
+    ok('c：说明小条已从看板彻底移除', !hubB.includes('ec-hub-note') && !APPB.includes('这里只放收获和鼓励'));
+    ok('c：探险地图已从看板彻底移除', !hubB.includes('ec-link-card') && !hubB.includes('今日探险地图'));
+    ok('c：收获时刻已从看板移除', !hubB.includes('ec-harvest-card') && !hubB.includes('🏅 收获时刻'));
+
+    // ② 收获时刻搬到荣誉战绩页顶部，且按钮自动精简
+    const achB = ECB.ecRenderAchieve();
+    ok('c：收获时刻出现在荣誉战绩页', achB.includes('ec-harvest-card') && achB.includes('🏅 收获时刻'));
+    ok('c：收获时刻是荣誉战绩页第一张卡', achB.indexOf('ec-harvest-card') < achB.indexOf('学习数据'));
+    ok('c：最近徽章、成长小结都跟着搬过去', achB.includes('ec-badge-row') || achB.includes('ec-badge-empty'));
+    ok('c：收获时刻可复用函数且带 inAchieve 参数', /function ecHarvestCardHTML\(inAchieve\)/.test(APPB) &&
+        /\$\{ecHarvestCardHTML\(true\)\}/.test(APPB));
+    const harvestSeg = achB.slice(0, achB.indexOf('学习数据'));
+    ok('c：收获卡在荣誉页保留随手翻一课', harvestSeg.includes('🎲 随手翻一课'));
+    ok('c：收获卡在荣誉页不显示荣誉墙跳转', !harvestSeg.includes('看看我的荣誉墙'));
+    ok('c：收获卡按钮标注 is-single', harvestSeg.includes('ec-harvest-btns is-single'));
+    ok('c：荣誉墙不再重复同一句成长小结', (ECB.ecRenderAchieve().match(/ec-harvest-line/g) || []).length === 1);
+    ok('c：头卡四格与 ec-go 联动仍在（导航不丢）',
+        (ECB.ecHeaderHTML().match(/data-action="ec-go"/g) || []).length === 5 &&
+        /action === 'ec-go'/.test(APPB) && /function ecGo\(/.test(APPB));
+
+    // ③ 样式与版本链
+    ok('c：单按钮收获卡不被拉成整行', CSSB.includes('.ec-harvest-btns.is-single .btn') &&
+        ECB.ecRenderAchieve().includes('ec-harvest-btns is-single'));
+    ok('c：说明小条 CSS 已清理', !CSSB.includes('.ec-hub-note-row {') && !CSSB.includes('.ec-hub-note-ico'));
+    ok('c：CSS 花括号平衡', (CSSB.match(/{/g) || []).length === (CSSB.match(/}/g) || []).length);
+    ok('c：版本链升到 20261110b', /const APP_BUILD = '20261110b';/.test(APPB) && VERC.includes('20261110b') &&
+        HTML.includes('app.20261110b.js') && HTML.includes('styles.20261110b.css'));
+    ok('c：SW 升到 v155 且 SHELL 指新哈希', SWC.includes("growtree-shell-v155") &&
+        SWC.includes("'./app.20261110b.js'") && SWC.includes("'./styles.20261110b.css'"));
+    ok('c：推送清单保留当前 + 上一版', PUSHC.includes("'app.20261110b.js'") &&
+        PUSHC.includes("'app.20261110a.js'") && !PUSHC.includes("'app.20261107a.js'"));
 }
 
 

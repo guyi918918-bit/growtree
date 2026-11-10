@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261110a';
+const APP_BUILD = '20261110b';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -13167,26 +13167,30 @@ function ecMiniBarHTML() {
         <button class="ec-mini-go" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1">📊 学习看板 ›</button>
     </div>`;
 }
-// 学习看板正文（v20261110a 顺序）：收获时刻 → 语法地图 → 说明小条 → 探险地图
-// 用户要求「收获时刻往上提、换一下方向」：收获时刻提到第一张，原来压在它上面的说明卡
-// 挪到探险地图上方，并从整块文字卡改成横向小条（图标在左、文字在右），首屏更轻、更有收获感。
-function ecHubPageHTML() {
+// 收获时刻（v20261110b：按用户要求从「学习看板」搬进「荣誉战绩」）
+// inAchieve=true 时不显示「看看我的荣誉墙」——已经在荣誉战绩页了，避免自己跳自己。
+function ecHarvestCardHTML(inAchieve) {
     const c = ecHubCounts();
-    return `<div class="ec-crumb">英语打卡 › 学习看板</div>
-    <div class="card ec-harvest-card">
+    return `<div class="card ec-harvest-card">
         <div class="card-header"><div class="card-title">🏅 收获时刻</div><span class="ec-card-note">已点亮 ${c.achievements}/${c.achievementTotal} 枚</span></div>
         ${ecRecentBadgesHTML(3)}
         <div class="ec-harvest-line">${ecHarvestLine(c)}</div>
-        <div class="ec-harvest-btns">
-            <button class="btn btn-sm btn-primary" data-action="ec-go" data-to="ec-achieve" data-sub="">看看我的荣誉墙 ›</button>
+        <div class="ec-harvest-btns${inAchieve ? ' is-single' : ''}">
+            ${inAchieve ? '' : '<button class="btn btn-sm btn-primary" data-action="ec-go" data-to="ec-achieve" data-sub="">看看我的荣誉墙 ›</button>'}
             <button class="btn btn-sm btn-secondary" data-action="ec-go" data-to="ec-books" data-sub="books">🎲 随手翻一课</button>
         </div>
-    </div>
-    ${ecGrammarCardHTML()}
-    <div class="card ec-hub-note ec-hub-note-row"><span class="ec-hub-note-ico">🌱</span><span>这里只放收获和鼓励：想学哪一格就点哪一格，四个板块的功能互相打通，学完回来数字会自己长大</span></div>
-    ${ecLinkCardHTML('')}`;
+    </div>`;
 }
-// 探险地图：只在学习看板出现，纯导航不带数字；记忆巩固 / 查漏补缺不再显示联动卡
+// 学习看板正文（v20261110b）：只留英语语法地图。
+// 用户要求删掉「说明小条 + 今日探险地图」整块、把「收获时刻」搬进荣誉战绩。
+// 四个板块的导航仍由顶部主 Tab 与头卡「🌈 我的成长收成」四格承担，跳转功能一个不少。
+function ecHubPageHTML() {
+    return `<div class="ec-crumb">英语打卡 › 学习看板</div>
+    ${ecGrammarCardHTML()}`;
+}
+// 探险地图：v20261110b 起学习看板不再渲染（用户要求整块去掉）。
+// 函数本体保留作可复用组件与历史回归测试夹具，不再出现在任何页面。
+// 联动跳转仍统一走 ecGo + data-action="ec-go"。
 function ecLinkCardHTML(current) {
     const items = [
         { to: 'ec-books', sub: 'books', icon: '📚', text: '主线任务 · 翻开新的一课' },
@@ -13484,7 +13488,7 @@ function ecGrammarCardHTML() {
         '<button class="btn btn-sm ' + (edit ? 'btn-primary' : 'btn-secondary') + '" data-action="ec-gm-mode">' + (edit ? '✓ 完成编辑' : '✏️ 编辑框架') + '</button>' +
         '</div></div>' +
         '<div class="ec-gm-search-row">' +
-        '<input type="text" class="input" id="ecGmQ" placeholder="搜语法点，如 be动词 / 一般现在时" value="' + ecGmAttr(q) + '">' +
+        '<input type="text" class="input" id="ecGmQ" placeholder="搜语法点，如 be动词" value="' + ecGmAttr(q) + '">' +
         '<button class="btn btn-sm btn-secondary" data-action="ec-gm-search">🔍 找一找</button>' +
         (q ? '<button class="btn btn-sm btn-secondary" data-action="ec-gm-clear-q">清空</button>' : '') +
         '</div>' +
@@ -14482,6 +14486,7 @@ function ecRenderAchieve() {
     const wc = ecWbCounts(ecWbData().items);
     const achPct = Math.round(c.achievements / c.achievementTotal * 100);
     return `
+    ${ecHarvestCardHTML(true)}
     <div class="card">
         <div class="card-header"><div class="card-title">📊 学习数据</div><span class="ec-card-note">累计</span></div>
         <div class="ec-stats">
@@ -14522,7 +14527,6 @@ function ecRenderAchieve() {
     <div class="card">
         <div class="card-header"><div class="card-title">🏆 荣誉墙</div><span class="ec-card-note">已点亮 ${c.achievements}/${c.achievementTotal} 枚</span></div>
         <div class="ec-ach-progress"><div class="ec-ach-progress-fill" style="width:${achPct}%"></div></div>
-        <div class="ec-harvest-line">${ecHarvestLine(c)}</div>
         ${unlocked.length ? `<div class="ec-ach-group-title">✨ 已点亮（${unlocked.length}）· 每一枚都是认真走过的路</div>${groupByCat(unlocked, true)}` : '<div class="ec-hint">第一枚徽章正在路上，随便逛逛就会遇见 🌱</div>'}
         ${locked.length ? `<div class="ec-ach-group-title">🌱 即将点亮（${locked.length}）· 不急，慢慢来就好</div>${groupByCat(locked, false)}` : '<div class="ec-hint">全部徽章都点亮啦，太厉害了 🎉</div>'}
     </div>`;
