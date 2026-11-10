@@ -14,18 +14,18 @@ if (!TOKEN) { console.error('缺少 GH_PAT 环境变量'); process.exit(1); }
 // 不必每次重传（否则几十个 600~800KB blob 会拖慢推送并提高失败率）。
 const FILES = [
     'app.js', 'styles.css', 'index.html', 'sw.js', 'version.json',
-    'app.20261110b.js', 'styles.20261110b.css',
+    'app.20261110d.js', 'styles.20261110d.css',
     'vendor/lunar.1.7.8.js', 'vendor/supabase.2.119.0.js',
     'test-20261025c.cjs', 'push-via-api.cjs'
 ];
-// 历史哈希文件清理：只保留当前 20261110b 与上一版 20261110a（离线回退用），其余从远程 tree 删除。
+// 历史哈希文件清理：只保留当前 20261110d 与线上上一版 20261110b（离线回退用），其余从远程 tree 删除。
 // Git 历史仍完整保留，任何旧版本都能从旧 commit 找回；体积从约 96MB 降到约 2MB。
 const KEEP_HASHED = new Set([
-    'app.20261110b.js', 'styles.20261110b.css',
-    'app.20261110a.js', 'styles.20261110a.css'
+    'app.20261110d.js', 'styles.20261110d.css',
+    'app.20261110b.js', 'styles.20261110b.css'
 ]);
 
-const MESSAGE = "feat: 学习看板精简 + 收获时刻搬进荣誉战绩 v20261110b\n\n【用户反馈（两张截图）】\n1. 学习看板里的「🌱 这里只放收获和鼓励…」说明小条 + 「🧭 今日探险地图」整块不要了。\n2. 「🏅 收获时刻」整卡移到「荣誉战绩」里面；搬过去后自动精简按钮，\n   去掉「看看我的荣誉墙」（已在荣誉页，避免自己跳自己），保留「🎲 随手翻一课」。\n\n【实现】\n1. ecHubPageHTML() 正文只留英语语法地图：删除说明小条与探险地图渲染。\n   四个板块的导航仍由顶部主 Tab 和头卡「🌈 我的成长收成」四格承担，跳转功能一个不少。\n2. 抽出 ecHarvestCardHTML(inAchieve)，在 ecRenderAchieve() 顶部渲染收获时刻；\n   inAchieve=true 时不渲染自我跳转按钮，并去掉荣誉墙卡里重复的同一句成长小结。\n3. ecLinkCardHTML() 函数本体保留作可复用组件与历史回归测试夹具，不再出现在任何页面；\n   联动跳转仍统一走 ecGo + data-action=\"ec-go\"。\n4. 样式：移除说明小条专用 CSS；新增 .ec-harvest-btns.is-single .btn，\n   避免收获卡在窄屏被 flex:1 拉成整行。\n\n【验证】test-20261025c.cjs 全过；真实无头 Chrome / CDP 复测桌面与 375px 手机：\n看板只留语法地图、荣誉战绩页顶部有收获时刻、无自我跳转按钮、无 JS 错误、无横向溢出。\n\n【版本链】APP_BUILD / index / version.json 升到 20261110b；SW growtree-shell-v155；\nKEEP_HASHED 保留当前 20261110b 与上一版 20261110a，更旧版本由 tree sha:null 自动删除。";
+const MESSAGE = "feat: 英语语法地图改按《英语语法系统讲义》重构 v20261110d\n\n【用户反馈】原 9 个零散分支不成体系、点开看不到内容；重新提供《英语语法系统讲义.docx》，\n要求以讲义为基础重做框架；讲义里的对比表格形式清晰，原样保留不必改。\n\n【实现】\n1. 框架换成讲义目录：10 章（词法/句法/强调/虚拟/be动词/否定/不定量/倒装/易错附录/不规则动词）\n   / 33 节 / 30 小节，共 73 个标题 + 1 根 = 74 节点，确定性 gmh_ 前缀 id。\n2. 讲义正文 126 段 + 51 张对照表 / 1704 个单元格编译为只读静态资料 EC_GM_HANDOUT\n   （不进 state、不占云同步体积），以有序块保留「表N 标题 → 表格」原始顺序。\n   按节点 id 优先取回，导入/恢复换 id 后按标题归一化索引兜底。\n3. 点任意节点展示它自己及所有后代的讲义内容：规则段落、易错高亮、表标题、\n   原样 HTML 对照表（首行 thead、窄屏横向滚动），各节可单独折叠；表格形式未改。\n4. 彩色分支网格保留（10 章 + 节数徽标），新增第 10 个分支配色；\n   搜索扩展到讲义正文与表格例词，别名参与排序；完整体系全览、编辑框架、\n   课文语法点双向联动全部保留。\n5. 一次性迁移 ecGmEnsureExtras：旧 gms_/gmx_ 框架整体写墓碑防旧快照复活，\n   用户手动加的节点、补的关键词、手动关联的课文用匹配引擎迁回新框架；幂等。\n   导入/恢复自定义 Markdown 不再被讲义覆盖。\n\n【验证】test-20261025c.cjs 全过；真实无头 Chrome 复测桌面与 375px 手机：\n10 章分支、点开有讲义正文与表格、表格窄屏可读、搜索与双向联动、无 JS 错误。\n\n【版本链】APP_BUILD / index / version.json 升到 20261110d；SW growtree-shell-v157；\nKEEP_HASHED 保留当前 20261110d 与线上上一版 20261110b。";
 
 
 async function api(method, endpoint, body, attempt = 0) {

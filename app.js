@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261110b';
+const APP_BUILD = '20261110d';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -13212,29 +13212,276 @@ function ecLinkCardHTML(current) {
 //   · 课文 note（语法要点）按分号拆成可点的小标签 → 跳到导图对应节点；
 //     导图节点按「标题 + 自定义关键词」匹配课文 note → 列出相关课文，点一下回到课文。
 //     两边说法不完全一样时，可在编辑模式里补关键词 / 手动关联课文 / 直接新建节点。
-const EC_GRAMMAR_SEED = [["10种词性",[["名词noun",[["可数名词",[["单/复皆可，可以加数词计算",[["单复数变化",[["s/x/ch/sh结尾+es"],["o结尾不是外来词或缩写词+es"],["辅音+y、y-i+es",[["city_cities"]]],["元音+y、加s",[["boy_boys"]]],["f/fe结尾",[["f-v=es",[["half_halves"]]],["+s",[["roof_roofs"]]]]],["ch结尾发/k/+s",[["stomach_stomachs"]]],["辅音+oo、加s",[["bamboo_bamboos"]]],["辅音+o、加es",[["echo_echoes"]]]]]]]]],["不可数名词",[["只能单数，不可以加数词计算"]]],["名词所有格",[["单数名词s结尾+‘s"],["复数名词s结尾+’"],["of所有格，中英语序相反"],["'s+of双重所有格",[["of+名词's所有格"],["of+名词性物主代词"]]]]],["主谓一致",[["单复数一致",[["国家机构书名等专有名词，谓单"],["many a.../more than one+名词做主语，谓单"],["one and a half+复数名词做主语，谓单"],["钱时间距离做整体，谓单"],["加减乘除，谓单"],["each/one/no one、some(any、no、every）+body（one、thing）作主语或限定词，谓单"],["one of+复数名词，谓单"],["含有集体概念的名词，整体-单、个体-复"],["含有单复数形式一样的名词做主语，判断"],["a number of+可数名词复数做主语，谓单"],["a/an+单名+or two做主语，谓单"],["分数、百分比+of+名词短语做主语，谓语动词与of后面名词保持单复数一致"],["few many/several/all some后加名词做主语，谓复"],["就近原则",[["四除",[["but/except/besides/in addition to"]]],["五和",[["with/along with/together with/combined with/as well as"]]],["包括",[["including"]]],["而不是",[["rather than/instead of"]]]]]]]]]]],["动词verb",[["分类",[["实意动词：表示动词、及物动词（vt.）、不及物动词（vi.）",[["come,read,go,watch,play,fly"],["否定do、does、did后面加not"],["疑问词when/where/who/what/how"]]],["系动词：引导表语或者表语从句"],["静态动词：表示拥有、情感、思想"],["动词短语：动词+介词或者动词+副词"],["助动词：协助主要动词构成谓语的词，没有实际意思，不能单独用，构成时态、语态、否定句、强调句、疑问句",[["have做助动词，构成完成时"],["do做助动词，构成疑问句、否定句、强调句"],["be做助动词，构成进行时或被动语态"]]],["情态动词：有含义，要和动词原形在一起构成谓语",[["can、could表示推测、允许、能力"],["may、might表示推测、允许、请求、祝愿"],["must表示肯定推测、命令"],["should、shall、ought to表示推测、需要、征求意见"],["would、will表示将要、请求、意愿"],["be able to能够、have to必须、had better最好"],["had better最好，would rather宁愿宁可都+动词原形"]]]]],["形式",[["动词原形",[["助动词或情态动词一起构成谓语"],["祈使句的谓语动词"],["感官动词的宾语与宾补构成逻辑上的主谓关系，表示动作的最后结果或全过程时，作宾的动词用原形"],["实意动词后的宾语与作宾补的动词构成逻辑上的主谓关系"],["两个以上的并列不定式用and或or连接起来"],["在why  not...和why...句型中，not和why后跟动词原形，构成反问，表示建议、劝告、责备或提醒"],["动词help后是宾+宾补，其宾补由动词充当时"],["do、does、did与动词原形连用"],["不定式作介词but和except的宾语，当其前有实意动词do时，后面的动词不定式要省略to"]]],["第三人称单数",[["一般现在时，主语为第三人称单数，谓语要用第三人称单数"]]],["动名词和现在分词",[["动名词：名词的作用，在句中充当主语、定语、表语"],["现在分词：构成进行时态，与助动词be搭配构成句子谓语，在句中还可以充当定语、表语、状语",[["变化规则",[["直接+ing"],["动词以不发音的e结尾，去e加ing"],["重读闭音节的动词，双写词尾字母加ing"],["以ie结尾的动词，变y再加ing"]]]]]]],["过去式和过去分词",[["过去式：单独做谓语，表示过去某个时间发生动作"],["过去分词：动词的非谓语形式，表示被动或者完成"]]]]],["时态",[["一般过去时",[["肯定：主语+动词过去分词"],["否定：主语+did+not+动词原形"],["疑问：疑问句+did+主语+动词原形"]]],["一般现在时",[["肯定：主语为第三人称单数时，动词第三人称单数，其他动词原形"],["否定：主语+do、does+not+谓语动词原形"],["疑问：疑问句+do、does+主语+谓语动词原形"]]],["一般将来时",[["肯定：主语+will+动词原形"],["否定：主语+will+not+动词原形"],["疑问：疑问句+will+主语+动词原形"]]],["现在进行时",[["肯定：主语+be动词+动词现在分词（be+doing）"],["否定：主语+be动词+not+动词现在分词"],["疑问：疑问句+be动词+主语+动词现在分词"]]],["过去完成时",[["肯定：主语+had+动词过去分词"],["否定：主语+had+not+动词过去分词"],["疑问：疑问句+had+主语+动词过去分词"]]],["现在完成时",[["肯定：主语+have、has+动词过去分词"],["否定：主语+have、has+not+动词过去分词"],["疑问：疑问句+have、has+主语+动词过去分词"]]],["将来进行时",[["肯定：主语+will be+动词现在分词"],["否定：主语+will be+not+动词现在分词"],["疑问：疑问句+will be+主语+动词现在分词"]]],["将来完成时",[["肯定：主语+will have+动词过去分词"],["否定：主语+will have+not+动词过去分词"],["疑问：疑问句+will have+主语+动词过去分词"]]],["将来完成进行时",[["肯定：主语+will have been+动词现在分词"],["否定：主语+will have been+not+动词现在分词"],["疑问：疑问句+will have been+主语+动词现在分词"]]],["过去完成进行时",[["肯定：主语+had been+动词现在分词"],["否定：主语+had been+not+动词现在分词"],["疑问：疑问句+had been+主语+动词现在分词"]]],["过去进行时",[["肯定：主语+was、were+动词现在分词"],["否定：主语+was、were+not+动词现在分词"],["疑问：疑问句+was、were+主语+动词现在分词"]]],["现在完成进行时",[["肯定：主语+have been+动词现在分词"],["否定：主语+have been+not+动词现在分词"],["疑问：疑问句+have been+主语+动词现在分词"]]],["一般过去将来时",[["肯定：主语+would+动词原形"],["否定：主语+would+not+动词原形"],["疑问：疑问句+would+主语+动词原形"]]],["过去将来进行时",[["肯定：主语+would be+动词现在分词"],["否定：主语+would be+not+动词现在分词"],["疑问：疑问句+would be+主语+动词现在分词"]]],["过去将来完成进行时",[["肯定：主语+would have been+动词现在分词"],["否定：主语+would have been+not+动词现在分词"],["疑问：疑问句+would have been+主语+动词现在分词"]]],["过去将来完成时",[["肯定：主语+would have+动词过去分词"],["否定：主语+would have+not+动词过去分词"],["疑问：疑问句+would have+主语+动词过去分词"]]]]],["语态",[["主动改被动",[["主动句的宾语改为被动句的主语"],["主动句的谓语动词改为被动句谓语形式be+过去分词，时态不变、人称和单复数变"],["主动句的主语前加by，放谓语之后，变化人称宾格"],["其他句子成分不变"]]],["被动语态",[["一般现在时：am、is、are+过去分词"],["一般过去时：was、were+过去分词"],["一般将来时：will be+过去分词"],["现在进行时：am、is、are+being+过去分词"],["现在完成时：have、has+been+过去分词"],["过去完成时：had+been+过去分词"],["情态动词：can、could、should、would等+be+过去分词"]]],["双宾的被动语态形式",[["把间接宾语改成被动语态的主语，直接宾语留着原位"],["把直接宾语改成被动语态的主语，间接宾语前+to、for"]]],["宾补的被动语态形式",[["主动语态的宾语改成主语，宾补在被动语态中做主语的宾补"]]],["动名词的被动语态形式",[["动词短语要当成一个动词，变动词部分过去分词，"]]]]],["非谓语动词",[["不定式",[["to+不定式",[["当使役动词、感官动词用于被动语态时，要补上在主动语态中省略的to"]]],["没有to动词不定式",[["跟助动词can、might、should"],["跟感官动词see、watch、hear"],["跟使役动词let、make、have"],["跟why（not）"],["跟know（完成式、过去式）"],["介词except、but"],["主语部分带do不定式作表语"],["当两个或多个作用相同的不定式并列式，第一个不定式前用to，其余to可省"]]],["做句子成分",[["主语、宾语、表语、定语、状语、宾补"]]]]],["动名词",[["动词+ing",[["主语、表语、宾语、定语宾补"]]]]],["现在分词",[["动词+ing",[["状语、表语、定语、宾补"]]]]],["过去分词",[["动词+ed",[["表语、定语、状语、宾补"]]]]],["独立主格结构",[["不定式的独立主格结构",[["表示还未发生的行为或状态，作原因状语或条件状语"]]],["现在分词的独立主格结构",[["作时间、方式、伴随、原因、条件状语"]]],["过去分词的独立主格结构",[["作时间伴随原因条件状语"]]]]]]]]],["形容词adjective",[["顺序",[["限定词",[["描绘词",[["大小长短",[["形状重量",[["状态",[["新旧",[["颜色",[["图案",[["国籍",[["物质",[["类别"]]]]]]]]]]]]]]]]]]]]]]],["用法",[["定语",[["表语",[["宾语补足语",[["状语",[["一类人"]]]]]]]]]]],["比较级",[["单音节和少数双音节词、比较级加er最高级加est"],["元音加辅音字母结尾，双写辅音字母，比较+er最高+est"],["e结尾，比较+r最高+st"],["y结尾，y-i,比较+er最高+est"],["多音节词，比较more最高most"],["more than+名词=not only（不仅、不只）"],["more than+数词=over（超过）"],["more than+形容词=very（非常）"],["more......than",[["表示比。。。。多"],["与其。。。。不如。。。"]]],["no more than",[["只有、仅仅"]]],["not more than",[["不超过"]]],["no more....than=neither......nor（既不是也不是）"],["not moe.....than=not so....as（不如）"],["less than表示少于"],["no less than表示多达"],["not less than表示不少于"],["no less。。。than表示和什么一样"],["too much表示太多了，修饰名词表示数量"],["much too表示过分，修饰形容词或副词"],["比较级and比较级，表示越来越"],["the比较级。。。the比较级，表示越怎么越怎么"]]],["易混",[["good用在定语或者表语、well用在状语"],["nice表示令人愉快，指物外表、fine表示身体好天气好"],["lonely表示孤独的，真的孤独、alone表示独自的，不一定孤独"],["quick和fast表示速度快、soon表示时间快"],["living表示活着的存在的、alive表示活着的人、live表示活着的东西现在直播的、lively表示活泼的生动的"]]]]],["数词numeral",[["基数词",[["作nu.",[["前+数词，后不能+S"]]],["作n.",[["表时刻",[["电话号码",[["价格",[["小数"]]]]]]]]]]],["序数词",[["时间日期",[["楼层",[["几分之几"]]]]]]]]],["冠词article",[["定冠词",[["不定冠词",[["零冠词"]]]]],["表示这个",[["后+单/复名/不可名"]]],["指人和物",[["后+单/可数名",[["辅音前+a,元音前+an"]]]]]]],["代词pronoun",[["人称代词",[["主格，做主语、表语"],["宾格，作及物动词、介词后面宾语"]]],["物主代词",[["形容词性物主代词修饰名词（表示某人的）",[["单数形式my,your,his,her,its,one's"],["复数形式our,your,their"]]],["名词性物主代词相当于名词",[["单数形式mine,yours,his,hers,its,one's"],["复数形式ours,yours,theirs"]]]]],["反身代词（某人自己）",[["作宾语，指一个动作反馈到动作发出者身上"],["作同位语，表强调、解释说明、强调名词或代词"],["myself,yourself,herself,himself,itself,yourselves,ourselves,themselves"]]],["指示代词",[["this/that/such/same/it"],["these/those"]]],["疑问代词",[["不分单复数"]]],["不定代词",[["代替或修饰不确定的人或物，可作主语、宾语、表语、定语、状语"]]],["相互代词",[["相互关系"]]],["关系代词",[["引导定语从句，充当定语从句成分"]]],["连接代词",[["引导名词性从句（主语从句、宾语从句、表语从句）"]]],["主格代词（作主语）",[["l,he,she,it,you,we,they"]]],["宾格代词（作宾语）",[["me,him,her,it,you,us,them"]]]]],["副词adverb",[["分类",[["时间副词，表示时间或频率"],["地点副词，表示地点或位置"],["方式副词，表示行为方式"],["程度副词，表示动作程度"],["疑问副词，引导特殊疑问句"],["强调副词，强调形容词或动词"],["连接副词，引导主语从句宾语从句表语从句或者并列结构"],["关系副词，引导定语从句"],["句子副词，修饰句子"]]],["结构",[["ly结尾的副词，大多数形容词+ly等于副词"],["y结尾，y-i+ly"],["本身ly结尾的形容词，不能变成副词或者长一样"],["本身就是副词，不是形容词变得"],["副词比较级变化，规则和形容词比较级一样"]]],["用法",[["谓语动词和宾语之间不能加副词、地点副词放句首时候句子要倒装"],["作状语、表语、定语、宾语补足语"]]],["易混",[["too：肯定句和疑问句句尾，用逗号隔开"],["also：肯定句的谓语动词之前，系动词之后"],["either：否定句句尾，用逗号隔开"],["nor：放在句首"],["sometimes：有时候",[["sometime：未来的某个时候",[["some times：很多次",[["some time：一些时间"]]]]]]],["father、further",[["地点距离远，两词都可、表更多、额外用further、具体的远两词都可、抽象的远用further"]]],["most（名词、形容词、副词）表示最、很、十分"],["mostly（副词）表示主要地、大部分地"]]]]],["介词preposition",[["分类",[["结构分",[["单个介词",[["at、in、of、after"]]],["合成介词",[["into、inside、outside"]]],["分词介词",[["including、considering"]]],["短语介词",[["in front of、accord to"]]]]],["词义分",[["地点、方向、时间、方式、涉及、目地、原因、比较、伴随"]]]]],["用法",[["同位语",[["宾语补足语",[["表语",[["状语",[["定语"]]]]]]]]]]]]],["连词conjunction"],["感叹词interjection"]]],["8种句型",[["简单句分类",[["陈述句",[["肯定式"],["肯定变否定",[["助动词（do）+否定词（not）"]]]]],["疑问句",[["一般疑问句"],["陈述句变一般疑问句",[["提前助动词"],["提前系动词"],["提前情态动词"]]],["特殊疑问句"],["选择疑问句"],["反义疑问句",[["祈使句",[["let's开头shall we结尾"],["let us开头will you结尾"]]],["有must",[["must表必须"]]],["感叹句",[["前肯后否"]]],["否定词",[["hardly",[["never",[["seldom",[["little",[["few",[["nowhere"]]]]]]]]]]]]],["复合句",[["双主语提问与主句相关（除宾从）"]]],["宾语从句",[["和从句相关"]]]]]]],["感叹句",[["what",[["what+a/an+adj+可名单+主+谓"],["what+adj+不可名/名复+主+谓"]]],["how",[["how+adj/adv+主+谓"],["how+adj+a/an+可名单+主+谓"]]],["语气词"],["感叹号"]]],["祈使句",[["命令",[["警告",[["请求",[["祝愿"]]]]]]]]]]],["复合句",[["名词性从句",[["主语从句",[["引导词",[["连词：that、whether"],["代词：who、whoever、whom、whose、what、whatever、which、whichever"],["副词：when、where、how、why、whenever、wherever、however"]]],["形式主语it"],["形式主语和强调句的区别"]]],["宾语从句",[["引导词",[["副词：when、where、how、why"],["代词：who、whose、what、which"],["连词：that（常省略）、whether、if"]]]]],["表语从句",[["引导词",[["that"],["whether、as、as if"],["who、whom、whose、what、which做主语和宾语"],["where、when、why、how"],["because"],["一些表示建议劝说命令的名词后面"]]]]],["同位语从句",[["引导词",[["that、whether"],["what、who、whom、whose、which"],["when、where、how、why"]]]]]]],["定语从句",[["先行词+关系词+从句",[["修饰人who、whose、whom、that"],["修饰物which、that、whose"],["修饰其他when、where、why"]]]]],["状语从句",[["时间",[["when、as、while、as soon as、before、since、after、until"]]],["地点",[["where"]]],["原因",[["because、since、as"]]],["目的",[["so that、in order that"]]],["结果",[["so.....that、such.....that"]]],["条件",[["if、unless"]]],["让步",[["though、although、even if、even though"]]],["比较",[["as（同比较级）、that（不同程度的比较）"]]],["方式",[["as、as if、how"]]]]]]],["简单句",[["主+谓",[["the universe remains."]]],["主+谓+宾",[["he took his bag and left."]]],["主+系+表",[["the food is delicious."]]],["主+谓+宾+宾补",[["we made him our monitor."]]],["主+谓+间接宾语+直接宾语",[["hei father bought her a dicitionary."]]]]]]],["9种成分",[["subject主语"],["attribute定语"],["subject complement表语"],["predicate谓语"],["adverbial状语"],["double object双宾语"],["object宾语"],["object complement宾语补足语"],["appositive同位语"]]],["强调句",[["陈述句",[["it+is/was+被强调部分+that/who/whom/which+其余部分"]]],["疑问句",[["一般疑问句",[["is/was it+被强调部分+that/who/whom+其余部分"]]],["特殊疑问句",[["疑问词+is/was it+that/who/whom+其余部分"]]]]],["助动词do/does/did强调谓语动词"]]],["虚拟语气",[["without。。。would+动词原形"],["if引导从句动词过去式，主句would、should、could、might+动词原形",[["与现在事实相反"]]],["if引导从句had+动词过去分词，主句would、should、could、might+have+动词过去分词",[["与过去事实相反"]]]]],["be动词",[["be"],["is",[["isn't"]]],["am",[["am not"]]],["are",[["aren't"]]],["was",[["wasn't"]]],["were",[["weren't"]]],["being"],["been"],["后面接名词、形容词、地点副词和短语作补充说明"],["be动词提前表示疑问"]]],["双否",[["no one could deny the fact that。。。没人能否认"],["there is no denying that。。。不可否认"]]],["不定量表达法",[["both两者都，either两者之一，neither两者都不"],["some、any“一些”，some用肯定句，any用否定句和疑问句"],["most作形容词表示大部分的，后接复数名词，every表示“每一个，所有”后接单数名词，all表示“所有”，后接可数名词复数和不可数名词单数"],["many修饰可数名词“许多”，much修饰不可数名词“许多”，a lot of、plenty of均可修饰可数和不可数名词"],["a few肯定含义“几个”，few否定含义“没几个”均和可数名词连用"],["a little肯定含义“一点儿”，little否定含义“没多点”均可和不可数名词连用"],["none和no one“一个也不，一点也不”，none可以接of短语，动词可用单数也可复数，no one不能接of短语，动词只能单数"]]],["倒装句",[["全部倒装",[["将句子的谓语全部置于主语之前",[["there be"],["时间地点副词或介词短语在句首"],["so、nor、either"]]]]],["部分倒装",[["句子谓语一部分（助动词、情态动词、be动词）置于主语之前",[["only修饰的状语在句首"],["某些否定意义的词在句首"],["not only...but also、not only...but ...as well、no sooner ...that、hardly...when在句首，只是前半部分倒装"],["as引导的让步状语从句，谓语动词以后部分倒装"],["省略if的虚拟语气，were、had、should等在主语前放在句首"],["so+形容词或副词在句首"],["表达祝愿的一些句子"]]]]]]]];
+const EC_GRAMMAR_SEED = [["第一章  词法：十种词性",[["一、名词（noun）",[["1. 可数名词与不可数名词"],["2. 复数变化规则"],["3. 名词所有格"],["4. 主谓一致"]]],["二、冠词（article）"],["三、代词（pronoun）"],["四、数词（numeral）",[["1. 基数词"],["2. 序数词"]]],["五、形容词（adjective）",[["1. 多个形容词的排列顺序"],["2. 句法功能"],["3. 比较级与最高级"],["4. 易混比较结构"],["5. 易混形容词"]]],["六、副词（adverb）",[["1. 分类"],["2. 构成"],["3. 位置"],["4. 易混副词"]]],["七、动词（verb）",[["1. 分类"],["2. 情态动词"],["3. 动词的形式"],["4. 时态"],["5. 语态"],["6. 非谓语动词"]]],["八、介词（preposition）",[["1. 分类"],["2. in、on、at 的用法对比"]]],["九、连词（conjunction）"],["十、感叹词（interjection）"]]],["第二章  句法：句型与句子成分",[["一、五种基本句型"],["二、句子按用途分类",[["1. 陈述句"],["2. 疑问句"],["3. 祈使句"],["4. 感叹句"]]],["三、复合句",[["1. 名词性从句"],["2. 定语从句"],["3. 状语从句"]]],["四、九种句子成分"]]],["第三章  强调句",[["一、陈述句的强调"],["二、疑问句的强调"],["三、not until 的强调"],["四、强调谓语动词"],["五、怎样判断是不是强调句"],["六、其他强调手段"]]],["第四章  虚拟语气",[["一、条件句中的虚拟"],["二、含蓄条件"],["三、名词性从句中的 should 型虚拟"],["四、wish 后的虚拟"],["五、其他虚拟结构"]]],["第五章  be 动词",[["一、be 动词的两种身份"],["二、常见句型"]]],["第六章  否定与双重否定",[["一、否定的构成"],["二、部分否定与全部否定"],["三、双重否定"],["四、否定转移"]]],["第七章  不定量表达"],["第八章  倒装句",[["一、全部倒装"],["二、部分倒装"]]],["附录一  常见易错点对照"],["附录二  常用不规则动词"]];
+const EC_GM_HANDOUT = {"gmh_root":{"b":[{"k":"p","v":"十种词性 · 五种基本句型 · 九种句子成分 · 十六种时态"},{"k":"p","v":"语法规则 · 判断依据 · 正误对照"},{"k":"p","v":"本讲义按“词法—句法—特殊句式”三层组织：第一章解决一个词属于哪一类、怎么变、能放在哪里；第二章解决句子由哪些成分搭成、有哪几种基本骨架；第三章至第八章处理强调、虚拟、否定、倒装等需要单独掌握的句式。"},{"k":"p","v":"每一节都按同一顺序展开：先给规则，再给判断依据，最后给例句。标有“易错”的段落是考试和实际表达中最常出错的地方，每一处都列出了错误写法与正确写法，可以直接对照修改。整份讲义既可以顺序通读，也可以按需查阅：遇到具体问题时，先在目录结构中找到对应章节，读规则表，再看例句。"}]},"gmh_1":{"b":[{"k":"p","v":"词法回答三个问题：这个词属于哪一类、它在句中能充当什么成分、它需要怎样变化。十种词性中，名词、动词、形容词、副词有实在意义，能够独立充当句子成分，称为实词；冠词、介词、连词、感叹词主要起连接和标记作用，称为虚词；代词和数词介于两者之间，分别承担替代和计数功能。"}]},"gmh_3":{"b":[{"k":"p","v":"可数名词能直接加数词计算，并有单复数形式；不可数名词不能加数词，也没有复数形式，表示数量时要借助容器、单位或 much、little 等词。"},{"k":"p","v":"表1  可数名词与不可数名词的区分"},{"k":"t","v":[["类别","判断标准","典型例词","数量表达"],["可数名词","能说“一个、两个”，有单复数形式","book, apple, child, photo, ticket","a book / two books / many books / a few books"],["不可数名词","不能加数词，没有复数形式","water, milk, money, advice, information, news, furniture, work","some water / much water / a bottle of water / a piece of advice"]]},{"k":"p","v":"易错：news（新闻）、maths（数学）、means（方法）形式上是复数，作主语时视为单数；advice、information、furniture、equipment、luggage 在英语中不可数，不能说 an advice、two informations。"}]},"gmh_4":{"b":[{"k":"p","v":"表2  名词复数变化规则"},{"k":"t","v":[["规则","变化方式","例词","备注"],["一般情况","直接加 s","book—books, pen—pens","清辅音后读 /s/，浊辅音和元音后读 /z/"],["以 s、x、ch、sh 结尾","加 es","bus—buses, box—boxes, watch—watches, dish—dishes","读 /ɪz/"],["以辅音字母加 y 结尾","变 y 为 i 再加 es","city—cities, baby—babies, family—families","元音字母加 y 直接加 s：boy—boys, day—days"],["以 o 结尾","多数加 es","tomato—tomatoes, potato—potatoes, hero—heroes, echo—echoes","外来词、缩写词只加 s：photo—photos, piano—pianos, radio—radios, zoo—zoos"],["以 f 或 fe 结尾","多数变 v 再加 es","half—halves, leaf—leaves, knife—knives, wife—wives, shelf—shelves","例外：roof—roofs, chief—chiefs, belief—beliefs, proof—proofs"],["ch 发 /k/ 的词","只加 s","stomach—stomachs, monarch—monarchs","读音决定拼法，不按字母组合判断"],["不规则变化","内部元音或词形改变","man—men, woman—women, foot—feet, tooth—teeth, mouse—mice, goose—geese, child—children, ox—oxen","需逐个记忆"],["单复数同形","形式不变","sheep, deer, fish, means, series, species, Chinese, Japanese","靠数词或上下文判断单复"]]}]},"gmh_5":{"b":[{"k":"p","v":"表3  名词所有格的四种形式"},{"k":"t","v":[["类型","构成","适用对象","例句"],["’s 所有格","单数名词加 ’s；不以 s 结尾的复数名词也加 ’s","人、动物、时间、距离、国家、城市","Tim’s shirt. / the children’s toys. / a day’s work. / China’s population."],["’ 所有格","以 s 结尾的复数名词只加 ’","复数名词","the students’ books. / ten minutes’ walk."],["of 所有格","of 加名词","无生命事物、较长的定语","the roof of the house. / the name of the boy standing there."],["双重所有格","of 加名词 ’s，或 of 加名词性物主代词","表示“其中之一”","a friend of my father’s. / a photo of mine."]]},{"k":"p","v":"易错：中英语序相反，“我家的大门”是 the gate of my house，不能写成 my house’s gate。the girl’s photo 指“女孩自己的照片”，a photo of the girl 才是“女孩的照片”。"}]},"gmh_6":{"b":[{"k":"p","v":"主谓一致有三条依据：语法一致看主语的单复数形式，意义一致看主语表达的是整体还是个体，就近或就远一致看距离谓语最近或最远的名词。下列情形是考试中出现频率最高的部分。"},{"k":"p","v":"表4  主谓一致的常见情形"},{"k":"t","v":[["情形","谓语","例句"],["主语为单数可数名词或不可数名词","单数","The news is good. / Water boils at 100℃."],["主语为可数名词复数","复数","The students are here."],["and 连接两个不同的人或物","复数","Tom and Mary are friends."],["and 连接同一人或同一概念","单数","The writer and poet is coming.（同一个人）"],["集体名词 family、class、team、government","作整体用单数，强调成员用复数","My family is large. / My family are having dinner."],["a number of 加复数名词","复数","A number of students are absent."],["the number of 加复数名词","单数","The number of students is increasing."],["many a 加单数名词","单数","Many a boy likes football."],["more than one 加单数名词","单数","More than one student has read it."],["each、every、no 加单数名词；each of 加复数","单数","Each of the boys has a book."],["some、any、no、every 加 body、one、thing","单数","Everyone is ready. / Nothing is impossible."],["one of 加复数名词（主句）","单数","He is one of the students who are late.（主句用 is，从句修 students 用 are）"],["不定式、动名词或从句作主语","单数","To see is to believe. / Reading is useful. / What he said is true."],["时间、距离、金钱、重量作整体","单数","Ten years is a long time. / Fifty dollars is enough."],["分数、百分比加 of 加名词","与 of 后的名词一致","Two thirds of the students are here. / Two thirds of the water is gone."],["加减乘除算式","单数","Two and three is five."],["书名、国名、机构名等专有名词","单数","The United States is in North America."],["police、people、cattle、youth","复数","The police are coming."],["单复数同形名词（sheep、deer、fish）","看意义","The sheep are over there.（多只）/ The sheep is ill.（一只）"],["a 或 an 加单数名词加 or two","单数","A day or two is enough."],["few、many、several、both 加名词","复数","Several students were late."],["both...and","复数","Both he and I are right."],["either...or、neither...nor、not only...but also、there be","就近原则","Either you or he is right. / Neither he nor they are here."],["with、along with、together with、as well as、besides、except、but、including、rather than、instead of 连接","就远原则，看前面的主语","The teacher, as well as the students, is here."]]}]},"gmh_7":{"b":[{"k":"p","v":"冠词放在名词之前，帮助说明这个名词是泛指还是特指。英语只有三个冠词形式：不定冠词 a、an，定冠词 the，以及不加冠词的零冠词。"},{"k":"p","v":"表5  冠词的用法"},{"k":"t","v":[["类别","形式","主要用法","例句"],["不定冠词","a / an","泛指“一个”，用于可数名词单数第一次出现","I have a book. / She is an actress."],["a 与 an 的选择","看后面单词的第一个音素","辅音音素前用 a，元音音素前用 an","a useful tool（/j/ 开头）/ an hour（h 不发音）/ a university / an honest boy / a one-way street"],["定冠词","the","特指、上文已提到、独一无二、序数词与最高级、乐器、江河海洋山脉、姓氏复数、方位、固定搭配","the sun / the first / play the piano / the Smiths / in the morning / on the left"],["零冠词","不加冠词","泛指的复数或不可数名词、专有名词、三餐、球类棋类、交通方式、固定短语","Books are useful. / go to school / have breakfast / play football / by bus / at night"]]},{"k":"p","v":"易错：a 与 an 由读音决定，不由字母决定。an hour、an honest man 里的 h 不发音，所以用 an；a useful book、a university 里的 u 读 /juː/，以辅音 /j/ 开头，所以用 a。go to school 是“去上学”，go to the school 是“去那所学校”。"}]},"gmh_8":{"b":[{"k":"p","v":"代词用来代替名词或名词短语，避免重复。九类代词中人称代词、物主代词、反身代词是必须能默写的部分。"},{"k":"p","v":"表6  人称代词总表"},{"k":"t","v":[["人称","主格","宾格","形容词性物主代词","名词性物主代词","反身代词"],["第一人称单数","I","me","my","mine","myself"],["第二人称单数","you","you","your","yours","yourself"],["第三人称单数（男）","he","him","his","his","himself"],["第三人称单数（女）","she","her","her","hers","herself"],["第三人称单数（物）","it","it","its","its","itself"],["第一人称复数","we","us","our","ours","ourselves"],["第二人称复数","you","you","your","yours","yourselves"],["第三人称复数","they","them","their","theirs","themselves"]]},{"k":"p","v":"用法要点：主格作主语和表语；宾格作及物动词和介词的宾语；形容词性物主代词必须后接名词，不能单独使用；名词性物主代词相当于名词，可以独立充当主语、宾语或表语；反身代词作宾语时表示动作回到发出者本身，作同位语时起强调作用"},{"k":"p","v":"常见反身代词搭配：by oneself（独自）、enjoy oneself（玩得开心）、help oneself（自便）、teach oneself（自学）、make oneself at home（别拘束）、lose oneself（迷路）。"},{"k":"p","v":"表7  其他代词的类别与用法"},{"k":"t","v":[["类别","成员","要点","例句"],["指示代词","this、these（近）；that、those（远）","that、those 可替代前文出现的名词，避免重复","The weather here is warmer than that in Beijing."],["不定代词","some、any、no、every 及其复合词；both、either、neither、none；each、every、all；another、other、others","详见第七章","Everybody knows it. / Neither of them is right."],["疑问代词","who、whom、whose、what、which","不分单复数；whom 在句中作宾语","Who is it? / Whom did you see?"],["关系代词","who、whom、whose、which、that、as","引导定语从句，同时在从句中充当成分","The man who called you is my uncle."],["连接代词","who、what、which、whose、whoever、whatever","引导主语从句、宾语从句、表语从句","What he said is true."],["相互代词","each other、one another","前者多指两者之间，后者多指三者以上","They help each other."]]}]},"gmh_a":{"b":[{"k":"p","v":"13 至 19 在词尾加 -teen；20 至 90 的整十在词尾加 -ty；21 至 99 的十位与个位之间用连字符，如 twenty-one、forty-five。hundred、thousand、million 前有具体数字时不加 s，如 two hundred students、three thousand yuan；表示不确定的概数时用复数加 of，如 hundreds of students、thousands of people。"}]},"gmh_b":{"b":[{"k":"p","v":"一般在基数词后加 -th。需要单独记忆的有 first、second、third、fifth、eighth、ninth、twelfth；整十把 y 变为 i 再加 eth，如 twentieth；两位以上的数只把末位变为序数词，如 twenty-first、one hundred and second。"},{"k":"p","v":"表8  数词的常见用法"},{"k":"t","v":[["用法","表达方式","例句"],["日期","序数词，可写成数字加 st、nd、th","May 1st is Labour Day. / It’s my birthday on June 3rd."],["分数","分子用基数词，分母用序数词；分子大于 1 时分母加 s","one third / two thirds / three fourths"],["小数与百分数","小数点读 point，百分数用 percent","0.5 读 zero point five / 60% 读 sixty percent"],["时刻","顺读法，或用 past、to 表示","7:15 读 seven fifteen 或 a quarter past seven"],["年份与年代","in 加年份；in the 加年代复数","in 2024 / in the 1990s"],["年龄","in one’s 加整十复数","in his twenties（二十多岁）"],["电话号码、房间号","逐位读，0 读 o 或 zero","Room 305 / 138 xxxx xxxx"]]}]},"gmh_d":{"b":[{"k":"p","v":"多个形容词修饰同一个名词时，顺序由远及近为：限定词、观点、大小长短、形状、年龄新旧、颜色、国籍产地、材料、用途。可记作“限定观点大长高，形状年龄与新旧，颜色国籍加材料，最后用途紧相连”。"},{"k":"p","v":"表9  形容词的排列顺序"},{"k":"t","v":[["位置","类别","例词"],["1","限定词","the, a, my, this, two"],["2","观点、评价","beautiful, nice, ugly, important"],["3","大小、长短、高低","big, small, long, short, tall"],["4","形状","round, square, oval"],["5","年龄、新旧","old, new, young"],["6","颜色","red, brown, green"],["7","国籍、产地","Chinese, French, Italian"],["8","材料","wooden, silk, plastic"],["9","用途、类别","writing, sleeping, running"]]},{"k":"p","v":"典型例句：a beautiful small old round brown French wooden writing desk（一张漂亮的、小的、旧的、圆形的、棕色的法国木制写字桌）。实际表达中不宜叠加三个以上形容词，超过时改用从句或分词短语。"}]},"gmh_e":{"b":[{"k":"p","v":"表10  形容词的句法功能"},{"k":"t","v":[["功能","说明","例句"],["定语","一般放在名词前；修饰 something、anything 等不定代词时后置","a red apple / something interesting"],["表语","位于系动词之后","The food is delicious."],["宾语补足语","说明宾语的性质或状态","We made him happy. / I found the book interesting."],["状语","说明主语在动作发生时的状态","He came home tired."],["the 加形容词","表示一类人，作主语时谓语用复数","The rich are not always happy."]]}]},"gmh_f":{"b":[{"k":"p","v":"表11  比较级与最高级的构成"},{"k":"t","v":[["构成规则","变化方式","例词"],["单音节词","加 er、est","tall—taller—tallest"],["以不发音的 e 结尾","加 r、st","nice—nicer—nicest"],["重读闭音节，末尾只有一个辅音字母","双写辅音字母加 er、est","big—bigger—biggest, hot—hotter—hottest"],["辅音字母加 y 结尾","变 y 为 i 加 er、est","happy—happier—happiest"],["部分双音节词（以 y、ow、er、le 结尾）","加 er、est","narrow—narrower—narrowest, simple—simpler—simplest"],["多音节词及多数双音节词","前加 more、most","beautiful—more beautiful—most beautiful"],["不规则变化","需逐个记忆","good/well—better—best, bad/badly—worse—worst, many/much—more—most, little—less—least, far—farther/further—farthest/furthest, old—older/elder—oldest/eldest"]]},{"k":"p","v":"表12  比较结构"},{"k":"t","v":[["结构","含义","例句"],["as 加原级加 as","和……一样","He is as tall as his father."],["not as（so）加原级加 as","不如……","This book is not so interesting as that one."],["比较级加 than","比……更……","This dress is cheaper than that one."],["much、far、even、a lot、still 加比较级","程度加深","She is much taller than me."],["the 加比较级，the 加比较级","越……越……","The more you read, the more you know."],["比较级加 and 加比较级","越来越……","It is getting warmer and warmer."],["the 加最高级加 in（of）范围","在……中最……","He is the tallest in his class."],["one of the 加最高级加复数名词","最……之一，谓语用单数","She is one of the best students in our school."],["倍数表达","A is three times as big as B；A is twice the size of B","This room is three times as large as that one."]]}]},"gmh_g":{"b":[{"k":"p","v":"表13  more 与 less 相关结构的辨析"},{"k":"t","v":[["结构","含义","例句"],["more than 加名词","不仅、不只","He is more than a teacher; he is a friend."],["more than 加数词","超过","More than twenty people came."],["more than 加形容词","非常","I am more than happy to help."],["no more than","只有、仅仅","He has no more than ten yuan."],["not more than","不超过","There are not more than fifty seats."],["no more...than","两者同样都不","He is no more careful than you.（他和你一样不小心）"],["not more...than","前者不如后者","He is not more careful than you.（他不比你更细心）"],["less than","少于","It costs less than ten dollars."],["no less than","多达","No less than fifty people attended."],["not less than","不少于","It will take not less than two hours."],["no less...than","和……一样","He is no less diligent than his brother."],["too much","太多，修饰名词","You have too much work."],["much too","过于，修饰形容词或副词","The box is much too heavy."]]}]},"gmh_h":{"b":[{"k":"p","v":"表14  常见易混形容词"},{"k":"t","v":[["词","区别","例句"],["good / well","good 是形容词，作定语或表语；well 是副词，修饰动词，作表语时表示身体好","a good boy / He sings well. / I am very well."],["nice / fine","nice 指令人愉快，多形容外表或感受；fine 指天气好、身体好、质量好","a nice day / a fine day"],["lonely / alone","lonely 强调孤独的心理感受；alone 指客观上独自一人","He lives alone but never feels lonely."],["quick / fast / soon","quick 和 fast 指速度快；soon 指时间上快","a quick answer / a fast runner / He will come soon."],["living / alive / live / lively","living 活着的，多作定语；alive 活着的，多作表语或后置定语；live 活着的（指动物）、现场直播的；lively 活泼的、生动的","a living language / He is still alive. / a live fish / a lively girl"],["interesting / interested","interesting 令人感兴趣的，修饰物；interested 感到兴趣的，修饰人","The book is interesting. / I am interested in it."]]}]},"gmh_j":{"b":[{"k":"p","v":"表15  副词的分类"},{"k":"t","v":[["类别","作用","常见词"],["时间副词","表示时间或频度","now, then, today, already, yet, always, often, usually, sometimes, never"],["地点副词","表示地点或位置","here, there, upstairs, outside, home, abroad"],["方式副词","表示行为方式","quickly, carefully, well, hard, fast"],["程度副词","表示程度","very, quite, rather, too, much, almost, hardly"],["疑问副词","引导特殊疑问句","when, where, how, why"],["连接副词","引导从句或连接并列结构","however, therefore, otherwise, besides"],["关系副词","引导定语从句","when, where, why"],["句子副词","修饰整个句子","fortunately, however, indeed"],["强调副词","强调形容词或动词","even, just, only, right"]]}]},"gmh_k":{"b":[{"k":"p","v":"多数形容词加 -ly 构成副词；以 y 结尾的变 i 加 ly，如 happy—happily；以 le 结尾的去 e 加 y，如 simple—simply。不规则的有 good—well。形式不变、形容词与副词同形的有 fast、hard、late、early、high、near、much、little。以 ly 结尾却是形容词的有 friendly、lovely、lonely、lively、likely、daily、deadly，这类词不能直接作副词。副词的比较级变化规则与形容词相同。"}]},"gmh_l":{"b":[{"k":"p","v":"频度副词放在实义动词之前、be 动词和助动词之后，如 He often goes there. / He is always late.；方式副词放在动词之后或宾语之后，如 He reads carefully.；程度副词修饰形容词或副词时放在其前，如 very good；地点副词置于句首且主语为名词时用完全倒装，如 Here comes the bus.，主语为代词时不用倒装，如 Here he comes."}]},"gmh_m":{"b":[{"k":"p","v":"表16  常见易混副词"},{"k":"t","v":[["词","用法","例句"],["too / also / either / nor","too 用于肯定句句末；also 用于肯定句谓语动词之前、be 动词之后；either 用于否定句句末；nor 置于句首引起倒装","I like it, too. / He also came. / I don’t like it, either. / Nor do I."],["sometimes / sometime / some times / some time","有时候 / 某个时候 / 几次 / 一段时间","Sometimes I walk to work. / I’ll see you sometime next week. / I have been there some times. / It took some time."],["farther / further","两者都可表示距离更远；further 还可表示“进一步、更多”","He lives farther away. / We need further discussion."],["most / mostly","most 是最高级或“非常”；mostly 是副词“主要地”","most students / The work is mostly done."],["already / yet / just","already 用于肯定句；yet 用于否定句和疑问句句末；just 表示“刚刚”","He has already left. / Has he left yet? / He has just left."],["hard / hardly","hard 表示努力、猛烈；hardly 表示几乎不","He works hard. / I can hardly believe it."],["late / lately","late 表示迟、晚；lately 表示最近","He came late. / I haven’t seen him lately."]]}]},"gmh_o":{"b":[{"k":"p","v":"表17  动词的分类"},{"k":"t","v":[["类别","说明","例词与例句"],["实义动词","有实在意义，能单独作谓语；分为及物动词（vt.，后接宾语）和不及物动词（vi.，不接宾语）","He reads books.（及物）/ Birds fly.（不及物）"],["系动词","后接表语，说明主语的身份、性质或状态","be, become, get, turn, grow, look, sound, smell, taste, feel, seem, appear, remain, stay, keep；The food tastes good."],["助动词","没有实在意义，不能单独作谓语，帮助构成时态、语态、否定句、疑问句和强调句","be（进行时、被动语态）/ do（否定、疑问、强调）/ have（完成时）/ will、shall（将来时）"],["情态动词","有词汇意义，与动词原形一起构成谓语，表示能力、许可、推测、义务等","can, could, may, might, must, should, ought to, will, would, need, dare"],["短语动词","动词加介词或副词，整体相当于一个动词","look after, turn on, give up, take care of；宾语为代词时放在动词与副词之间：turn it on"]]}]},"gmh_p":{"b":[{"k":"p","v":"表18  常用情态动词"},{"k":"t","v":[["情态动词","主要意义","否定形式","例句"],["can / could","能力；许可；推测，could 语气更弱","can’t / couldn’t","I can swim. / Can I use your pen? / It can’t be true."],["may / might","许可；推测，might 可能性更小；祝愿","may not / mightn’t","May I come in? / He may be at home. / May you succeed!"],["must","必须；肯定推测","mustn’t 表示禁止；needn’t 表示不必","You must go now. / He must be tired."],["should / ought to","应该；推测","shouldn’t / oughtn’t to","You should see a doctor."],["will / would","意愿、请求、将来；would 表示过去习惯或委婉语气","won’t / wouldn’t","Will you help me? / He would sit there for hours."],["shall","征求意见，用于第一、三人称；规定","shan’t","Shall we go?"],["need","需要，多用于否定句和疑问句","needn’t","You needn’t worry. / Need I go?"],["dare","敢","daren’t","He dare not speak."],["had better","最好，后接动词原形","had better not","You’d better not be late."],["would rather","宁愿，后接动词原形","would rather not","I’d rather stay at home."],["be able to","能够，可用于各种时态","not be able to","He will be able to come."],["have to","不得不，强调客观需要","don’t have to（不必）","I have to work on Sunday."]]}]},"gmh_q":{"b":[{"k":"p","v":"表19  动词的五种形式"},{"k":"t","v":[["形式","构成","主要用途"],["原形","词典中的形式","一般现在时（第三人称单数除外）、祈使句、情态动词之后、不带 to 的不定式"],["第三人称单数","一般现在时主语为 he、she、it 或单数名词时加 s 或 es","表示现在的习惯、状态或客观事实"],["现在分词","动词加 ing","进行时；作定语、状语、表语、宾语补足语"],["过去式","规则动词加 ed，不规则动词需记忆","一般过去时的谓语"],["过去分词","规则动词加 ed，不规则动词需记忆","完成时、被动语态；作定语、状语、表语、宾语补足语"]]},{"k":"p","v":"现在分词的变化：一般直接加 ing；以不发音的 e 结尾去 e 加 ing（write—writing，make—making）；重读闭音节且末尾只有一个辅音字母，双写后加 ing（run—running，begin—beginning）；以 ie 结尾变 y 加 ing（die—dying，lie—lying）。"},{"k":"p","v":"过去式的读音：在清辅音后读 /t/（worked，stopped）；在浊辅音和元音后读 /d/（played，cleaned）；在 t、d 后读 /ɪd/（wanted，needed）。"}]},"gmh_r":{"b":[{"k":"p","v":"英语时态由“时间”和“体”两个维度交叉构成：时间分为现在、过去、将来、过去将来，体分为一般、进行、完成、完成进行，共十六种。下表按四条构成规律排列：进行体用 be 加现在分词，完成体用 have 加过去分词，完成进行体用 have been 加现在分词，一般体用动词本身。先掌握常用的八种，其余按规律推导即可。"},{"k":"p","v":"表20  十六种时态的构成"},{"k":"t","v":[["时态","肯定式","否定式","疑问式"],["一般现在时","主语 + 动词原形（第三人称单数加 s）","主语 + don’t / doesn’t + 原形","Do / Does + 主语 + 原形?"],["一般过去时","主语 + 动词过去式","主语 + didn’t + 原形","Did + 主语 + 原形?"],["一般将来时","主语 + will + 原形","主语 + won’t + 原形","Will + 主语 + 原形?"],["一般过去将来时","主语 + would + 原形","主语 + wouldn’t + 原形","Would + 主语 + 原形?"],["现在进行时","主语 + am / is / are + 现在分词","主语 + am / is / are + not + 现在分词","Am / Is / Are + 主语 + 现在分词?"],["过去进行时","主语 + was / were + 现在分词","主语 + was / were + not + 现在分词","Was / Were + 主语 + 现在分词?"],["将来进行时","主语 + will be + 现在分词","主语 + won’t be + 现在分词","Will + 主语 + be + 现在分词?"],["过去将来进行时","主语 + would be + 现在分词","主语 + wouldn’t be + 现在分词","Would + 主语 + be + 现在分词?"],["现在完成时","主语 + have / has + 过去分词","主语 + haven’t / hasn’t + 过去分词","Have / Has + 主语 + 过去分词?"],["过去完成时","主语 + had + 过去分词","主语 + hadn’t + 过去分词","Had + 主语 + 过去分词?"],["将来完成时","主语 + will have + 过去分词","主语 + won’t have + 过去分词","Will + 主语 + have + 过去分词?"],["过去将来完成时","主语 + would have + 过去分词","主语 + wouldn’t have + 过去分词","Would + 主语 + have + 过去分词?"],["现在完成进行时","主语 + have / has been + 现在分词","主语 + haven’t / hasn’t been + 现在分词","Have / Has + 主语 + been + 现在分词?"],["过去完成进行时","主语 + had been + 现在分词","主语 + hadn’t been + 现在分词","Had + 主语 + been + 现在分词?"],["将来完成进行时","主语 + will have been + 现在分词","主语 + won’t have been + 现在分词","Will + 主语 + have been + 现在分词?"],["过去将来完成进行时","主语 + would have been + 现在分词","主语 + wouldn’t have been + 现在分词","Would + 主语 + have been + 现在分词?"]]},{"k":"p","v":"表21  常用时态的典型用法"},{"k":"t","v":[["时态","典型用法","例句"],["一般现在时","经常性、习惯性动作；客观真理；时刻表安排","He goes to work by bus. / The earth moves around the sun. / The train leaves at seven."],["一般过去时","过去某一时间发生并已结束的动作，常带过去时间状语","I met him yesterday. / She lived in Paris in 2020."],["一般将来时","将来发生的动作或状态；临时决定、承诺、预测","I will call you tonight. / It will rain tomorrow."],["现在进行时","此刻正在进行的动作；近期按计划将发生的事；与 always 连用表示抱怨","He is reading now. / We are leaving tomorrow. / She is always losing her keys."],["过去进行时","过去某一时刻或某段时间正在进行的动作，常与 when、while 连用","I was having dinner when the phone rang."],["现在完成时","过去动作对现在有影响；从过去持续到现在，常与 for、since 连用；不与明确的过去时间连用","I have lost my key. / He has lived here for ten years."],["现在完成进行时","从过去持续到现在并可能继续，强调动作过程","She has been working since eight."],["过去完成时","“过去的过去”，以过去某一时间为参照","When I arrived, he had left."],["将来完成时","到将来某一时间已经完成的动作","By next June, I will have finished the course."]]},{"k":"p","v":"易错：一般过去时的肯定式是“主语 + 动词过去式”，不是“过去分词”。过去分词不能单独作谓语，它只能出现在完成时（have done）或被动语态（be done）里。原稿把这一条写成“动词过去分词”，属于高频错误，务必改为过去式。"}]},"gmh_s":{"b":[{"k":"p","v":"表22  被动语态在各时态中的构成"},{"k":"t","v":[["时态","被动构成","例句"],["一般现在时","am / is / are + 过去分词","The room is cleaned every day."],["一般过去时","was / were + 过去分词","The letter was written by Tom."],["一般将来时","will be + 过去分词","The house will be sold next week."],["现在进行时","am / is / are being + 过去分词","The bridge is being built."],["过去进行时","was / were being + 过去分词","The car was being repaired then."],["现在完成时","have / has been + 过去分词","The trees have been planted."],["过去完成时","had been + 过去分词","The work had been finished before ten."],["情态动词","情态动词 + be + 过去分词","The problem can be solved."]]},{"k":"p","v":"主动句变被动句分四步：第一，把主动句的宾语移到句首作主语；第二，把谓语改成 be 加过去分词，时态不变，be 动词的人称和数随新主语变化；第三，原主语前加 by，代词改为宾格，放在谓语之后，不重要时可以省略；第四，其余成分保持不变。"},{"k":"p","v":"双宾语的被动形式有两种：以间接宾语（人）作主语时，直接宾语留在原位，如 He was given a book.；以直接宾语（物）作主语时，间接宾语前加 to 或 for，如 A book was given to him."},{"k":"p","v":"宾语补足语的被动形式：主动句的宾语变为被动句的主语，原宾语补足语保留下来作主语补足语。We made him our monitor. 变为 He was made our monitor."},{"k":"p","v":"易错：happen、occur、take place、break out、belong to、consist of、cost、fit、suit、last、hold（容纳）等动词没有被动语态。短语动词变被动时，介词或副词不能丢，如 The child was looked after by his aunt."}]},"gmh_t":{"b":[{"k":"p","v":"表23  非谓语动词的四种形式"},{"k":"t","v":[["形式","句法功能","意义","例句"],["不定式 to do","主语、宾语、表语、定语、状语、宾语补足语","多表示将来、目的或一次性的具体动作","To learn a language takes time. / I want to go. / He came to help."],["动名词 doing","主语、宾语、表语、定语","多表示习惯、已发生或抽象的动作，具有名词性质","Reading is useful. / I enjoy reading."],["现在分词 doing","定语、状语、表语、宾语补足语","主动、进行","a sleeping baby / He sat there, reading."],["过去分词 done","定语、状语、表语、宾语补足语","被动、完成","a broken window / Seen from the hill, the city looks beautiful."]]},{"k":"p","v":"省略 to 的场合：情态动词之后；感官动词 see、hear、watch、notice、feel、observe 加宾语加动词原形，变为被动语态时要还原 to；使役动词 let、make、have 加宾语加动词原形；why（not）加动词原形；had better、would rather 之后；but、except 前有实义动词 do 时；两个以上作用相同的不定式并列，第一个带 to，其余可省；help 后的 to 可以省略。"},{"k":"p","v":"表24  动名词与不定式作宾语的区别"},{"k":"t","v":[["动词","后接 doing","后接 to do"],["remember","记得做过某事","记得要去做某事"],["forget","忘记做过某事","忘记要去做某事"],["regret","后悔做过某事","遗憾要去做某事"],["stop","停止正在做的事","停下来去做另一件事"],["try","试着做，看效果如何","努力去做"],["mean","意味着","打算做"],["go on","继续做同一件事","接着做另一件事"]]},{"k":"p","v":"独立主格结构：非谓语动词带有自己的逻辑主语，且与主句主语不同时，构成“名词或代词加非谓语”的独立结构，在句中作状语。The weather being fine, we went out.（天气好，我们出去了）/ There being no bus, we had to walk.（没有公交车，我们只好走路）/ His hands tied, he could not move.（双手被绑，他动不了）/ The work finished, they went home.（工作完成，他们回家了）"}]},"gmh_v":{"b":[{"k":"p","v":"表25  介词的分类"},{"k":"t","v":[["分类方式","类别","示例"],["按结构分","单个介词","at, in, on, of, for, with, by, from, to"],["按结构分","合成介词","into, inside, outside, onto, throughout, within"],["按结构分","分词介词","including, considering, concerning, regarding"],["按结构分","短语介词","in front of, because of, according to, instead of, in spite of, thanks to"],["按词义分","表示时间、地点、方向、方式、涉及、目的、原因、比较、伴随","at, in, on, for, with, by, like, about"]]}]},"gmh_w":{"b":[{"k":"p","v":"表26  in、on、at 表示时间与地点的区别"},{"k":"t","v":[["介词","表示时间","表示地点","例句"],["in","年、月、季节、上午下午晚上、一段时间之后","大地方（城市、国家）；范围内部","in 2024 / in May / in the morning / in two hours / in Chengdu / in the room"],["on","具体某天、星期、日期、某天的上下午、节日当天","平面、表面、接触","on Monday / on May 1st / on the morning of May 1st / on the desk / on the wall"],["at","具体时刻、中午、夜晚、周末","小地点、具体位置","at seven / at noon / at night / at the weekend / at the station / at the corner"]]},{"k":"p","v":"常考固定搭配：arrive at（小地点）、arrive in（大地点）、listen to、wait for、look for、be good at、be good for、be good to、be interested in、be afraid of、be proud of、depend on、congratulations on。介词后接动词时要用动名词，如 I am good at swimming."},{"k":"p","v":"易错：in the corner 指在角落内部，at the corner 指在拐角处，on the corner 指在拐角上（美式用法）。on the wall 是“在墙面上”，in the wall 是“嵌在墙里”。"}]},"gmh_x":{"b":[{"k":"p","v":"连词连接词、短语、分句或句子，本身不作句子成分。按功能分为并列连词和从属连词两大类：并列连词连接对等的成分，从属连词引导从句，使从句成为主句的一个成分。"},{"k":"p","v":"表27  连词的分类与用法"},{"k":"t","v":[["类别","连词","作用","例句"],["并列连词","and, but, or, so, for, while, when","连接并列的词、短语或分句","He took his bag and left. / It was late, so we went home."],["关联连词","both...and, not only...but also, either...or, neither...nor, as well as","连接两个对等成分，谓语按就近或就远原则","Both he and I are right. / Not only he but also I am wrong."],["从属连词（名词性）","that, whether, if","引导主语从句、宾语从句、表语从句、同位语从句","I know that he is right. / I wonder whether he will come."],["从属连词（定语）","who, whom, whose, which, that, as","引导定语从句","The book that I bought is useful."],["从属连词（状语）","when, while, because, although, so that, if, as if","引导时间、原因、让步、目的、条件、方式状语从句","When he came, I was reading. / If it rains, we will stay at home."]]},{"k":"p","v":"易错：because 与 so 不能同时使用，although 与 but 不能同时使用，二者只能留一个。and 与 or 连接的两个成分形式要一致，如 to read and to write，不能说 to read and write。"}]},"gmh_y":{"b":[{"k":"p","v":"感叹词表示说话时的情绪或语气，不充当句子成分，通常独立于句子之外，用逗号与句子隔开。它多用于口语，正式书面语中较少出现。"},{"k":"p","v":"表28  常用感叹词"},{"k":"t","v":[["感叹词","表达的语气","例句"],["oh","惊讶、突然明白","Oh, I see."],["ah","恍然、欣慰、遗憾","Ah, that’s why he left."],["wow","赞叹","Wow, what a view!"],["alas","遗憾、惋惜，较书面","Alas, he failed again."],["ouch","疼痛","Ouch, that hurts!"],["hey","招呼、提醒","Hey, wait for me!"],["well","犹豫、转折","Well, it’s hard to say."],["please / thanks / sorry","礼貌用语","Please come in. / Thanks a lot. / Sorry to trouble you."],["yes / no","肯定、否定应答","Yes, of course. / No, I don’t think so."]]},{"k":"p","v":"要注意区分感叹词与感叹句：what 和 how 引导的感叹句是完整的句子，有主语和谓语，属于句型范畴，不是感叹词。"}]},"gmh_z":{"b":[{"k":"p","v":"句法解决两个问题：一个句子由哪些成分搭成，这些成分按什么顺序排列。传统语法把句型概括为五种基本骨架，再按用途分为陈述、疑问、祈使、感叹四类，按结构分为简单句、并列句和复合句。掌握五种骨架，绝大多数句子都能拆开看懂。"}]},"gmh_10":{"b":[{"k":"p","v":"表29  英语的五种基本句型"},{"k":"t","v":[["句型","构成","谓语特点","例句"],["主 + 谓","主语 + 不及物动词","动词后不接宾语","The universe remains. / Birds fly in the sky."],["主 + 谓 + 宾","主语 + 及物动词 + 宾语","动词必须有宾语","He took his bag and left. / She reads novels."],["主 + 系 + 表","主语 + 系动词 + 表语","系动词后接名词、形容词或介词短语，说明主语","The food is delicious. / He looks tired. / She is in the room."],["主 + 谓 + 间接宾语 + 直接宾语","主语 + 动词 + 人 + 物","可转换为带 to 或 for 的结构","His father bought her a dictionary. / Give me the book."],["主 + 谓 + 宾 + 宾补","主语 + 动词 + 宾语 + 补语","宾语与补语之间有逻辑上的主谓关系","We made him our monitor. / I found the book interesting."]]},{"k":"p","v":"双宾语与宾语补足语最容易混淆。判断方法是：双宾语的两个成分都是宾语，可以把间接宾语改写为 to 或 for 引导的短语，Give me the book 等于 Give the book to me；宾语补足语与宾语之间存在“是”或“成为”的逻辑关系，不能改写成介词短语，We made him our monitor 意思是“我们使他成为班长”。"},{"k":"p","v":"There be 句型表示“某处有某物”，be 动词的单复数由后面的名词决定：There is a book on the desk. / There are some books on the desk. 它与 have 的分工是：There be 说存在，have 说拥有。不能说 There have some books，应说 There are some books 或 I have some books."}]},"gmh_12":{"b":[{"k":"p","v":"陈述句用来说明事实或观点。肯定式按五种基本句型构成；否定式在 be 动词、助动词或情态动词后加 not，实义动词则借助 do、does、did 加 not，主要动词回到原形。He is not a teacher. / He doesn’t like coffee. / I didn’t see him yesterday."}]},"gmh_13":{"b":[{"k":"p","v":"表30  四种疑问句"},{"k":"t","v":[["类型","构成","答语与例句"],["一般疑问句","把 be 动词、助动词或情态动词提到主语之前","Is he a doctor? Yes, he is. / Do you like tea? No, I don’t."],["特殊疑问句","疑问词加一般疑问句语序；疑问词作主语时用陈述语序","Where do you live? / Who broke the window?"],["选择疑问句","用 or 连接两个选项，不能用 yes 或 no 回答","Would you like tea or coffee? — Coffee, please."],["反意疑问句","前肯后否、前否后肯，简短问句与主句的时态和人称一致","He is a student, isn’t he? / She doesn’t like it, does she?"]]},{"k":"p","v":"表31  反意疑问句的特殊情况"},{"k":"t","v":[["情况","简短问句","例句"],["陈述部分含 never、hardly、seldom、little、few、nothing、nobody、nowhere","用肯定形式","He never comes late, does he?"],["陈述部分是 Let’s...","shall we","Let’s go, shall we?"],["陈述部分是 Let us...","will you","Let us go, will you?"],["陈述部分有 must 表示“必须”","needn’t","You must go now, needn’t you?"],["陈述部分有 must 表示推测","看 must 后面的动词形式","He must be at home, isn’t he?"],["陈述部分是 I am...","aren’t I","I am right, aren’t I?"],["陈述部分是祈使句","will you 或 won’t you","Open the door, will you?"],["陈述部分是 there be","用 there 呼应","There is a book, isn’t there?"],["主句是 I think、I believe 加宾语从句","与从句一致","I think he is right, isn’t he?"]]}]},"gmh_14":{"b":[{"k":"p","v":"祈使句以动词原形开头，主语 you 通常省略；否定式在句首加 Don’t 或 Never；Let’s、Let me 表示建议。Come in, please. / Don’t shut the door. / Never give up. / Let’s begin."}]},"gmh_15":{"b":[{"k":"p","v":"表32  感叹句的四种结构"},{"k":"t","v":[["结构","适用对象","例句"],["What 加 a（an）加形容词加单数可数名词加主语加谓语","单数可数名词","What a beautiful garden it is!"],["What 加形容词加复数名词或不可数名词加主语加谓语","复数名词或不可数名词","What beautiful flowers they are! / What fine weather it is!"],["How 加形容词或副词加主语加谓语","形容词或副词","How fast he runs!"],["How 加形容词加 a（an）加单数可数名词加主语加谓语","单数可数名词","How beautiful a garden it is!"]]},{"k":"p","v":"易错：weather、news、information 是不可数名词，不能说 What a fine weather，应说 What fine weather。"}]},"gmh_16":{"b":[{"k":"p","v":"复合句由一个主句和一个或一个以上的从句构成。从句按功能分为三类：名词性从句在句中充当主语、宾语、表语或同位语；定语从句修饰名词；状语从句修饰主句的动词或整个主句。三类从句的引导词有重叠，判断时看从句在主句中充当什么成分。"}]},"gmh_17":{"b":[{"k":"p","v":"表33  四种名词性从句"},{"k":"t","v":[["种类","句中位置","常用引导词","例句"],["主语从句","作主语，常用 it 作形式主语","that, whether, who, what, whatever, when, where, how, why","What he said is true. / It is important that we should learn English."],["宾语从句","作动词或介词的宾语","that（常省略）, whether, if, who, what, when, where, how, why","I know that he is right. / I wonder whether he will come."],["表语从句","位于系动词之后","that, whether, as if, because, who, what, when, where, how, why","The truth is that he lied. / It looks as if it will rain."],["同位语从句","位于抽象名词之后，说明其具体内容","that, whether, who, what, when, where, how, why","The news that he won the prize is true."]]},{"k":"p","v":"三条要点：第一，名词性从句一律用陈述语序，不能用疑问语序，不能说 I don’t know where is he，应说 I don’t know where he is；第二，that 在主语从句、表语从句和同位语从句中不能省略，只在宾语从句中可以省略；第三，whether 可以用在介词之后、主语从句、表语从句和同位语从句中，if 只能用在宾语从句中。"},{"k":"p","v":"时态呼应：主句是过去时，宾语从句一般要用过去的某种时态；但从句表示客观真理时，仍用一般现在时。He said that the earth moves around the sun."}]},"gmh_18":{"b":[{"k":"p","v":"表34  定语从句的关系词"},{"k":"t","v":[["先行词","关系词","在从句中充当","例句"],["人","who / that","主语","The man who is standing there is my teacher."],["人","whom / that","宾语，可省略","The girl (whom) you met is my sister."],["人","whose","定语","The boy whose father is a doctor is my friend."],["物","which / that","主语或宾语","This is the book that I bought."],["物","whose","定语，表示所属","the house whose windows are red"],["时间","when，相当于 in / on / at which","时间状语","I’ll never forget the day when we met."],["地点","where，相当于 in / at / on which","地点状语","This is the house where he lived."],["原因","why，相当于 for which","原因状语","That is the reason why he left."]]},{"k":"p","v":"表35  关系词的选择限制"},{"k":"t","v":[["情形","关系词"],["先行词为 all、everything、anything、nothing、little、much、none","只能用 that"],["先行词被序数词或最高级修饰","只能用 that"],["先行词被 the only、the very、the same 修饰","只能用 that"],["先行词既有人又有物","只能用 that"],["主句以 who 或 which 开头","只能用 that"],["非限制性定语从句，有逗号隔开","不用 that，用 which 或 who"],["关系词前有介词","不用 that，用 which 或 whom"]]},{"k":"p","v":"非限制性定语从句用逗号与主句隔开，只起补充说明作用，去掉后主句意思仍然完整。which 可以指代整个主句，如 He passed the exam, which surprised us.；as 也可指代整句，并带有“正如”的意思，如 As we all know, the earth is round."}]},"gmh_19":{"b":[{"k":"p","v":"表36  九类状语从句"},{"k":"t","v":[["类型","常用连词","要点","例句"],["时间","when, while, as, before, after, since, until, as soon as","主句用将来时，从句用一般现在时","I’ll call you as soon as I arrive."],["地点","where, wherever","表示位置或方向","Stay where you are."],["原因","because, since, as, now that","because 语气最强，用来回答 why","He didn’t come because he was ill."],["目的","so that, in order that","从句中常含 can、could、may、might","He got up early so that he could catch the bus."],["结果","so...that, such...that","so 后接形容词或副词，such 后接名词","He ran so fast that nobody could catch him."],["条件","if, unless, as long as, in case","主句将来时，从句用一般现在时","If it rains tomorrow, we will stay at home."],["让步","though, although, even if, even though, no matter how","不与 but 连用","Although he is young, he knows a lot."],["比较","as...as, than, the more...the more","与比较结构配合使用","He is taller than I am."],["方式","as, as if, as though","表示按某种方式或好像","Do as I told you."]]},{"k":"p","v":"“主将从现”是条件句和时间状语从句中最常考的一条：主句表示将来，从句用一般现在时表示将来，不能用 will。误：If it will rain tomorrow, we will stay at home. 正：If it rains tomorrow, we will stay at home."}]},"gmh_1a":{"b":[{"k":"p","v":"表37  句子的九种成分"},{"k":"t","v":[["成分","作用","常由什么充当","例句"],["主语","句子陈述的对象","名词、代词、数词、动名词、不定式、从句","The students are working. / To see is to believe."],["谓语","说明主语的动作或状态","动词或动词短语","He works hard. / She is kind."],["表语","说明主语的身份、性质或状态","名词、形容词、代词、数词、介词短语、从句","He is a doctor. / The food is delicious."],["宾语","动作的承受者","名词、代词、数词、动名词、不定式、从句","I like music. / He wants to go."],["双宾语","间接宾语指人，直接宾语指物","名词、代词","He gave me a book."],["宾语补足语","补充说明宾语的状态或身份","名词、形容词、副词、介词短语、非谓语动词","We made him our monitor. / I found it useful."],["定语","修饰名词或代词","形容词、名词、代词、数词、介词短语、从句、非谓语动词","a red apple / the man who called you"],["状语","修饰动词、形容词、副词或整个句子","副词、介词短语、不定式、从句","He runs fast. / When he came, I left."],["同位语","对前面的名词作进一步解释","名词、代词、从句","We students should study hard."]]}]},"gmh_1b":{"b":[{"k":"p","v":"强调句用来突出句中的某一个成分，基本形式是 It is 或 It was 加被强调部分加 that 或 who 加其余部分。被强调的可以是主语、宾语或状语，不能是谓语；要强调谓语，另有助动词 do 的办法。"}]},"gmh_1c":{"b":[{"k":"p","v":"基本结构：It is（was）加被强调部分加 that（指人可用 who 或 whom）加其余部分。以 I met him in the park yesterday 为例，改变被强调部分，可以得到四个句子：强调主语为 It was I who met him in the park yesterday.；强调宾语为 It was him that I met in the park yesterday.；强调地点状语为 It was in the park that I met him yesterday.；强调时间状语为 It was yesterday that I met him in the park."},{"k":"p","v":"注意两点：强调主语时，that 或 who 后面的谓语要与被强调部分保持一致，如 It is I who am wrong.；被强调部分指人时用 who，指物或指状语时用 that。"}]},"gmh_1d":{"b":[{"k":"p","v":"一般疑问句：Is 或 Was it 加被强调部分加 that（who）加其余部分？如 Was it in 2020 that you met him?"},{"k":"p","v":"特殊疑问句：疑问词加 is 或 was it 加 that 加其余部分？如 Who was it that broke the window? / Where was it that you saw him?"}]},"gmh_1e":{"b":[{"k":"p","v":"结构为 It was not until 加时间加 that 加其余部分。原句 He didn’t go to bed until eleven o’clock，强调后为 It was not until eleven o’clock that he went to bed."}]},"gmh_1f":{"b":[{"k":"p","v":"用 do、does、did 加动词原形强调谓语，只用于肯定的陈述句和祈使句，且只用于一般现在时和一般过去时。He does like music.（他确实喜欢音乐）/ Do come in.（一定进来）/ She did call you yesterday.（她昨天确实给你打了电话）"}]},"gmh_1g":{"b":[{"k":"p","v":"判断方法：去掉 It is（was）和 that（who），如果剩下的词仍能组成一个完整的句子，就是强调句；如果不能，就是定语从句或主语从句。It was in the morning that he left，去掉后剩下 he left in the morning，结构完整，是强调句；It was the morning when he left，去掉后剩下 the morning he left，结构不完整，是定语从句。"}]},"gmh_1h":{"b":[{"k":"p","v":"表38  强调的其他手段"},{"k":"t","v":[["手段","用法","例句"],["the very、only、even、just","放在被强调的名词或副词之前","This is the very book I want. / Only he knows the answer."],["倒装","把否定词或 only 短语置于句首","Never have I seen such a film."],["what 引导的从句","用 what 加 be 加 that 的结构突出内容","What he needs is a rest."],["重复与感叹","重复关键词，或改用感叹句","He is very, very tired. / How beautiful it is!"],["反身代词","作同位语强调主语","The headmaster himself attended the meeting."]]}]},"gmh_1i":{"b":[{"k":"p","v":"虚拟语气表示与事实相反、实现可能性很小或主观愿望的情况。它的核心规律是“时态后退一步”：说的虽然是现在或将来，动词形式却退到过去；说的是过去，动词形式退到过去完成。"}]},"gmh_1j":{"b":[{"k":"p","v":"表39  if 条件句中的三种虚拟"},{"k":"t","v":[["与什么事实相反","if 从句","主句","例句"],["现在","一般过去时，be 动词用 were","would、should、could、might 加动词原形","If I were you, I would accept it. / If he had time, he would come."],["过去","had 加过去分词","would、should、could、might 加 have 加过去分词","If you had taken my advice, you would not have failed."],["将来","一般过去时，或 were to do，或 should do","would、should、could、might 加动词原形","If it should rain tomorrow, we would stay at home. / If he were to come, I would tell him."]]},{"k":"p","v":"混合虚拟：从句和主句所指的时间不同时，各按各自的时间处理。If you had taken my advice, you would be better now，从句指过去，主句指现在。"},{"k":"p","v":"省略 if 的倒装：从句中有 were、had、should 时，可以省略 if，把这三个词提到主语之前。Were I you, I would go. / Had I known it, I would have told you. / Should it rain, we would stay at home."}]},"gmh_1k":{"b":[{"k":"p","v":"条件不通过 if 从句表达，而用介词短语、连词或上下文暗示。常见标志有 but for（要不是）、without（没有）、otherwise 或 or（否则）、but that（若不是）。Without your help, I would have failed. / But for the rain, we would have arrived earlier. / He was ill; otherwise he would have come."}]},"gmh_1l":{"b":[{"k":"p","v":"表示建议、命令、要求、坚持的动词后面，that 从句用 should 加动词原形，should 可以省略。这一类的记忆口诀是“一坚持、二命令、三建议、四要求”。"},{"k":"p","v":"表40  触发 should 型虚拟的词"},{"k":"t","v":[["触发词","类别","例句"],["insist","坚持","He insisted that we (should) leave at once."],["order, command","命令","The general ordered that the bridge (should) be destroyed."],["suggest, advise, propose, recommend","建议","I suggest that he (should) see a doctor."],["demand, require, request, ask, urge","要求","They demanded that the rules (should) be changed."],["suggestion, proposal, advice, order, request, idea","上述动词的名词形式","His suggestion that we (should) start early was accepted."],["It is necessary / important / strange / natural that...","主语从句","It is necessary that everyone (should) be present."],["lest, for fear that, in case","以免、以防","Take an umbrella lest it should rain."]]},{"k":"p","v":"易错：insist 表示“坚持说”、suggest 表示“暗示、表明”时，从句用陈述语气，不用虚拟。He insisted that he was not guilty. / His smile suggested that he was happy."}]},"gmh_1m":{"b":[{"k":"p","v":"表41  wish 后的时态选择"},{"k":"t","v":[["愿望所指时间","从句形式","例句"],["现在","一般过去时，be 动词用 were","I wish I were taller."],["过去","had 加过去分词","I wish I had studied harder."],["将来","would 或 could 加动词原形","I wish he would come tomorrow."]]}]},"gmh_1n":{"b":[{"k":"p","v":"表42  常见的其他虚拟结构"},{"k":"t","v":[["结构","形式","例句"],["as if / as though","与现在相反用过去式，与过去相反用 had 加过去分词","He talks as if he knew everything."],["would rather","后接动词原形；接从句时用过去式","I would rather stay here. / I would rather you didn’t go."],["It is (high) time that...","用过去式，或用 should 加原形","It is high time that we left. / It is time that we should go."],["if only","与 wish 相同，语气更强","If only I had known!"]]}]},"gmh_1o":{"b":[{"k":"p","v":"be 动词是英语中使用频率最高的动词，它既是系动词，又是助动词。掌握它的八种形式、两种身份和四个句型，可以解决初学者最常见的一批错误。"},{"k":"p","v":"表43  be 动词的形式"},{"k":"t","v":[["主语","现在时","过去时","否定缩略形式"],["I","am","was","I’m not（没有 amn’t 这种写法）"],["he、she、it、单数名词","is","was","isn’t / wasn’t"],["you、we、they、复数名词","are","were","aren’t / weren’t"],["非谓语形式","being（现在分词）","been（过去分词）","用于进行时、完成时和被动语态"]]}]},"gmh_1p":{"b":[{"k":"p","v":"作系动词时，后面接表语，说明主语的身份、性质、状态或位置。表语可以是名词（He is a teacher.）、形容词（The food is delicious.）、介词短语（She is in the kitchen.）、副词（He is out.）、动名词或从句。"},{"k":"p","v":"作助动词时，它与现在分词构成进行时（He is reading.），与过去分词构成被动语态（The room is cleaned.），与不定式构成 be to do，表示按计划或规定要发生的事。"}]},"gmh_1q":{"b":[{"k":"p","v":"There be 句型表示“某处有某物”，be 动词的单复数由后面的名词决定：There is a book on the desk. / There are some books on the desk.。否定形式是 There isn’t / There aren’t，疑问句把 be 提到 there 之前：Is there any water?"},{"k":"p","v":"be to do 表示按计划、规定或命令要做的事，The meeting is to be held next Monday.；be about to do 表示即将发生的动作，He is about to leave."},{"k":"p","v":"易错：第一，I am 的否定形式是 I am not，英语中没有 I amn’t；第二，表示“某地有某物”用 There be，不能用 have；第三，be 动词后接形容词时，形容词不能加 ly；第四，be 动词提前构成疑问句时，主语是名词要放在 be 之后，Is your father at home?"}]},"gmh_1s":{"b":[{"k":"p","v":"表44  各类句子的否定方式"},{"k":"t","v":[["句子类型","否定方式","例句"],["含 be 动词","be 加 not","He is not a doctor. / They aren’t here."],["含助动词或情态动词","助动词或情态动词加 not","He has not finished. / You mustn’t go."],["含实义动词","do、does、did 加 not，再加动词原形","He doesn’t like coffee. / I didn’t see him."],["祈使句","Don’t 或 Never 加动词原形","Don’t be late. / Never give up."]]}]},"gmh_1t":{"b":[{"k":"p","v":"表45  部分否定与全部否定"},{"k":"t","v":[["结构","含义","例句"],["not all、not both、not every、not each、not always","并非都……，属于部分否定","Not all students are here.（不是所有学生都在）"],["none、neither、nobody、nothing、nowhere","都不……，属于全部否定","None of them came."],["both...not","并非两个都，表达容易引起歧义","宜写成 Not both of them are right."]]}]},"gmh_1u":{"b":[{"k":"p","v":"表46  常见的双重否定结构"},{"k":"t","v":[["结构","含义","例句"],["No one could deny the fact that...","没有人能否认……","No one could deny the fact that he is innocent."],["There is no denying that...","不可否认……","There is no denying that he works hard."],["not...without...","没有……就不……，双重否定表示肯定","We cannot live without water."],["never...but...","每次……都……","He never comes but he brings some gifts."],["cannot...too...","越……越好，再……也不为过","You cannot be too careful."],["not...until...","直到……才……","He didn’t go to bed until eleven."]]}]},"gmh_1v":{"b":[{"k":"p","v":"主句谓语是 think、believe、suppose、expect、imagine 时，否定形式通常放在主句，但否定的是从句的意思。I don’t think he is right 的意思是“我认为他不对”，而不是“我不认为他正确”。这类句子的反意疑问句要与从句保持一致：I don’t think he is right, is he?"}]},"gmh_1w":{"b":[{"k":"p","v":"不定量表达是一组表示“多少”的词，难点不在词义，而在三件事：修饰可数还是不可数、表示肯定还是否定、作主语时谓语用单数还是复数。下表把三件事一次列清。"},{"k":"p","v":"表47  不定量表达总表"},{"k":"t","v":[["词","修饰对象","含义","谓语与要点","例句"],["both","可数名词复数","两者都","复数","Both of them are teachers."],["either","可数名词单数","两者之一","单数","Either answer is right."],["neither","可数名词单数","两者都不","单数","Neither of them is here."],["some","可数复数或不可数","一些","肯定句；请求或期待肯定回答的疑问句也可用","I have some books. / Would you like some tea?"],["any","可数复数或不可数","一些、任何","否定句和疑问句；肯定句中表示“任何”","I don’t have any money. / Any student can join."],["many","可数名词复数","许多","复数","Many people came."],["much","不可数名词","许多","单数","Much time is wasted."],["a lot of、plenty of","两者皆可","许多","看后面名词","A lot of students are here. / A lot of water is wasted."],["a few","可数名词复数","有几个，表示肯定","复数","A few friends came."],["few","可数名词复数","几乎没有，表示否定","复数","Few people know it."],["a little","不可数名词","一点儿，表示肯定","单数","There is a little water left."],["little","不可数名词","几乎没有，表示否定","单数","There is little water left."],["none","of 加名词或代词","一个也没有","可接 of，谓语单复皆可","None of them has come. / None of them have come."],["no one","不接 of","没有人","谓语只用单数","No one knows the answer."],["each","单数名词；each of 加复数","每一个，强调逐个","单数","Each student has a book."],["every","单数名词","每一个，强调整体","单数","Every student has a book."],["all","可数复数或不可数","全部","看后面名词","All the students are here. / All the water is gone."],["most","可数复数或不可数","大多数、大部分","看后面名词","Most people agree. / Most of the water is clean."],["another","单数名词","另一个，泛指","单数","Give me another book."],["other","复数名词或不可数","其他的","复数","Other students are here."],["the other","单数或复数","两者中的另一个；其余的","单数或复数","the other one / the other students"],["others","代词，后面不加名词","其他的人或物","复数","Some like tea; others like coffee."],["the others","代词","其余全部","复数","Three of them left; the others stayed."]]},{"k":"p","v":"记忆要点：few 和 little 是否定，意思是“几乎没有”；a few 和 a little 是肯定，意思是“还有一些”。some 用在疑问句中，表示希望得到肯定回答或提出请求，如 Would you like some coffee?。any 用在肯定句中表示“任何”。none 后面可以接 of，no one 不能接 of。"}]},"gmh_1x":{"b":[{"k":"p","v":"倒装是把谓语或谓语的一部分移到主语之前。全部倒装把整个谓语放到主语前面，部分倒装只把助动词、情态动词或 be 动词提到主语前面。判断用哪一种，先看句首是什么。"}]},"gmh_1y":{"b":[{"k":"p","v":"表48  全部倒装的触发条件"},{"k":"t","v":[["触发条件","结构","例句"],["there be 句型","There 加 be 加主语","There are many books on the shelf."],["表示地点的副词或介词短语置于句首","地点状语加谓语加主语","On the wall hangs a picture. / Here comes the bus."],["here、there、now、then、out、in、up、down、away 置于句首","副词加谓语加主语","Out rushed the children. / Now comes your turn."],["表语置于句首","表语加系动词加主语","Happy are those who work hard."]]},{"k":"p","v":"易错：主语是人称代词时不用全部倒装，要用正常语序：Here he comes. / Away he went.。这是全部倒装最常见的失分点。"}]},"gmh_1z":{"b":[{"k":"p","v":"表49  部分倒装的触发条件"},{"k":"t","v":[["触发条件","结构","例句"],["only 加状语置于句首","Only 加状语加助动词加主语加谓语","Only then did I realize the truth. / Only in this way can we succeed."],["否定意义的词或短语置于句首","否定词加助动词加主语加谓语","Never have I seen such a sight. / Seldom does he go out."],["not only...but also 连接","前一分句倒装，后一分句不倒装","Not only did he come, but he also helped us."],["no sooner...than、hardly...when、scarcely...when","主句用过去完成时并倒装，从句用一般过去时","No sooner had he arrived than it began to rain."],["so、neither、nor 表示“也”或“也不”","So（Neither、Nor）加助动词加主语","I like it. — So do I. / I don’t like it. — Neither do I."],["as 引导让步状语从句","被强调部分加 as 加主语加谓语","Child as he is, he knows a lot. / Hard as he tried, he failed."],["省略 if 的虚拟条件句","Were、Had、Should 加主语","Were I you, I would go. / Had I known it, I would have told you."],["so 加形容词或副词置于句首","So 加形容词或副词加助动词加主语加谓语","So fast did he run that nobody could catch him."],["表示祝愿","May 加主语加动词原形","May you succeed!"]]},{"k":"p","v":"判断口诀：句首出现 only、否定词、so 或 neither、hardly 或 no sooner，先想部分倒装；主语是人称代词时，全部倒装要退回正常语序；not only...but also 只倒前半句。"}]},"gmh_20":{"b":[{"k":"p","v":"下表把前面各章标出的易错点集中列出，可以直接用于考前复查。左列是常见错误写法，中列是正确写法，右列说明错误原因。"},{"k":"p","v":"表50  高频易错点对照表"},{"k":"t","v":[["常见错误","正确写法","原因"],["two informations","two pieces of information","information 是不可数名词"],["an useful book","a useful book","useful 读 /juː/，以辅音音素开头"],["He goed home.","He went home.","go 是不规则动词"],["He don’t watching TV.","He isn’t watching TV.","进行时的否定改 be 动词，不用 don’t"],["He go to school.","He goes to school.","第三人称单数，动词加 s"],["writting","writing","write 以不发音的 e 结尾，去 e 加 ing"],["listen the music","listen to the music","listen 是不及物动词，必须加 to"],["There have some books.","There are some books.","表示存在用 There be，不用 have"],["Are there some magazines?","Are there any magazines?","一般疑问句中通常用 any"],["Yes, they are.（回答 Are there...?）","Yes, there are.","There be 的问句要用 there 回答"],["A number of students is absent.","A number of students are absent.","a number of 加复数，谓语用复数"],["the number of students are increasing","the number of students is increasing","the number of 表示数量，谓语用单数"],["He is one of the students who is late.","He is one of the students who are late.","从句修饰 students，谓语用复数"],["more taller","much taller","比较级不能叠加，程度用 much"],["The man who he called is my uncle.","The man who called him is my uncle.","关系代词已作主语，不能再加 he"],["I don’t know where is he.","I don’t know where he is.","宾语从句用陈述语序"],["If it will rain, we will stay at home.","If it rains, we will stay at home.","主将从现"],["Although he is young, but he knows a lot.","Although he is young, he knows a lot.","although 与 but 不能连用"],["Because he was ill, so he didn’t come.","Because he was ill, he didn’t come.","because 与 so 不能连用"],["If I was you, I would go.","If I were you, I would go.","虚拟语气中 be 动词用 were"],["I wish I have more time.","I wish I had more time.","wish 后表示现在的愿望用过去式"],["He suggested that I went home.","He suggested that I (should) go home.","建议类动词后从句用 should 加原形"],["The book was wrote by him.","The book was written by him.","被动语态用过去分词"],["I am good at swim.","I am good at swimming.","介词后接动名词"],["I am interesting in music.","I am interested in music.","修饰人用 interested"],["What a fine weather!","What fine weather!","weather 是不可数名词，不加 a"],["two third","two thirds","分子大于 1，分母加 s"],["make him to go","make him go","使役动词后省略 to"],["He suggested me to go.","He suggested that I (should) go.","suggest 不接 sb to do"],["arrive to the station","arrive at the station","arrive 后接 at 或 in，不接 to"]]}]},"gmh_21":{"b":[{"k":"p","v":"下表收录最常用的不规则动词。记忆时按“原形—过去式—过去分词”三列一组，注意有些动词的过去式和过去分词同形，有些三者各不相同。"},{"k":"p","v":"表51  常用不规则动词表"},{"k":"t","v":[["原形","过去式","过去分词","释义"],["be","was / were","been","是"],["begin","began","begun","开始"],["break","broke","broken","打破"],["bring","brought","brought","带来"],["build","built","built","建造"],["buy","bought","bought","买"],["catch","caught","caught","抓住"],["come","came","come","来"],["cut","cut","cut","切"],["do","did","done","做"],["draw","drew","drawn","画"],["drink","drank","drunk","喝"],["drive","drove","driven","驾驶"],["eat","ate","eaten","吃"],["fall","fell","fallen","落下"],["feel","felt","felt","感觉"],["find","found","found","找到"],["fly","flew","flown","飞"],["forget","forgot","forgotten","忘记"],["get","got","got / gotten","得到"],["give","gave","given","给"],["go","went","gone","去"],["grow","grew","grown","生长"],["have","had","had","有"],["hear","heard","heard","听见"],["keep","kept","kept","保持"],["know","knew","known","知道"],["leave","left","left","离开"],["lose","lost","lost","丢失"],["make","made","made","制作"],["meet","met","met","遇见"],["put","put","put","放"],["read","read","read","读"],["ride","rode","ridden","骑"],["run","ran","run","跑"],["say","said","said","说"],["see","saw","seen","看见"],["sell","sold","sold","卖"],["send","sent","sent","寄"],["sing","sang","sung","唱"],["sit","sat","sat","坐"],["sleep","slept","slept","睡"],["speak","spoke","spoken","说"],["spend","spent","spent","花费"],["stand","stood","stood","站"],["swim","swam","swum","游泳"],["take","took","taken","拿"],["teach","taught","taught","教"],["tell","told","told","告诉"],["think","thought","thought","想"],["understand","understood","understood","理解"],["wake","woke","woken","醒来"],["wear","wore","worn","穿"],["win","won","won","赢"],["write","wrote","written","写"]]}]}};
+const EC_GM_TITLE_INDEX = {"第一章词法十种词性":"gmh_1","词法十种词性":"gmh_1","一名词noun":"gmh_2","名词noun":"gmh_2","1可数名词与不可数名词":"gmh_3","可数名词与不可数名词":"gmh_3","2复数变化规则":"gmh_4","复数变化规则":"gmh_4","3名词所有格":"gmh_5","名词所有格":"gmh_5","4主谓一致":"gmh_6","主谓一致":"gmh_6","二冠词article":"gmh_7","冠词article":"gmh_7","三代词pronoun":"gmh_8","代词pronoun":"gmh_8","四数词numeral":"gmh_9","数词numeral":"gmh_9","1基数词":"gmh_a","基数词":"gmh_a","2序数词":"gmh_b","序数词":"gmh_b","五形容词adjective":"gmh_c","形容词adjective":"gmh_c","1多个形容词的排列顺序":"gmh_d","多个形容词的排列顺序":"gmh_d","2句法功能":"gmh_e","句法功能":"gmh_e","3比较级与最高级":"gmh_f","比较级与最高级":"gmh_f","4易混比较结构":"gmh_g","易混比较结构":"gmh_g","5易混形容词":"gmh_h","易混形容词":"gmh_h","六副词adverb":"gmh_i","副词adverb":"gmh_i","1分类":"gmh_j","2构成":"gmh_k","3位置":"gmh_l","4易混副词":"gmh_m","易混副词":"gmh_m","七动词verb":"gmh_n","动词verb":"gmh_n","2情态动词":"gmh_p","情态动词":"gmh_p","3动词的形式":"gmh_q","动词的形式":"gmh_q","4时态":"gmh_r","5语态":"gmh_s","6非谓语动词":"gmh_t","非谓语动词":"gmh_t","八介词preposition":"gmh_u","介词preposition":"gmh_u","2inonat的用法对比":"gmh_w","inonat的用法对比":"gmh_w","九连词conjunction":"gmh_x","连词conjunction":"gmh_x","十感叹词interjection":"gmh_y","感叹词interjection":"gmh_y","第二章句法句型与句子成分":"gmh_z","句法句型与句子成分":"gmh_z","一五种基本句型":"gmh_10","五种基本句型":"gmh_10","二句子按用途分类":"gmh_11","句子按用途分类":"gmh_11","1陈述句":"gmh_12","陈述句":"gmh_12","2疑问句":"gmh_13","疑问句":"gmh_13","3祈使句":"gmh_14","祈使句":"gmh_14","4感叹句":"gmh_15","感叹句":"gmh_15","三复合句":"gmh_16","复合句":"gmh_16","1名词性从句":"gmh_17","名词性从句":"gmh_17","2定语从句":"gmh_18","定语从句":"gmh_18","3状语从句":"gmh_19","状语从句":"gmh_19","四九种句子成分":"gmh_1a","九种句子成分":"gmh_1a","第三章强调句":"gmh_1b","强调句":"gmh_1b","一陈述句的强调":"gmh_1c","陈述句的强调":"gmh_1c","二疑问句的强调":"gmh_1d","疑问句的强调":"gmh_1d","三notuntil的强调":"gmh_1e","notuntil的强调":"gmh_1e","四强调谓语动词":"gmh_1f","强调谓语动词":"gmh_1f","五怎样判断是不是强调句":"gmh_1g","怎样判断是不是强调句":"gmh_1g","六其他强调手段":"gmh_1h","其他强调手段":"gmh_1h","第四章虚拟语气":"gmh_1i","虚拟语气":"gmh_1i","一条件句中的虚拟":"gmh_1j","条件句中的虚拟":"gmh_1j","二含蓄条件":"gmh_1k","含蓄条件":"gmh_1k","三名词性从句中的should型虚拟":"gmh_1l","名词性从句中的should型虚拟":"gmh_1l","四wish后的虚拟":"gmh_1m","wish后的虚拟":"gmh_1m","五其他虚拟结构":"gmh_1n","其他虚拟结构":"gmh_1n","第五章be动词":"gmh_1o","be动词":"gmh_1o","一be动词的两种身份":"gmh_1p","be动词的两种身份":"gmh_1p","二常见句型":"gmh_1q","常见句型":"gmh_1q","第六章否定与双重否定":"gmh_1r","否定与双重否定":"gmh_1r","一否定的构成":"gmh_1s","否定的构成":"gmh_1s","二部分否定与全部否定":"gmh_1t","部分否定与全部否定":"gmh_1t","三双重否定":"gmh_1u","双重否定":"gmh_1u","四否定转移":"gmh_1v","否定转移":"gmh_1v","第七章不定量表达":"gmh_1w","不定量表达":"gmh_1w","第八章倒装句":"gmh_1x","倒装句":"gmh_1x","一全部倒装":"gmh_1y","全部倒装":"gmh_1y","二部分倒装":"gmh_1z","部分倒装":"gmh_1z","附录一常见易错点对照":"gmh_20","常见易错点对照":"gmh_20","附录二常用不规则动词":"gmh_21","常用不规则动词":"gmh_21"};
+const EC_GM_HANDOUT_STATS = {"chapters":10,"sections":73,"nodes":74,"paras":126,"tables":51,"cells":1704};
 
-const EC_GM_ICONS = ['🔤', '🧩', '🧱', '✨', '💭', '🅱️', '🚫', '⚖️', '🔄'];
+const EC_GM_ICONS = ["🔤","🧩","✨","💭","🅱️","🚫","⚖️","🔄","⚠️","📜"];
 // 这些标题太泛，不参与自动匹配课文，否则每一课都会被误关联
 const EC_GM_GENERIC = new Set(['分类', '用法', '顺序', '结构', '易混', '形式', '时态', '语态', '其他', '疑问', '肯定', '否定', '肯定式', '做句子成分', '疑问词', '词义分', '结构分']);
 // 课文里常见的另一种说法 → 补到节点的匹配关键词里（用户还能在编辑弹窗里自己加）
-const EC_GM_ALIASES = {
-    'be动词': ['amisare'],
-    '一般现在时': ['present simple'],
-    '一般疑问句': ['yesno回答'],
-    '特殊疑问句': ['what引导', 'wh疑问'],
-    '不定冠词': ['a/an'],
-    '人称代词': ['人称代词主格', '主格代词', '宾格代词'],
-    '现在进行时': ['be+doing'],
-    '一般过去时': ['past simple'],
-    '一般将来时': ['will+动词原形'],
-    '现在完成时': ['have/has+过去分词'],
-    '被动语态': ['be+过去分词'],
-    '强调句': ['itiswas'],
-    '名词性物主代词': ['mine/yours/his/hers'],
-    '形容词性物主代词': ['my/your/his/her'],
-    '反身代词': ['myself/yourself']
-};
+const EC_GM_ALIASES = {"be动词":["amisare"],"一般现在时":["present simple"],"一般疑问句":["yesno回答"],"特殊疑问句":["what引导","wh疑问"],"不定冠词":["aan"],"人称代词":["人称代词主格","主格代词","宾格代词"],"现在进行时":["be+doing"],"一般过去时":["past simple"],"一般将来时":["will+动词原形"],"现在完成时":["havehas+过去分词"],"被动语态":["be+过去分词"],"强调句":["itiswas"],"名词性物主代词":["mineyourshishers"],"形容词性物主代词":["myyourhisher"],"反身代词":["myselfyourself"],"第一章  词法：十种词性":["词法：十种词性","十种词性","10种词性","词性","词法"],"一、名词（noun）":["名词（noun）"],"1. 可数名词与不可数名词":["可数名词与不可数名词","可数名词","不可数名词"],"2. 复数变化规则":["复数变化规则","名词复数","复数"],"3. 名词所有格":["名词所有格","所有格"],"4. 主谓一致":["主谓一致"],"二、冠词（article）":["冠词（article）","冠词","aanthe","不定冠词","定冠词","零冠词","aan","a/an"],"三、代词（pronoun）":["代词（pronoun）","代词"],"四、数词（numeral）":["数词（numeral）","数词"],"1. 基数词":["基数词"],"2. 序数词":["序数词"],"五、形容词（adjective）":["形容词（adjective）","形容词"],"1. 多个形容词的排列顺序":["多个形容词的排列顺序","形容词顺序"],"2. 句法功能":["句法功能"],"3. 比较级与最高级":["比较级与最高级","比较级","最高级"],"4. 易混比较结构":["易混比较结构"],"5. 易混形容词":["易混形容词"],"六、副词（adverb）":["副词（adverb）","副词"],"1. 分类":["分类"],"2. 构成":["构成"],"3. 位置":["位置"],"4. 易混副词":["易混副词"],"七、动词（verb）":["动词（verb）","动词"],"2. 情态动词":["情态动词","modalverb"],"3. 动词的形式":["动词的形式"],"4. 时态":["时态","16种时态","十六种时态","一般现在时","现在完成时","过去完成时","一般过去时","一般将来时","现在进行时"],"5. 语态":["语态","被动语态","主动语态"],"6. 非谓语动词":["非谓语动词","非谓语","不定式","动名词","分词"],"八、介词（preposition）":["介词（preposition）","介词"],"2. in、on、at 的用法对比":["in、on、at 的用法对比"],"九、连词（conjunction）":["连词（conjunction）","连词"],"十、感叹词（interjection）":["感叹词（interjection）","感叹词"],"第二章  句法：句型与句子成分":["句法：句型与句子成分","五种基本句型","5种基本句型","8种句型","句型","句子成分","9种成分","句法"],"一、五种基本句型":["五种基本句型","基本句型","5种基本句型","主谓宾","主系表"],"二、句子按用途分类":["句子按用途分类"],"1. 陈述句":["陈述句"],"2. 疑问句":["疑问句","一般疑问句","特殊疑问句","反意疑问句","选择疑问句","what引导","wh疑问","yesno回答","Yes/No回答"],"3. 祈使句":["祈使句"],"4. 感叹句":["感叹句"],"三、复合句":["复合句","并列句","简单句"],"1. 名词性从句":["名词性从句","主语从句","宾语从句","表语从句","同位语从句"],"2. 定语从句":["定语从句","关系代词","关系副词"],"3. 状语从句":["状语从句","时间状语从句","条件状语从句"],"四、九种句子成分":["九种句子成分","句子成分","9种成分","主语","谓语","宾语","定语","状语","补语"],"第三章  强调句":["强调句","itiswasthat","强调"],"一、陈述句的强调":["陈述句的强调"],"二、疑问句的强调":["疑问句的强调"],"三、not until 的强调":["not until 的强调"],"四、强调谓语动词":["强调谓语动词"],"五、怎样判断是不是强调句":["怎样判断是不是强调句"],"六、其他强调手段":["其他强调手段"],"第四章  虚拟语气":["虚拟语气","if条件句","虚拟","wish"],"一、条件句中的虚拟":["条件句中的虚拟"],"二、含蓄条件":["含蓄条件"],"三、名词性从句中的 should 型虚拟":["名词性从句中的 should 型虚拟"],"四、wish 后的虚拟":["wish 后的虚拟"],"五、其他虚拟结构":["其他虚拟结构"],"第五章  be 动词":["be 动词","be动词","amisare"],"一、be 动词的两种身份":["be 动词的两种身份"],"二、常见句型":["常见句型"],"第六章  否定与双重否定":["否定与双重否定","双否","否定","双重否定","否定转移","部分否定","全部否定"],"一、否定的构成":["否定的构成"],"二、部分否定与全部否定":["部分否定与全部否定"],"三、双重否定":["双重否定"],"四、否定转移":["否定转移"],"第七章  不定量表达":["不定量表达","不定量表达法","不定量","不定代词"],"第八章  倒装句":["倒装句","倒装","部分倒装","全部倒装","herecomes","notonly"],"一、全部倒装":["全部倒装"],"二、部分倒装":["部分倒装"],"附录一  常见易错点对照":["常见易错点对照","易错点","正误对照"],"附录二  常用不规则动词":["常用不规则动词","不规则动词","过去分词表"]};
+
+// v20261110d：框架改为《英语语法系统讲义》的 10 章体系，资料与迁移逻辑见下方
+const EC_GM_DATA_VER = 3;
+const EC_GRAMMAR_EXTRA = []; // v20261110d：改用系统讲义，旧补全数据不再注入
+const EC_GM_NOTES = {}; // v20261110d：讲义正文与表格见 EC_GM_HANDOUT
+
+// ---------- v20261110c：完整体系补全 + 点开看得清内容 ----------
+// 说明表按「节点标题」或「父节点标题|本节点标题」查找，解决「分类/用法」等同名节点串味
+function ecGmNoteFor(n) {
+    if (!n) return null;
+    const t = String(n.t || '').trim();
+    const p = ecGmPath(n);
+    const parent = p.length > 1 ? String(p[p.length - 2]).trim() : '';
+    return EC_GM_NOTES[parent + '|' + t] || EC_GM_NOTES[t] || null;
+}
+// v20261110d：迁移到讲义框架（幂等）＋讲义内容渲染＋全文搜索，见下方集中实现
+// 一次算好每个节点的后代数量，供分支徽标、子知识点清单、全览统计复用
+function ecGmDescMap() {
+    const g = ecGmData(), kids = new Map();
+    g.nodes.forEach(n => {
+        if (!n.pid) return;
+        if (!kids.has(n.pid)) kids.set(n.pid, []);
+        kids.get(n.pid).push(n);
+    });
+    const memo = new Map();
+    const count = id => {
+        if (memo.has(id)) return memo.get(id);
+        memo.set(id, 0);                       // 防环
+        const v = (kids.get(id) || []).reduce((s, k) => s + 1 + count(k.id), 0);
+        memo.set(id, v); return v;
+    };
+    g.nodes.forEach(n => count(n.id));
+    return memo;
+}
+// 点节点后把「讲清 + 例句 + 子知识点」轻推到视野里，避免详情区藏在树下面被忽略
+function ecGmScrollDetail() {
+    setTimeout(() => {
+        try {
+            const q = document.querySelector;
+            const d = q && q.call(document, '.ec-gm-detail');
+            const c = q && q.call(document, '.content');
+            if (!d || !c) return;
+            const dr = d.getBoundingClientRect(), cr = c.getBoundingClientRect();
+            const delta = dr.top - (cr.top + cr.height * 0.55);
+            if (delta > 20) {
+                if (c.scrollTo) c.scrollTo({ top: c.scrollTop + delta, behavior: 'smooth' });
+                else c.scrollTop += delta;
+            }
+        } catch (e) { /* 测试沙箱无真实 DOM */ }
+    }, 60);
+}
+// ---------- v20261110d：以《英语语法系统讲义》为框架重写语法地图 ----------
+// 设计：框架（10 章 / 33 节 / 30 小节）进 state，用户可编辑、可跨端同步；
+// 讲义正文与 51 张对照表是只读静态资料（EC_GM_HANDOUT），不进 state、不占云同步体积。
+// 按「节点 id」优先找回资料；用户导入/恢复框架换了 id 时，再按标题归一化兜底。
+function ecGmHandoutId(n) {
+    if (!n) return '';
+    if (EC_GM_HANDOUT[n.id]) return n.id;
+    const t = String(n.t || '').trim();
+    const short = t.replace(/^第[一二三四五六七八九十百]+章\s*/, '')
+        .replace(/^附录[一二三四五六七八九十]+\s*/, '')
+        .replace(/^[一二三四五六七八九十]+[、．.]\s*/, '')
+        .replace(/^\d+[.．、]\s*/, '').trim();
+    return EC_GM_TITLE_INDEX[ecGmNorm(t)] || EC_GM_TITLE_INDEX[ecGmNorm(short)] || '';
+}
+function ecGmDocOf(n) {
+    const id = ecGmHandoutId(n);
+    return id ? (EC_GM_HANDOUT[id] || null) : null;
+}
+// 讲义全文索引（懒建一次），让搜索能命中表格里的规则、例词与例句
+let _ecGmDocText = null;
+function ecGmDocTextAll() {
+    if (_ecGmDocText) return _ecGmDocText;
+    const m = new Map();
+    Object.keys(EC_GM_HANDOUT).forEach(id => {
+        let s = '';
+        (EC_GM_HANDOUT[id].b || []).forEach(x => {
+            if (x.k === 'p') s += ecGmNorm(x.v);
+            else (x.v || []).forEach(r => (r || []).forEach(c => { s += ecGmNorm(c); }));
+        });
+        m.set(id, s);
+    });
+    _ecGmDocText = m; return m;
+}
+function ecGmDescendants(n) {
+    const out = [];
+    const walk = (x, d) => {
+        if (!x || d > 6) return;
+        ecGmChildren(x.id).forEach(k => { out.push(k); walk(k, d + 1); });
+    };
+    if (n) walk(n, 0);
+    return out;
+}
+// 表格原样转 HTML：首行表头，窄屏横向滚动，不做任何内容改写
+function ecGmTableHTML(rows) {
+    if (!rows || !rows.length) return '';
+    const head = rows[0] || [], body = rows.slice(1), cols = Math.max(1, head.length);
+    const th = head.map(v => '<th>' + escapeHtml(String(v == null ? '' : v)) + '</th>').join('');
+    const trs = body.map(r => {
+        const rr = (r || []).slice(0, cols);
+        while (rr.length < cols) rr.push('');
+        return '<tr>' + rr.map(v => '<td>' + escapeHtml(String(v == null ? '' : v)) + '</td>').join('') + '</tr>';
+    }).join('');
+    return '<div class="ec-gm-table-wrap"><table class="ec-gm-table"><thead><tr>' + th +
+        '</tr></thead><tbody>' + trs + '</tbody></table></div>';
+}
+function ecGmParaHTML(p) {
+    const t = String(p == null ? '' : p);
+    if (!t) return '';
+    if (/^易错[:：]/.test(t)) return '<p class="ec-gm-doc-p is-warn"><b>⚠️ 易错</b>' + escapeHtml(t.replace(/^易错[:：]\s*/, '')) + '</p>';
+    if (/^表\s*\d+/.test(t)) return '<div class="ec-gm-doc-cap">📊 ' + escapeHtml(t) + '</div>';
+    if (/^(用法要点|常见|注意|小结|典型例句|例)[:：]/.test(t)) return '<p class="ec-gm-doc-p is-note">' + escapeHtml(t) + '</p>';
+    return '<p class="ec-gm-doc-p">' + escapeHtml(t) + '</p>';
+}
+function ecGmDocBlocksHTML(doc) {
+    return (doc && doc.b ? doc.b : []).map(x =>
+        x.k === 't' ? ecGmTableHTML(x.v) : ecGmParaHTML(x.v)
+    ).join('');
+}
+function ecGmDocBlockHTML(n, isSel) {
+    const doc = ecGmDocOf(n);
+    if (!doc || !doc.b || !doc.b.length) return '';
+    const tables = doc.b.filter(x => x.k === 't').length;
+    const body = '<div class="ec-gm-doc-body">' + ecGmDocBlocksHTML(doc) + '</div>';
+    if (isSel) return '<section class="ec-gm-doc-sec is-sel">' + body + '</section>';
+    return '<details class="ec-gm-doc-sec" open><summary><span>📖 ' + escapeHtml(n.t) + '</span>' +
+        (tables ? '<small>' + tables + ' 张表</small>' : '') + '</summary>' + body + '</details>';
+}
+// 点一个节点：展示它自己 + 所有后代的讲义内容，各节可单独收起
+function ecGmHandoutHTML(sel) {
+    if (!sel) return '';
+    const chain = [sel].concat(ecGmDescendants(sel));
+    const parts = [];
+    let tables = 0, secs = 0;
+    chain.forEach((n, i) => {
+        const doc = ecGmDocOf(n);
+        if (!doc || !doc.b || !doc.b.length) return;
+        parts.push(ecGmDocBlockHTML(n, i === 0));
+        secs++; tables += doc.b.filter(x => x.k === 't').length;
+    });
+    if (!parts.length) return '<div class="ec-gm-doc-empty">这一格是目录节点，点下面的小节就能看到讲义正文和对照表 📖</div>';
+    return '<div class="ec-gm-doc"><div class="ec-gm-doc-hd">📖 系统讲义 · ' + secs + ' 小节 / ' + tables + ' 张对照表</div>' +
+        parts.join('') + '</div>';
+}
+
+// 一次性迁移：把旧版「9 个零散分支」换成讲义 10 章体系。
+// 旧种子节点写墓碑，挡住其它设备上传的旧快照；用户手动加的节点、补的关键词、
+// 手动关联的课文全部保留；已经是新框架时只补版本号，保证幂等。
+function ecGmEnsureExtras(g) {
+    if (!g || !Array.isArray(g.nodes)) return;
+    const T = Date.now();
+    const tombs = g.tombs || (g.tombs = {});
+    const old = g.nodes.slice();
+    const seedIds = new Set(Object.keys(EC_GM_HANDOUT).concat(['gmh_root']));
+    if (old.some(n => n.id === 'gmh_root')) { g.ver = EC_GM_DATA_VER; return; }
+    // 用户手动新增（uuid）或从别处导入的自定义节点
+    const kept = old.filter(n => n.id && !seedIds.has(n.id) && !/^gms_|^gmx_|^gmi/.test(n.id));
+    // 用户在旧节点上补过的关键词 / 手动关联的课文
+    const edits = old.filter(n => n.alias || (Array.isArray(n.links) && n.links.length));
+    // 旧框架整体写墓碑（gmi 自定义导入的旧节点也一并挡住，避免旧快照复活两套框架）
+    old.forEach(n => { if (n.id && n.pid) tombs[n.id] = T; });
+    if (g.root) tombs[g.root] = T;
+    ecGmSeed(g, EC_GRAMMAR_SEED, 'gmh_', T);
+    // 用同一套匹配引擎把编辑迁回新框架（「10种词性」→「第一章 词法：十种词性」也能对上）；
+    // 先标记版本完成，避免 ecGmFindNode → ecGmData 递归触发迁移。标题一律以讲义为准。
+    g.ver = EC_GM_DATA_VER;
+    edits.forEach(p => {
+        const n = ecGmFindNode(p.t);
+        if (!n) return;
+        if (p.alias && !n.alias) n.alias = p.alias;
+        if (Array.isArray(p.links) && p.links.length && !n.links) n.links = p.links;
+    });
+    kept.forEach((n, i) => {
+        if (g.nodes.some(x => x.id === n.id)) return;
+        const pid = (n.pid && g.nodes.some(x => x.id === n.pid)) ? n.pid : g.root;
+        g.nodes.push(Object.assign({}, n, { pid: pid, o: 100 + i, at: T }));
+    });
+    g.ver = EC_GM_DATA_VER;
+    g.at = (typeof now === 'function') ? now() : String(T);
+    try { if (typeof saveStateLocal === 'function') saveStateLocal(); } catch (e) { /* 测试沙箱 */ }
+    try { if (typeof queueSync === 'function') queueSync(); } catch (e) { /* 测试沙箱 */ }
+}
+
+// 去掉「第X章 / 一、 / 1. / 附录X」序号，供搜索排序与旧数据迁移按同名对齐
+function ecGmShort(t) {
+    return ecGmNorm(String(t || '').trim()
+        .replace(/^第[一二三四五六七八九十百]+章\s*/, '')
+        .replace(/^附录[一二三四五六七八九十]+\s*/, '')
+        .replace(/^[一二三四五六七八九十]+[、．.]\s*/, '')
+        .replace(/^\d+[.．、]\s*/, ''));
+}
+// 搜索：标题 / 关键词命中优先，讲义正文与表格里的规则、例词、例句也能搜到
+function ecGmSearch(q) {
+    const nq = ecGmNorm(q);
+    if (!nq) return [];
+    const g = ecGmData(), byId = new Map(g.nodes.map(x => [x.id, x]));
+    const depthOf = n => { let d = 0, cur = n, guard = 0; while (cur && cur.pid && guard++ < 30) { d++; cur = byId.get(cur.pid); } return d; };
+    const docText = ecGmDocTextAll();
+    const aliasHit = n => (EC_GM_ALIASES[String(n.t).trim()] || []).some(a => {
+        const v = ecGmNorm(a);
+        return v === nq || (v.length >= 3 && nq.indexOf(v) >= 0) || (nq.length >= 3 && v.indexOf(nq) >= 0);
+    });
+    const titleHit = n => ecGmNorm(n.t).indexOf(nq) >= 0 || ecGmNorm(n.alias).indexOf(nq) >= 0 || aliasHit(n);
+    const docHit = n => nq.length >= 2 && (docText.get(ecGmHandoutId(n)) || '').indexOf(nq) >= 0;
+    const hits = g.nodes.filter(n => n.pid && (titleHit(n) || docHit(n)));
+    const rank = n => {
+        const t = ecGmNorm(n.t), st = ecGmShort(n.t);
+        return (titleHit(n) ? 0 : 100000) +
+            (st === nq || t === nq ? 0 : (t.indexOf(nq) === 0 || st.indexOf(nq) === 0) ? 1 : 2) * 1000 +
+            depthOf(n) * 20 + t.length;
+    };
+    return hits.sort((a, b) => rank(a) - rank(b)).slice(0, 40);
+}
+
+function ecGmNoteBoxHTML(n) {
+    const v = ecGmNoteFor(n);
+    if (!v) return '';
+    return '<div class="ec-gm-notebox">' +
+        (v.b ? '<div class="ec-gm-nb-row"><span class="ec-gm-nb-ico">📘</span><div>' + escapeHtml(v.b) + '</div></div>' : '') +
+        (v.e ? '<div class="ec-gm-nb-row ec-gm-nb-eg"><span class="ec-gm-nb-ico">✍️</span><div>' + escapeHtml(v.e) + '</div></div>' : '') +
+        (v.k ? '<div class="ec-gm-nb-row ec-gm-nb-tip"><span class="ec-gm-nb-ico">💡</span><div>' + escapeHtml(v.k) + '</div></div>' : '') +
+        '</div>';
+}
+function ecGmKidsHTML(n, desc) {
+    const kids = ecGmChildren(n.id);
+    if (!kids.length) return '';
+    return '<div class="ec-gm-kidsbox">' +
+        '<div class="ec-gm-kids-hd">这一格下面的内容 <span>' + kids.length + ' 项' + (desc.get(n.id) ? ' · 共 ' + desc.get(n.id) + ' 个知识点' : '') + '</span></div>' +
+        '<div class="ec-gm-kids-list">' + kids.map(k =>
+            '<button class="ec-gm-kid" data-action="ec-gm-goto" data-id="' + ecGmAttr(k.id) + '">' +
+            '<span class="ec-gm-kid-t">' + escapeHtml(k.t) + '</span>' +
+            '<span class="ec-gm-kid-n">' + (desc.get(k.id) ? desc.get(k.id) + ' 项 ›' : '›') + '</span></button>'
+        ).join('') + '</div></div>';
+}
+// 全览：按分支分节，原生 details 折叠；展开某一节就能看到这一支的完整体系
+function ecGmOutlineTreeHTML(n, depth) {
+    const kids = ecGmChildren(n.id);
+    return '<div class="ec-gm-ol-node">' +
+        '<button class="ec-gm-ol-row' + (state._gmSel === n.id ? ' is-sel' : '') + '" style="--gm-d:' + Math.min(depth, 8) + '" data-action="ec-gm-goto" data-id="' + ecGmAttr(n.id) + '">' +
+        '<span class="ec-gm-ol-dot">' + (kids.length ? '▸' : '·') + '</span>' +
+        '<span class="ec-gm-ol-t">' + escapeHtml(n.t) + '</span>' +
+        (kids.length ? '<span class="ec-gm-ol-n">' + kids.length + '</span>' : '') + '</button>' +
+        (kids.length ? '<div class="ec-gm-ol-kids">' + kids.map(k => ecGmOutlineTreeHTML(k, depth + 1)).join('') + '</div>' : '') +
+        '</div>';
+}
+function ecGmOutlineHTML(desc) {
+    const branches = ecGmChildren();
+    return '<div class="ec-gm-outline">' +
+        '<div class="ec-gm-ol-head"><span>📜 完整体系全览 · ' + branches.length + ' 大分支 / ' + (ecGmData().nodes.length - 1) + ' 个知识点 / ' + EC_GM_HANDOUT_STATS.tables + ' 张对照表</span>' +
+        '<button class="ec-gm-ol-toggle" data-action="ec-gm-all-open">全部展开</button>' +
+        '<button class="ec-gm-ol-toggle" data-action="ec-gm-view">🌳 树形阅读</button></div>' +
+        branches.map((b, i) =>
+            '<details class="ec-gm-ol-sec c' + (i % 9) + '"' + (state._gmBranch === b.id ? ' open' : '') + '>' +
+            '<summary><span class="ec-gm-ol-sum-ico">' + EC_GM_ICONS[i % EC_GM_ICONS.length] + '</span>' +
+            '<span class="ec-gm-ol-sum-t">' + escapeHtml(b.t) + '</span>' +
+            '<span class="ec-gm-ol-sum-n">' + (desc.get(b.id) || 0) + ' 个知识点</span></summary>' +
+            '<div class="ec-gm-ol-body">' + ecGmOutlineTreeHTML(b, 0) + '</div></details>'
+        ).join('') + '</div>';
+}
+
 
 function ecGmAttr(s) {
     return escapeHtml(String(s == null ? '' : s)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -13252,7 +13499,8 @@ function ecGmNodeKeys(n) {
     const keys = [];
     const t = ecGmNorm(n.t);
     if (t && t.length >= 3 && !EC_GM_GENERIC.has(String(n.t).trim())) keys.push(t);
-    (EC_GM_ALIASES[String(n.t).trim()] || []).forEach(k => { const v = ecGmNorm(k); if (v.length >= 3) keys.push(v); });
+    // 显式别名允许 2 字（「双否」「倒装」这类课文说法），自动匹配仍要求 >= 3 字防误命中
+    (EC_GM_ALIASES[String(n.t).trim()] || []).forEach(k => { const v = ecGmNorm(k); if (v.length >= 2) keys.push(v); });
     String(n.alias || '').split(/[；;，,｜|]+/).forEach(a => { const v = ecGmNorm(a); if (v.length >= 3) keys.push(v); });
     return keys;
 }
@@ -13260,10 +13508,10 @@ function ecGmNodeKeys(n) {
 function ecGmRootId(g) { return g.root || (g.nodes.find(n => !n.pid) || {}).id || ''; }
 function ecGmSeed(g, seed, prefix, ts) {
     const T = ts || Date.now();
-    const pfx = prefix || 'gms_';          // 初始框架固定前缀 → 跨设备生成同一批 id
+    const pfx = prefix || 'gmh_';          // 初始框架固定前缀 → 跨设备生成同一批 id
     const rootId = pfx + 'root';
     let seq = 0;
-    const nodes = [{ id: rootId, pid: null, t: '英语语法', o: 0, at: 0 }];
+    const nodes = [{ id: rootId, pid: null, t: '英语语法 · 系统讲义', o: 0, at: 0 }];
     const walk = (arr, pid) => (arr || []).forEach((it, i) => {
         const title = (Array.isArray(it) ? String(it[0] || '') : String(it || '')).trim();
         if (!title) return;
@@ -13285,6 +13533,7 @@ function ecGmData() {
     if (!Array.isArray(g.nodes)) g.nodes = [];
     if (!g.tombs || typeof g.tombs !== 'object') g.tombs = {};
     if (!g.seeded || !g.nodes.length) ecGmSeed(g);
+    if ((Number(g.ver) || 0) < EC_GM_DATA_VER) ecGmEnsureExtras(g);
     return g;
 }
 function ecGmChildren(pid) {
@@ -13310,7 +13559,7 @@ function ecGmColorIdx(n) {
     const b = ecGmBranchOf(n);
     if (!b) return 0;
     const i = ecGmChildren().findIndex(x => x.id === b.id);
-    return i < 0 ? 0 : i % 9;
+    return i < 0 ? 0 : i % EC_GM_ICONS.length;
 }
 // 合并：按 id 取时间戳新者胜；墓碑挡住对端旧快照；初始框架未被删除时不会重复
 function ecMergeGrammar(a, b) {
@@ -13332,10 +13581,12 @@ function ecMergeGrammar(a, b) {
     // 导入 / 恢复框架会换一批新 id，旧 root 带墓碑；这里只保留真正还在的根节点，
     // 若两端各导入过不同版本则以时间较新的 root 为准，避免出现两个根导致目录空白。
     const roots = nodes.filter(n => !n.pid).sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0));
-    const root = (roots[0] || {}).id || A.root || B.root || 'gms_root';
+    const root = (roots[0] || {}).id || A.root || B.root || 'gmh_root';
     nodes = nodes.filter(n => n.pid || n.id === root);
-    if (!nodes.some(n => n.id === root)) nodes.unshift({ id: root, pid: null, t: '英语语法', o: 0, at: 0 });
-    return { root, nodes, tombs, seeded: true, at: String(A.at || '') > String(B.at || '') ? A.at : (B.at || A.at) };
+    if (!nodes.some(n => n.id === root)) nodes.unshift({ id: root, pid: null, t: '英语语法 · 系统讲义', o: 0, at: 0 });
+    return { root, nodes, tombs, seeded: true,
+        ver: Math.max(Number(A.ver) || 0, Number(B.ver) || 0),
+        at: String(A.at || '') > String(B.at || '') ? A.at : (B.at || A.at) };
 }
 
 // ---------- 课文 ↔ 导图 匹配 ----------
@@ -13372,20 +13623,6 @@ function ecGmFindNode(term) {
         });
     });
     return score >= 60 ? best : null;
-}
-function ecGmSearch(q) {
-    const nq = ecGmNorm(q);
-    if (!nq) return [];
-    const g = ecGmData(), byId = new Map(g.nodes.map(x => [x.id, x]));
-    const depthOf = n => { let d = 0, cur = n, guard = 0; while (cur && cur.pid && guard++ < 30) { d++; cur = byId.get(cur.pid); } return d; };
-    const hits = g.nodes.filter(n => n.pid && (ecGmNorm(n.t).indexOf(nq) >= 0 || ecGmNorm(n.alias).indexOf(nq) >= 0));
-    // 完全同名 > 以关键词开头 > 其它；同档里越靠主干、名字越短的排越前，
-    // 否则搜「be 动词」会先蹦出一串「肯定：主语+be 动词+…」的例句公式。
-    const rank = n => {
-        const t = ecGmNorm(n.t);
-        return (t === nq ? 0 : t.indexOf(nq) === 0 ? 1 : 2) * 1000 + depthOf(n) * 20 + t.length;
-    };
-    return hits.sort((a, b) => rank(a) - rank(b)).slice(0, 40);
 }
 function ecGmReveal(id) {
     const g = ecGmData(), byId = new Map(g.nodes.map(x => [x.id, x])), rootId = ecGmRootId(g);
@@ -13425,19 +13662,22 @@ function ecGmSearchHTML(q) {
         ).join('') + '</div>' +
         '<div class="ec-gm-search-acts"><button class="btn btn-sm btn-secondary" data-action="ec-gm-clear-q">清空搜索</button></div>';
 }
-function ecGmDetailHTML(sel, matchMap, edit) {
-    if (!sel) return '<div class="ec-gm-empty">点一个分支展开框架，再点具体的语法点；和它有关的课文会自动列在下面 📖</div>';
+function ecGmDetailHTML(sel, matchMap, edit, desc) {
+    if (!sel) return '<div class="ec-gm-empty">点一个分支展开框架，再点具体的语法点，这里会讲清它是什么、举例子、列出下面的全部子知识点 📖<br>想一次看全貌，点上方的「📜 完整体系全览」。</div>';
     const path = ecGmPath(sel);
     const lessons = matchMap.get(sel.id) || [];
     const manual = Array.isArray(sel.links) ? sel.links : [];
     return '<div class="ec-gm-detail">' +
         '<div class="ec-gm-detail-path">' + path.map(t => escapeHtml(t)).join(' › ') + '</div>' +
         '<div class="ec-gm-detail-title">🧩 ' + escapeHtml(sel.t) + '</div>' +
+        ecGmNoteBoxHTML(sel) +
+        ecGmKidsHTML(sel, desc || new Map()) +
         '<div class="ec-gm-detail-hint">' + (lessons.length ? '这些课文里出现过它，点一下就回到课文' : '还没有课文和它牵上手，可以在课文里点语法点过来看看') + '</div>' +
         (lessons.length ? '<div class="ec-gm-lessons">' + lessons.slice(0, 24).map(x =>
             '<button class="ec-gm-lesson" data-action="ec-gm-open-lesson" data-id="' + ecGmAttr(x.id) + '">' +
             '<span>📖 ' + escapeHtml(x.name) + '</span><small>' + escapeHtml(x.book) + ' ›</small></button>'
         ).join('') + '</div>' : '') +
+        ecGmHandoutHTML(sel) +
         (edit ? '<div class="ec-gm-detail-ops">' +
             '<button class="btn btn-sm btn-secondary" data-action="ec-gm-edit" data-id="' + ecGmAttr(sel.id) + '">✏️ 改名字/关键词</button>' +
             '<button class="btn btn-sm btn-secondary" data-action="ec-gm-add-form" data-id="' + ecGmAttr(sel.id) + '">＋ 加子节点</button>' +
@@ -13460,6 +13700,13 @@ function ecGrammarCardHTML() {
     const branch = state._gmBranch || (branches[0] ? branches[0].id : '');
     const sel = state._gmSel ? ecGmNode(state._gmSel) : null;
     const adding = state._gmAdding || '';
+    const desc = ecGmDescMap();
+    const view = state._gmView === 'outline' ? 'outline' : 'tree';
+    // 首次进来默认展开主干两级，避免「只看到一行、以为内容没了」
+    if (!Object.keys(open).length) {
+        open[branch] = true;
+        ecGmChildren(branch).forEach(k => { if (ecGmChildren(k.id).length) open[k.id] = true; });
+    }
     const renderNode = (n, depth) => {
         const kids = ecGmChildren(n.id);
         const isOpen = !!open[n.id];
@@ -13483,7 +13730,7 @@ function ecGrammarCardHTML() {
     const tree = branchNode ? renderNode(branchNode, 0) : '<div class="ec-gm-empty">还没有分支，去导入一份 Markdown 吧 🌱</div>';
     return '<div class="card ec-gm-card" id="ecGmCard">' +
         '<div class="card-header">' +
-        '<div class="card-title">🧠 英语语法地图 <span class="ec-gm-sub">点一点，把学过的串成一张网</span></div>' +
+        '<div class="card-title">🧠 英语语法地图 <span class="ec-gm-sub">' + EC_GM_HANDOUT_STATS.chapters + ' 章 · ' + EC_GM_HANDOUT_STATS.tables + ' 张对照表</span></div>' +
         '<div class="ec-gm-head-btns">' +
         '<button class="btn btn-sm ' + (edit ? 'btn-primary' : 'btn-secondary') + '" data-action="ec-gm-mode">' + (edit ? '✓ 完成编辑' : '✏️ 编辑框架') + '</button>' +
         '</div></div>' +
@@ -13495,22 +13742,26 @@ function ecGrammarCardHTML() {
         ecGmSearchHTML(q) +
         '<div class="ec-gm-branches">' + branches.map((b, i) =>
             '<button class="ec-gm-branch c' + (i % 9) + (branch === b.id ? ' on' : '') + '" data-action="ec-gm-branch" data-id="' + ecGmAttr(b.id) + '">' +
-            '<span>' + EC_GM_ICONS[i % 9] + '</span>' + escapeHtml(b.t) + '</button>'
+            '<span class="ec-gm-branch-ico">' + EC_GM_ICONS[i % EC_GM_ICONS.length] + '</span>' +
+            '<span class="ec-gm-branch-t">' + escapeHtml(b.t) + '<small>' + (desc.get(b.id) || 0) + ' 节</small></span></button>'
         ).join('') + '</div>' +
+        (view === 'tree' ? '<div class="ec-gm-view-row">' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-expand">🌳 展开本分支</button>' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-collapse">收起</button>' +
+            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-view">📜 一次看完整体系</button>' +
+            '</div>' : '') +
         (edit ? '<div class="ec-gm-tools-row">' +
             '<button class="btn btn-sm btn-secondary" data-action="ec-gm-import">📥 导入 Markdown</button>' +
             '<button class="btn btn-sm btn-secondary" data-action="ec-gm-export">📤 导出备份</button>' +
-            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-expand">🌳 展开本分支</button>' +
-            '<button class="btn btn-sm btn-secondary" data-action="ec-gm-collapse">收起</button>' +
             '<button class="btn btn-sm btn-danger" data-action="ec-gm-reset">↺ 恢复初始框架</button>' +
             '</div>' : '') +
         (adding ? '<div class="ec-gm-add-row"><span>在「' + escapeHtml((ecGmNode(adding) || {}).t || '') + '」下添加：</span>' +
             '<input type="text" class="input" id="ecGmNewTitle" maxlength="60" placeholder="新语法点名称，如 Yes/No 回答">' +
             '<button class="btn btn-sm btn-primary" data-action="ec-gm-add-save" data-id="' + ecGmAttr(adding) + '">添加</button>' +
             '<button class="btn btn-sm btn-secondary" data-action="ec-gm-add-cancel">取消</button></div>' : '') +
-        '<div class="ec-gm-tree">' + tree + '</div>' +
-        ecGmDetailHTML(sel, matchMap, edit) +
-        '<div class="ec-gm-foot">💡 课文里的语法小字可以点，会跳到这张图；图里每个点也会列出相关课文。说法对不上时，开「编辑框架」补关键词或自己加一个点就好。</div>' +
+        (view === 'outline' ? ecGmOutlineHTML(desc) : '<div class="ec-gm-tree">' + tree + '</div>') +
+        ecGmDetailHTML(sel, matchMap, edit, desc) +
+        '<div class="ec-gm-foot">💡 框架按《英语语法系统讲义》整理：10 章 / ' + EC_GM_HANDOUT_STATS.tables + ' 张对照表，点任意一节就能看到规则、判断依据、例句和易错提醒，表格原样保留方便对比。课文里的语法小字也能点过来。</div>' +
         '</div>';
 }
 
@@ -13592,6 +13843,8 @@ function ecGmReplaceSeed(seed) {
     const g = ecGmData(), ts = Date.now();
     g.nodes.forEach(n => { g.tombs[n.id] = ts; });   // 旧节点全部写墓碑，挡住其它设备的旧快照
     ecGmSeed(g, seed, 'gmi' + ts.toString(36) + '_', ts);
+    Object.keys(g.tombs).forEach(k => { if (k.indexOf('gmx_') === 0) delete g.tombs[k]; });
+    g.ver = EC_GM_DATA_VER; // 用户自己的导入/恢复框架，不再被讲义迁移覆盖
     state._gmBranch = null; state._gmOpen = {}; state._gmSel = null;
     state._gmQuery = ''; state._gmAdding = null;
     ecGmTouch();
@@ -14646,6 +14899,16 @@ document.addEventListener('click', async e => {
     if (action === 'ec-wb-move-down') { ecWbMoveItem(el.dataset.id, 'down'); return; }
     // v20261110a：英语语法地图（可编辑框架 + 课文双向联动）
     if (action === 'ec-gm-mode') { state._gmEditMode = !state._gmEditMode; render(); return; }
+    if (action === 'ec-gm-view') { state._gmView = state._gmView === 'outline' ? 'tree' : 'outline'; render(); return; }
+    if (action === 'ec-gm-all-open') {
+        const secs = document.querySelectorAll ? document.querySelectorAll('.ec-gm-ol-sec') : [];
+        for (let gi = 0; gi < secs.length; gi++) secs[gi].open = true;
+        return;
+    }
+    if (action === 'ec-gm-goto') {
+        ecGmReveal(el.dataset.id || ''); render(); ecGmScrollDetail();
+        return;
+    }
     if (action === 'ec-gm-branch') {
         state._gmBranch = el.dataset.id || '';
         state._gmOpen = state._gmOpen || {};
@@ -14659,7 +14922,7 @@ document.addEventListener('click', async e => {
         state._gmOpen = state._gmOpen || {};
         state._gmOpen[gid] = !state._gmOpen[gid];
         state._gmSel = gid;
-        render(); return;
+        render(); ecGmScrollDetail(); return;
     }
     if (action === 'ec-gm-search') {
         state._gmQuery = String((document.getElementById('ecGmQ') || {}).value || '').trim().slice(0, 60);
@@ -14694,7 +14957,7 @@ document.addEventListener('click', async e => {
     if (action === 'ec-gm-expand') { ecGmExpand(state._gmBranch, true); return; }
     if (action === 'ec-gm-collapse') { ecGmExpand(state._gmBranch, false); return; }
     if (action === 'ec-gm-reset') {
-        uiConfirm('恢复成最初整理的 9 大分支 / 552 个语法点？当前自己加的点和关键词会被替换（建议先「导出备份」）。', { isDanger: true, okText: '恢复' })
+        uiConfirm('恢复成「你的原笔记 552 个语法点 + 资料补全的 6 大分支」？自己加的点和关键词会被替换（建议先「导出备份」）。', { isDanger: true, okText: '恢复' })
             .then(yes => { if (yes) { ecGmReplaceSeed(EC_GRAMMAR_SEED); ecAfterAction('✅ 已恢复初始语法框架'); } });
         return;
     }
