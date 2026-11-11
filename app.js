@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261111a';
+const APP_BUILD = '20261111b';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -5174,6 +5174,8 @@ function renderSidebar() {
 }
 
 function render() {
+    // v20261111b：语法讲义编辑态下，重绘前先把输入框里未保存的字收进草稿，避免切页 / 加块时丢字
+    if (state._gdEdit && typeof ecGdCollectDraft === 'function') ecGdCollectDraft();
     if (normalizeModules()) saveState();
     // 记录本次渲染所属日期，用于「页面挂机过夜后自动重绘」（见 visibilitychange / 轮询）
     state._renderDate = today();
@@ -10741,6 +10743,7 @@ function ecData() {
     if (!d.tombTasks || typeof d.tombTasks !== 'object') d.tombTasks = {}; // 任务定义删除墓碑（bookId|taskId → ts）
     if (!d.fsrs || typeof d.fsrs !== 'object') d.fsrs = {};
     if (!d.achievements || typeof d.achievements !== 'object') d.achievements = {};
+    if (!d.gdEdits || typeof d.gdEdits !== 'object') d.gdEdits = {}; // v20261111b：语法讲义逐页编辑
     if (!d.days || typeof d.days !== 'object') d.days = {};
     // 老书补默认任务模板（v20261025c 起每本书可自定义打卡任务）
     d.books.forEach(b => { if (!b || !Array.isArray(b.tasks) || !b.tasks.length) b.tasks = ecCloneDefaultTasks(); });
@@ -11030,6 +11033,7 @@ function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
         merged.fsrsClearedAt = fsrsCut;
         merged.wrongbk = ecMergeWrong(win.wrongbk, lose.wrongbk); // 错题集跨设备合并（墓碑+清零分界线+FSRS 取新）
         merged.grammar = ecMergeGrammar(win.grammar, lose.grammar); // 语法地图（按 id 时间戳 + 墓碑合并）
+    merged.gdEdits = ecMergeGdEdits(win.gdEdits, lose.gdEdits); // v20261111b：逐页编辑（每页按 at 取新，含恢复原文墓碑）
         merged.updatedAt = newerAt;
         return merged;
     }
@@ -11053,6 +11057,7 @@ function ecMergeEngcheck(localEc, cloudEc, localEcAt, cloudEcAt) {
     if ((lose.lastStudyDate || '') > (win.lastStudyDate || '')) merged.lastStudyDate = lose.lastStudyDate;
     merged.wrongbk = ecMergeWrong(win.wrongbk, lose.wrongbk); // 错题集跨设备合并（墓碑+清零分界线+FSRS 取新）
     merged.grammar = ecMergeGrammar(win.grammar, lose.grammar); // 语法地图（按 id 时间戳 + 墓碑合并）
+    merged.gdEdits = ecMergeGdEdits(win.gdEdits, lose.gdEdits); // v20261111b：逐页编辑（每页按 at 取新，含恢复原文墓碑）
     merged.tabCfg = ecMergeTabCfg(win.tabCfg, lose.tabCfg); // 子标签显示设置：按修改时间取新
     merged.updatedAt = newerAt;
     return merged;
@@ -13797,7 +13802,7 @@ function ecGmDetailHTML(sel, matchMap, edit, desc) {
 // 规则：一次只显示当前一层。板块 → 目录（章）→ 分支（小节）→ 末级详情（讲义 + 对照表 + 课文）。
 // 内容全部取自《大白话英语语法.docx》编译出的 EC_GD_DOC；课文联动沿用 ecGmLessonIndex / ecGmNorm，
 // 大白话标题与课本术语说法不同，靠 EC_GD_TERMS 对齐，保持「课文 ↔ 语法点」双向可达。
-const EC_GD_PCLS = { tip: 'is-tip', warn: 'is-warn', plain: 'is-plain', eg: 'is-eg' };
+const EC_GD_PCLS = { tip: 'is-tip', warn: 'is-warn', plain: 'is-plain', eg: 'is-eg', mine: 'is-mine' };
 function ecGdCurPartId() {
     const raw = state._gdPart;
     return EC_GD_DOC.parts.some(p => p.id === raw) ? raw : EC_GD_DOC.parts[0].id;
@@ -13816,8 +13821,8 @@ function ecGdView() {
 }
 function ecGdCrumbHTML(v) {
     const cs = [{ t: '英语语法', lv: 'root' }, { t: v.part.name, lv: 'part' }];
-    if (v.ch) cs.push({ t: v.ch.t, lv: 'ch' });
-    if (v.sec) cs.push({ t: v.sec.t, lv: 'sec' });
+    if (v.ch) cs.push({ t: ecGdTitleOf(v.ch), lv: 'ch' });
+    if (v.sec) cs.push({ t: ecGdTitleOf(v.sec), lv: 'sec' });
     return '<div class="ec-gd-crumb">' + cs.map((c, i) =>
         (i ? '<span class="ec-gd-sep">›</span>' : '') +
         '<button class="ec-gd-crumb-b' + (i === cs.length - 1 ? ' is-cur' : '') + '" data-action="ec-gd-crumb" data-lv="' + c.lv + '">' + escapeHtml(c.t) + '</button>'
@@ -13830,7 +13835,7 @@ function ecGdCardsHTML(v) {
         '<span>' + list.length + ' 项' + (isPart ? ' · 共 ' + total + ' 个知识点' : '') + '</span></div>' +
         '<div class="ec-gd-cards">' + list.map((x, i) =>
             '<button class="ec-gd-card c' + (i % 9) + '" data-action="ec-gd-' + (isPart ? 'ch' : 'sec') + '" data-id="' + ecGmAttr(x.id) + '">' +
-            '<span class="ec-gd-card-t">' + escapeHtml(x.t) + '</span>' +
+            '<span class="ec-gd-card-t">' + escapeHtml(ecGdTitleOf(x)) + '</span>' +
             '<span class="ec-gd-card-n">' + (isPart && x.sections && x.sections.length ? x.sections.length + ' 项' : '') + ' ›</span></button>'
         ).join('') + '</div>';
 }
@@ -13859,17 +13864,22 @@ function ecGdLessons(node) {
 function ecGdDetailHTML(v) {
     const node = v.node;
     if (!node) return '<div class="ec-gm-empty">点一个知识点就能看到它的讲义 📖</div>';
-    const blocks = node.blocks || [];
+    // v20261111b：点「✏️ 编辑本页」后只显示这一页的编辑表单，仍然一次只看一层
+    if (state._gdEdit && state._gdEdit.id === node.id) return ecGdEditHTML(v, node);
+    const blocks = ecGdBlocksOf(node);
     const tables = blocks.filter(b => b.k === 't').length;
     const lessons = ecGdLessons(node);
+    const edited = ecGdIsEdited(node);
     return '<div class="ec-gd-detail">' +
-        '<div class="ec-gd-detail-title">🧩 ' + escapeHtml(node.t) + '</div>' +
+        '<div class="ec-gd-detail-hd"><div class="ec-gd-detail-title">🧩 ' + escapeHtml(ecGdTitleOf(node)) +
+        (edited ? '<span class="ec-gd-edited">✏️ 已编辑</span>' : '') + '</div>' +
+        '<button class="btn btn-sm btn-secondary" data-action="ec-gd-edit" data-id="' + ecGmAttr(node.id) + '">✏️ 编辑本页</button></div>' +
         '<div class="ec-gm-detail-hint">' + (lessons.length ? '📚 这些课文里出现过它，点一下就回到课文' : '这一节还没有关联课文，去课文里点语法小字也能跳过来') + '</div>' +
         (lessons.length ? '<div class="ec-gm-lessons">' + lessons.slice(0, 24).map(x =>
             '<button class="ec-gm-lesson" data-action="ec-gm-open-lesson" data-id="' + ecGmAttr(x.id) + '">' +
             '<span>📖 ' + escapeHtml(x.name) + '</span><small>' + escapeHtml(x.book) + ' ›</small></button>'
         ).join('') + '</div>' : '') +
-        '<div class="ec-gm-doc-hd">📖 系统讲义 · 1 小节 / ' + tables + ' 张对照表</div>' +
+        '<div class="ec-gm-doc-hd">' + (edited ? '📖 我的讲义' : '📖 系统讲义') + ' · 1 小节 / ' + tables + ' 张对照表</div>' +
         '<div class="ec-gm-doc-body">' + blocks.map(ecGdBlockHTML).join('') + '</div>' +
         '</div>';
 }
@@ -13885,9 +13895,9 @@ function ecGdSearch(q) {
     const nq = ecGmNorm(q);
     if (!nq) return [];
     return ecGdAllNodes().filter(h => {
-        if (ecGmNorm(h.node.t).indexOf(nq) >= 0) return true;
+        if (ecGmNorm(ecGdTitleOf(h.node)).indexOf(nq) >= 0) return true;
         if (ecGdKeys(h.node).some(k => k.indexOf(nq) >= 0 || nq.indexOf(k) >= 0)) return true;
-        const body = (h.node.blocks || []).map(b => b.k === 't' ? (b.v || []).map(r => (r || []).join('')).join('') : (b.v || '')).join('');
+        const body = ecGdBlocksOf(h.node).map(b => b.k === 't' ? (b.v || []).map(r => (r || []).join('')).join('') : (b.v || '')).join('');
         return nq.length >= 2 && ecGmNorm(body).indexOf(nq) >= 0;
     }).slice(0, 24);
 }
@@ -13898,7 +13908,7 @@ function ecGdSearchHTML(q) {
     return '<div class="ec-gm-search-res">找到 ' + hits.length + ' 处，点一下直接看这一节：</div>' +
         '<div class="ec-gm-res-chips">' + hits.map(h =>
             '<button class="ec-gm-res" data-action="ec-gm-reveal" data-id="' + ecGmAttr(h.node.id) + '">' +
-            escapeHtml(h.part.name + ' › ' + h.node.t.replace(/^\d+[.．]\s*/, '')) + '</button>'
+            escapeHtml(h.part.name + ' › ' + ecGdTitleOf(h.node).replace(/^\d+[.．]\s*/, '')) + '</button>'
         ).join('') + '</div>';
 }
 // 按 id 定位并落到那一层（搜索结果 / 课文语法小字都走这里）
@@ -13949,6 +13959,188 @@ function ecGrammarCardHTML() {
         '</div>';
 }
 
+// ---------- v20261111b：语法讲义逐页编辑（改错 / 补心得，跨刷新与云同步） ----------
+// 存储：state.data.engcheck.gdEdits = { [nodeId]: { t, blocks, at, del? } }，随整包 state.data 云同步。
+// 一次只编辑「当前末级讲义页」：可改标题 / 段落 / 例句 / 表格单元格，增删块、上下移动、加「⭐ 我的笔记」；
+// 「恢复文档原文」写 del 墓碑，按 at 取新合并，避免云端旧快照把还原的页面带回来。
+const EC_GD_KINDS = [
+    { c: '', n: '普通段落', icon: '📝' },
+    { c: 'eg', n: '例句', icon: '💬' },
+    { c: 'tip', n: '小提示', icon: '💡' },
+    { c: 'warn', n: '易错 / 注意', icon: '⚠️' },
+    { c: 'plain', n: '大白话', icon: '🗣️' },
+    { c: 'mine', n: '⭐ 我的笔记', icon: '⭐' }
+];
+function ecGdEdits() {
+    const d = state.data && state.data.engcheck;
+    if (!d || typeof d !== 'object') return {};
+    if (!d.gdEdits || typeof d.gdEdits !== 'object') d.gdEdits = {};
+    return d.gdEdits;
+}
+function ecGdRec(node) {
+    const r = ecGdEdits()[node.id];
+    return (r && !r.del && Array.isArray(r.blocks)) ? r : null;
+}
+function ecGdBlocksOf(node) { const r = ecGdRec(node); return r ? r.blocks : (node.blocks || []); }
+function ecGdTitleOf(node) { const r = ecGdRec(node); return (r && r.t) ? r.t : node.t; }
+function ecGdIsEdited(node) { return !!ecGdRec(node); }
+function ecGdNodeById(id) {
+    const h = ecGdAllNodes().find(x => x.node.id === id);
+    return h ? h.node : null;
+}
+function ecGdClone(o) { return JSON.parse(JSON.stringify(o)); }
+function ecGdDraft() { return (state._gdEdit && state._gdEdit.id) ? state._gdEdit : null; }
+function ecGdEditStart(id) {
+    const node = ecGdNodeById(id);
+    if (!node) return;
+    state._gdEdit = { id: id, t: ecGdTitleOf(node), blocks: ecGdClone(ecGdBlocksOf(node)) };
+    render();
+}
+// 任何 render() / 点击前调用：把输入框里尚未保存的字收进草稿，重绘后不丢
+function ecGdCollectDraft() {
+    const dr = ecGdDraft();
+    if (!dr || typeof document === 'undefined' || !document.getElementById) return;
+    const form = document.getElementById('ecGdEditForm');
+    if (!form || !form.querySelectorAll) return;
+    const list = form.querySelectorAll('[data-gd-f]');
+    for (let gi = 0; gi < list.length; gi++) {
+        const inp = list[gi], f = inp.dataset.gdF, i = Number(inp.dataset.gdI || 0);
+        const v = String(inp.value == null ? '' : inp.value);
+        if (f === 't') { dr.t = v; continue; }
+        const b = dr.blocks[i];
+        if (!b) continue;
+        if (f === 'p') b.v = v;
+        else if (f === 'c') b.c = v;
+        else if (f === 'cell') {
+            const r = Number(inp.dataset.gdR || 0), c = Number(inp.dataset.gdC || 0);
+            if (Array.isArray(b.v) && Array.isArray(b.v[r])) b.v[r][c] = v;
+        }
+    }
+}
+// 保存时丢掉全空的段落块（表格保留），避免留下一排空色块
+function ecGdCleanBlocks(blocks) {
+    return (blocks || []).filter(b => b && (b.k === 't'
+        ? Array.isArray(b.v) && b.v.length
+        : String(b.v == null ? '' : b.v).trim().length))
+        .map(b => b.k === 't'
+            ? { k: 't', v: (b.v || []).map(r => (r || []).map(x => String(x == null ? '' : x))) }
+            : { k: 'p', v: String(b.v == null ? '' : b.v), c: String(b.c || '') });
+}
+function ecGdSaveEdit(id, opt) {
+    const dr = ecGdDraft();
+    const node = ecGdNodeById(id || (dr && dr.id));
+    if (!node) return false;
+    const src = (opt && Array.isArray(opt.blocks)) ? opt.blocks : (dr ? dr.blocks : null);
+    const blocks = ecGdCleanBlocks(src);
+    if (!blocks.length) { toast('至少留一段内容吧 🌱'); return false; }
+    const title = String((opt && typeof opt.t === 'string') ? opt.t : ((dr && dr.t) || ecGdTitleOf(node)) || '').trim().slice(0, 80);
+    ecGdEdits()[node.id] = { t: title, blocks: blocks, at: Date.now() };
+    state._gdEdit = null;
+    try { ecData().updatedAt = now(); } catch (e) { /* ignore */ }
+    saveState(); queueSync(); render();
+    toast('✅ 已保存这一页的修改');
+    return true;
+}
+function ecGdResetEdit(id) {
+    const node = ecGdNodeById(id);
+    if (!node) return false;
+    ecGdEdits()[node.id] = { del: 1, at: Date.now() };
+    state._gdEdit = null;
+    try { ecData().updatedAt = now(); } catch (e) { /* ignore */ }
+    saveState(); queueSync(); render();
+    toast('↩️ 已恢复成文档原文');
+    return true;
+}
+// 云端合并：每页按 at 取新；恢复原文的 del 墓碑也按时间生效
+function ecMergeGdEdits(a, b) {
+    const out = {};
+    [a, b].forEach(src => Object.keys(src || {}).forEach(k => {
+        const r = src[k];
+        if (!r || typeof r !== 'object') return;
+        const cur = out[k];
+        if (!cur || (Number(r.at) || 0) >= (Number(cur.at) || 0)) out[k] = r;
+    }));
+    return out;
+}
+// ---------- 编辑态草稿操作 ----------
+function ecGdEditAdd(kind) {
+    const dr = ecGdDraft(); if (!dr) return;
+    if (kind === 't') dr.blocks.push({ k: 't', v: [['项目', '说明'], ['', '']] });
+    else dr.blocks.push({ k: 'p', v: '', c: kind || 'mine' });
+    render();
+}
+function ecGdEditDel(i) {
+    const dr = ecGdDraft(); if (!dr) return;
+    const n = Number(i);
+    if (n >= 0 && n < dr.blocks.length) { dr.blocks.splice(n, 1); render(); }
+}
+function ecGdEditMove(i, dir) {
+    const dr = ecGdDraft(); if (!dr) return;
+    const n = Number(i), j = dir === 'up' ? n - 1 : n + 1;
+    if (n < 0 || j < 0 || j >= dr.blocks.length) return;
+    const t = dr.blocks[n]; dr.blocks[n] = dr.blocks[j]; dr.blocks[j] = t;
+    render();
+}
+function ecGdEditTable(i, what) {
+    const dr = ecGdDraft(); if (!dr) return;
+    const b = dr.blocks[Number(i)];
+    if (!b || b.k !== 't' || !Array.isArray(b.v) || !b.v.length) return;
+    const cols = Math.max(1, (b.v[0] || []).length);
+    if (what === 'addrow') b.v.push(new Array(cols).fill(''));
+    else if (what === 'delrow' && b.v.length > 2) b.v.pop();
+    else if (what === 'addcol') b.v.forEach(r => r.push(''));
+    else if (what === 'delcol' && cols > 1) b.v.forEach(r => r.pop());
+    render();
+}
+function ecGdKindOptions(cur) {
+    return EC_GD_KINDS.map(k => '<option value="' + ecGmAttr(k.c) + '"' +
+        (k.c === (cur || '') ? ' selected' : '') + '>' + escapeHtml(k.icon + ' ' + k.n) + '</option>').join('');
+}
+function ecGdEditHTML(v, node) {
+    const dr = ecGdDraft();
+    if (!node || !dr) return '';
+    const mini = (act, label, extra, title) => '<button class="ec-gde-mini" data-action="' + act + '" ' +
+        (extra || '') + ' title="' + ecGmAttr(title || label) + '">' + label + '</button>';
+    const list = dr.blocks.map((b, i) => {
+        const head = '<div class="ec-gde-hd"><span class="ec-gde-no">' + (i + 1) + '</span>' +
+            '<span>' + (b.k === 't' ? '📊 对照表' : '📝 文字段落') + '</span><span class="ec-gde-ops">' +
+            mini('ec-gd-edit-move', '↑', 'data-i="' + i + '" data-dir="up"', '上移') +
+            mini('ec-gd-edit-move', '↓', 'data-i="' + i + '" data-dir="down"', '下移') +
+            mini('ec-gd-edit-del', '🗑', 'data-i="' + i + '"', '删掉这一块') + '</span></div>';
+        let body;
+        if (b.k === 't') {
+            const rows = b.v || [];
+            body = '<div class="ec-gde-table-wrap"><table class="ec-gde-table">' + rows.map((r, ri) =>
+                '<tr>' + (r || []).map((cell, ci) =>
+                    '<td><textarea rows="2" data-gd-f="cell" data-gd-i="' + i + '" data-gd-r="' + ri + '" data-gd-c="' + ci + '">' +
+                    escapeHtml(String(cell == null ? '' : cell)) + '</textarea></td>').join('') + '</tr>').join('') +
+                '</table></div><div class="ec-gde-row">' +
+                mini('ec-gd-edit-table', '＋ 一行', 'data-i="' + i + '" data-w="addrow"') +
+                mini('ec-gd-edit-table', '－ 末行', 'data-i="' + i + '" data-w="delrow"') +
+                mini('ec-gd-edit-table', '＋ 一列', 'data-i="' + i + '" data-w="addcol"') +
+                mini('ec-gd-edit-table', '－ 末列', 'data-i="' + i + '" data-w="delcol"') + '</div>';
+        } else {
+            body = '<select class="input ec-gde-kind" data-gd-f="c" data-gd-i="' + i + '">' + ecGdKindOptions(b.c) + '</select>' +
+                '<textarea class="input ec-gde-text" rows="4" data-gd-f="p" data-gd-i="' + i + '" placeholder="写点什么…">' +
+                escapeHtml(String(b.v == null ? '' : b.v)) + '</textarea>';
+        }
+        return '<div class="ec-gde-blk">' + head + body + '</div>';
+    }).join('');
+    return '<div class="ec-gd-detail ec-gde-form" id="ecGdEditForm">' +
+        '<div class="ec-gde-tip">✏️ 这一页可以随便改：改错字、加常错提醒、把觉得有道理的话记进「⭐ 我的笔记」。' +
+        '改完点「💾 保存修改」才会生效，并同步到你的其它设备；随时可「↩️ 恢复文档原文」。</div>' +
+        '<div class="ec-gde-title-row"><span>这一节的标题</span>' +
+        '<input class="input" data-gd-f="t" value="' + ecGmAttr(dr.t) + '" placeholder="这一节的标题"></div>' +
+        '<div class="ec-gde-add"><span>＋ 加一块：</span>' +
+        EC_GD_KINDS.map(k => mini('ec-gd-edit-add', k.icon + ' ' + k.n, 'data-kind="' + ecGmAttr(k.c) + '"')).join('') +
+        mini('ec-gd-edit-add', '📊 对照表', 'data-kind="t"') + '</div>' +
+        (list || '<div class="ec-gm-empty">这一页还是空的，点上面「＋ 加一块」开始写 🌱</div>') +
+        '<div class="ec-gde-bar">' +
+        '<button class="btn btn-sm btn-primary" data-action="ec-gd-edit-save">💾 保存修改</button>' +
+        '<button class="btn btn-sm btn-secondary" data-action="ec-gd-edit-cancel">取消</button>' +
+        (ecGdIsEdited(node) ? '<button class="btn btn-sm btn-secondary" data-action="ec-gd-edit-reset" data-id="' + ecGmAttr(node.id) + '">↩️ 恢复文档原文</button>' : '') +
+        '</div></div>';
+}
 // ---------- 导图编辑动作 ----------
 function ecGmTouch() {
     const g = ecGmData();
@@ -15100,6 +15292,20 @@ document.addEventListener('click', async e => {
         if (lv === 'root' || lv === 'part') { state._gdCh = ''; state._gdSec = ''; }
         else if (lv === 'ch') { state._gdSec = ''; }
         render(); return;
+    }
+    // v20261111b：语法讲义逐页编辑（草稿由 render() 开头的 ecGdCollectDraft 兜底）
+    if (action === 'ec-gd-edit') { ecGdEditStart(el.dataset.id || ''); return; }
+    if (action === 'ec-gd-edit-cancel') { state._gdEdit = null; render(); return; }
+    if (action === 'ec-gd-edit-save') { ecGdCollectDraft(); ecGdSaveEdit(); return; }
+    if (action === 'ec-gd-edit-add') { ecGdCollectDraft(); ecGdEditAdd(el.dataset.kind || 'mine'); return; }
+    if (action === 'ec-gd-edit-del') { ecGdCollectDraft(); ecGdEditDel(el.dataset.i); return; }
+    if (action === 'ec-gd-edit-move') { ecGdCollectDraft(); ecGdEditMove(el.dataset.i, el.dataset.dir); return; }
+    if (action === 'ec-gd-edit-table') { ecGdCollectDraft(); ecGdEditTable(el.dataset.i, el.dataset.w); return; }
+    if (action === 'ec-gd-edit-reset') {
+        const rid = el.dataset.id || '';
+        uiConfirm('确定把这一页恢复成《大白话英语语法》原文吗？你自己加的笔记和修改会被清掉（其它页不受影响）。', { isDanger: true, okText: '恢复原文' })
+            .then(yes => { if (yes) ecGdResetEdit(rid); });
+        return;
     }
     if (action === 'ec-gm-mode') { state._gmEditMode = !state._gmEditMode; render(); return; }
     if (action === 'ec-gm-view') { state._gmView = state._gmView === 'outline' ? 'tree' : 'outline'; render(); return; }

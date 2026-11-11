@@ -2263,7 +2263,7 @@ function makeGM(overrides) {
     };
     const fn = new Function('state', 'escapeHtml', 'toast', 'saveState', 'queueSync', 'render',
         'uiPrompt', 'uiConfirm', 'uiModal', 'uuid', 'now', 'today', 'dateStr', 'document', 'localStorage',
-        ecCode + '\nreturn { state, ecData, ecGmData, ecGmNorm, ecGmNodeKeys, ecGmChildren, ecGmPath, ecGmFindNode, ecGmSearch, ecGmReveal, ecGmNoteHTML, ecGrammarCardHTML, ecMergeGrammar, ecGmParseMarkdown, ecGmToMarkdown, ecGmReplaceSeed, ecGmAddSave, ecGmDel, ecGmMatchMap, ecRenderLessons, ecRenderLesson, EC_GRAMMAR_SEED, EC_GRAMMAR_EXTRA, EC_GM_NOTES, EC_GM_DATA_VER, ecGmEnsureExtras, ecGmNoteFor, ecGmDescMap, ecGmOutlineHTML, ecGmNoteBoxHTML, ecGmKidsHTML, EC_GM_HANDOUT, EC_GM_HANDOUT_STATS, EC_GM_TITLE_INDEX, EC_GM_ALIASES, ecGmShort, ecGmHandoutId, ecGmDocOf, ecGmHandoutHTML, ecGmTableHTML, ecGmDocTextAll };');
+        ecCode + '\nreturn { state, ecData, ecGmData, ecGmNorm, ecGmNodeKeys, ecGmChildren, ecGmPath, ecGmFindNode, ecGmSearch, ecGmReveal, ecGmNoteHTML, ecGrammarCardHTML, ecMergeGrammar, ecGmParseMarkdown, ecGmToMarkdown, ecGmReplaceSeed, ecGmAddSave, ecGmDel, ecGmMatchMap, ecRenderLessons, ecRenderLesson, EC_GRAMMAR_SEED, EC_GRAMMAR_EXTRA, EC_GM_NOTES, EC_GM_DATA_VER, ecGmEnsureExtras, ecGmNoteFor, ecGmDescMap, ecGmOutlineHTML, ecGmNoteBoxHTML, ecGmKidsHTML, EC_GM_HANDOUT, EC_GM_HANDOUT_STATS, EC_GM_TITLE_INDEX, EC_GM_ALIASES, ecGmShort, ecGmHandoutId, ecGmDocOf, ecGmHandoutHTML, ecGmTableHTML, ecGmDocTextAll, ecGdEdits, ecGdRec, ecGdBlocksOf, ecGdTitleOf, ecGdIsEdited, ecGdNodeById, ecGdClone, ecGdDraft, ecGdEditStart, ecGdCollectDraft, ecGdCleanBlocks, ecGdSaveEdit, ecGdResetEdit, ecMergeGdEdits, ecGdEditAdd, ecGdEditDel, ecGdEditMove, ecGdEditTable, ecGdKindOptions, ecGdEditHTML, ecGdLessons, ecGdSearch, ecGdAllNodes, EC_GD_KINDS, EC_GD_PCLS, EC_GD_DOC };');
     const inst = fn(mockState,
         s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
         () => {}, () => {}, () => {}, () => {},
@@ -2599,15 +2599,107 @@ console.log('—— v20261110d 系统讲义 / 表格 / 迁移 ——');
         /@media \(max-width: 600px\)[\s\S]*?\.ec-gm-table \{ min-width: 380px/.test(CSS) &&
         (CSS.match(/{/g) || []).length === (CSS.match(/}/g) || []).length);
     ok('d：表格窄屏横向滚动不裁内容', /\.ec-gm-table-wrap \{[^}]*overflow-x: auto/.test(CSS));
-    ok('d：版本链升到 20261111a / SW v160', BUILD === '20261111a' && VERD.includes(BUILD) &&
-        buildOK() && SWD.includes('growtree-shell-v160') && SWD.includes("'./app." + BUILD + ".js'"));
-    ok('d：推送清单保留当前 a + 线上上一版 f', PUSHD.includes("'app.20261111a.js'") && PUSHD.includes("'app.20261110f.js'"));
+    ok('d：版本链升到 20261111b / SW v161', BUILD === '20261111b' && VERD.includes(BUILD) &&
+        buildOK() && SWD.includes('growtree-shell-v161') && SWD.includes("'./app." + BUILD + ".js'"));
+    ok('d：推送清单保留当前 b + 线上上一版 a', PUSHD.includes("'app.20261111b.js'") && PUSHD.includes("'app.20261111a.js'"));
     const crypto2 = require('crypto');
     ['app.' + BUILD + '.js', 'styles.' + BUILD + '.css'].forEach((f, i) => {
         const src = fs.readFileSync(__dirname + '/' + (i ? 'styles.css' : 'app.js'));
         const dst = fs.readFileSync(__dirname + '/' + f);
         ok('d：哈希文件与工作副本一致 ' + f, crypto2.createHash('md5').update(src).digest('hex') === crypto2.createHash('md5').update(dst).digest('hex'));
     });
+}
+
+
+// ============ v20261111b：语法讲义逐页编辑（改错 / 补笔记 / 恢复原文） ============
+console.log('—— v20261111b 讲义编辑 ——');
+{
+    const E = makeGM();
+    const NODE = 'gd_p1_c2_s1';
+    const node = E.ecGdNodeById(NODE);
+    const original = E.ecGdBlocksOf(node);
+    E.state._gdPart = 'gd_p1'; E.state._gdCh = 'gd_p1_c2'; E.state._gdSec = NODE;
+
+    ok('e：编辑数据挂 engcheck、默认原文不变',
+        !!E.ecData().gdEdits && Object.keys(E.ecGdEdits()).length === 0 &&
+        original.length > 0 && !E.ecGdIsEdited(node));
+    ok('e：详情页有「编辑本页」入口', (() => {
+        const h = E.ecGrammarCardHTML();
+        return h.includes('data-action="ec-gd-edit"') && h.includes('✏️ 编辑本页');
+    })());
+    ok('e：编辑态一次只显示这一页的表单', (() => {
+        E.ecGdEditStart(NODE);
+        const h = E.ecGrammarCardHTML();
+        return h.includes('id="ecGdEditForm"') && h.includes('data-action="ec-gd-edit-save"') &&
+            !h.includes('ec-gm-doc-hd') && !h.includes('data-action="ec-gd-sec"');
+    })());
+    ok('e：编辑态含标题 / 段落 / 类型 / 表格单元格输入框', (() => {
+        const h = E.ecGrammarCardHTML();
+        return ['t', 'p', 'c', 'cell'].every(f => h.includes('data-gd-f="' + f + '"'));
+    })());
+    ok('e：加块 / 移动 / 删块 / 表格加行列', (() => {
+        const n0 = E.state._gdEdit.blocks.length;
+        E.ecGdEditAdd('mine');
+        const n1 = E.state._gdEdit.blocks.length, kind = E.state._gdEdit.blocks[n1 - 1].c;
+        E.ecGdEditMove(n1 - 1, 'up');
+        const up = E.state._gdEdit.blocks[n1 - 2].c;
+        const ti = E.state._gdEdit.blocks.findIndex(b => b.k === 't');
+        const rows0 = E.state._gdEdit.blocks[ti].v.length, cols0 = E.state._gdEdit.blocks[ti].v[0].length;
+        E.ecGdEditTable(ti, 'addrow'); E.ecGdEditTable(ti, 'addcol');
+        const grew = E.state._gdEdit.blocks[ti].v.length === rows0 + 1 &&
+            E.state._gdEdit.blocks[ti].v[0].length === cols0 + 1;
+        E.ecGdEditDel(n1 - 2);
+        return n1 === n0 + 1 && kind === 'mine' && up === 'mine' && grew &&
+            E.state._gdEdit.blocks.length === n1 - 1;
+    })());
+    ok('e：空块保存时过滤 / 全空拒绝保存',
+        E.ecGdCleanBlocks([{ k: 'p', v: '   ' }, { k: 'p', v: 'ok' }]).length === 1 &&
+        E.ecGdSaveEdit(NODE, { blocks: [{ k: 'p', v: '' }] }) === false && !E.ecGdIsEdited(node));
+    ok('e：保存后标题 / 正文 / 表格按页生效', E.ecGdSaveEdit(NODE, {
+        t: '我改过的名词小节',
+        blocks: [
+            { k: 'p', v: '我的补充：这里最容易错 ⭐', c: 'mine' },
+            { k: 't', v: [['点', '说明'], ['复数', '加 s']] }
+        ]
+    }) === true && E.ecGdIsEdited(node) && E.ecGdTitleOf(node) === '我改过的名词小节' &&
+        E.ecGdBlocksOf(node).length === 2);
+    ok('e：保存写入时间戳并留在云同步数据里',
+        E.state.data.engcheck.gdEdits[NODE].at > 0 && !!E.state.data.engcheck.updatedAt &&
+        E.state._gdEdit === null);
+    ok('e：讲义渲染「我的笔记」色块 + 已编辑徽标', (() => {
+        const h = E.ecGrammarCardHTML();
+        return h.includes('is-mine') && h.includes('我的补充：这里最容易错') &&
+            h.includes('✏️ 已编辑') && h.includes('📖 我的讲义') && h.includes('<table');
+    })());
+    ok('e：编辑后标题 / 正文进入面包屑与搜索',
+        E.ecGrammarCardHTML().includes('我改过的名词小节') && E.ecGdSearch('我的补充').length > 0);
+    ok('e：用户输入全部 HTML 转义', (() => {
+        E.ecGdSaveEdit(NODE, { blocks: [{ k: 'p', v: '<script>alert(1)</script>', c: 'mine' }] });
+        const h = E.ecGrammarCardHTML();
+        return h.includes('&lt;script&gt;') && !h.includes('<script>alert');
+    })());
+    ok('e：课文联动不因编辑失效',
+        Array.isArray(E.ecGdLessons(node)) && /ecGdLessons\(node\)/.test(APP));
+    ok('e：恢复原文写墓碑并回到文档内容', E.ecGdResetEdit(NODE) === true &&
+        !E.ecGdIsEdited(node) && E.ecGdBlocksOf(node).length === original.length &&
+        E.state.data.engcheck.gdEdits[NODE].del === 1);
+    ok('e：云端按页 at 取新，墓碑压住旧快照', (() => {
+        const a = { x: { at: 100, blocks: [{ k: 'p', v: '旧' }] }, y: { at: 200, blocks: [{ k: 'p', v: '另一页' }] } };
+        const b = { x: { at: 300, del: 1 } };
+        const m = E.ecMergeGdEdits(a, b);
+        return m.x.del === 1 && m.y.blocks[0].v === '另一页';
+    })());
+    ok('e：合并函数接入两个同步分支',
+        (APP.match(/merged\.gdEdits = ecMergeGdEdits/g) || []).length === 2);
+    ok('e：重绘前收草稿 + 编辑动作路由齐备',
+        /function render\(\) \{[\s\S]{0,260}ecGdCollectDraft\(\)/.test(APP) &&
+        ['ec-gd-edit', 'ec-gd-edit-save', 'ec-gd-edit-add', 'ec-gd-edit-del', 'ec-gd-edit-move',
+         'ec-gd-edit-table', 'ec-gd-edit-reset', 'ec-gd-edit-cancel']
+            .every(a => APP.includes("action === '" + a + "'")));
+    ok('e：编辑态样式与 375px 适配齐备',
+        ['.ec-gde-blk', '.ec-gde-table-wrap', '.ec-gm-doc-p.is-mine', '.ec-gde-bar'].every(k => CSS.includes(k)) &&
+        /@media \(max-width: 600px\)[\s\S]*?\.ec-gde-table \{ min-width: 420px/.test(CSS) &&
+        (CSS.match(/{/g) || []).length === (CSS.match(/}/g) || []).length);
 }
 
 // 等待异步断言后汇总

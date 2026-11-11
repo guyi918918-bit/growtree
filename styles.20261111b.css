@@ -5508,3 +5508,151 @@ select.input {
     .ec-gm-table { min-width: 380px; font-size: 10.5px; }
     .ec-gm-table th, .ec-gm-table td { padding: 5px 7px; }
 }
+
+/* ==================== v20261111a：语法地图 4 大板块 + 逐层钻取 ====================
+   一次只显示当前一层：板块目录 → 章的分支 → 末级讲义；配色全部走变量，暗色自动适配。 */
+.ec-gd-subnav { margin-bottom: 10px; }
+.ec-gd-subnav .tab-btn { font-size: 13px; padding: 8px 10px; }
+.ec-gd-subnav .tab-btn.active { font-weight: 700; }
+.ec-gd-wrap { padding-bottom: 12px; }
+.ec-gd-body { padding: 2px 0 0; }
+.ec-gd-crumb {
+    display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;
+    overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    padding: 2px 0 10px; margin-bottom: 2px;
+    font-size: 11px; color: var(--text-secondary); white-space: nowrap;
+}
+.ec-gd-crumb::-webkit-scrollbar { display: none; }
+.ec-gd-crumb-b {
+    flex: 0 1 auto; min-width: 0; max-width: 190px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent;
+    padding: 3px 6px; border-radius: 7px; font: inherit; cursor: pointer;
+    color: var(--text-secondary);
+}
+.ec-gd-crumb-b:hover { background: var(--surface-2); color: var(--primary-dark); }
+.ec-gd-crumb-b.is-cur { color: var(--primary-dark); font-weight: 800; background: var(--primary-light); }
+.ec-gd-sep { flex: 0 0 auto; opacity: .55; }
+.ec-gd-cards-hd {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    font-size: 12px; font-weight: 800; color: var(--text); margin: 2px 0 9px;
+}
+.ec-gd-cards-hd span { font-size: 10.5px; font-weight: 600; color: var(--text-secondary); }
+.ec-gd-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ec-gd-card {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    min-width: 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--surface); text-align: left; cursor: pointer; font-family: inherit;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.ec-gd-card:hover { border-color: var(--primary); box-shadow: 0 3px 12px rgba(52,199,89,.12); transform: translateY(-1px); }
+.ec-gd-card.c0,.ec-gd-card.c4,.ec-gd-card.c8 { border-left: 3px solid #7bb0e8; }
+.ec-gd-card.c1,.ec-gd-card.c5 { border-left: 3px solid #8fd19a; }
+.ec-gd-card.c2,.ec-gd-card.c6 { border-left: 3px solid #f0c26b; }
+.ec-gd-card.c3,.ec-gd-card.c7 { border-left: 3px solid #c9a4e8; }
+.ec-gd-card-t {
+    min-width: 0; flex: 1 1 auto; font-size: 12.5px; font-weight: 700; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ec-gd-card-n { flex: 0 0 auto; font-size: 10.5px; color: var(--text-secondary); white-space: nowrap; }
+.ec-gd-detail { padding: 2px 0 0; }
+.ec-gd-detail-title { font-size: 15px; font-weight: 800; color: var(--text); margin: 0 0 9px; word-break: break-word; }
+/* 大白话讲义：小提示 / 注意 / 大白话 / 例句，四种色块不改动原文 */
+.ec-gm-doc-p.is-tip {
+    margin: 8px 0; padding: 7px 9px; border-radius: 8px;
+    background: rgba(52,199,89,.10); border-left: 3px solid var(--primary); color: var(--text);
+}
+.ec-gm-doc-p.is-plain {
+    margin: 8px 0; padding: 7px 9px; border-radius: 8px;
+    background: rgba(107,142,230,.11); border-left: 3px solid #6b8ee6; color: var(--text);
+}
+.ec-gm-doc-p.is-eg {
+    margin: 5px 0; padding: 6px 9px; border-radius: 8px;
+    background: var(--surface-2); border-left: 3px solid var(--border); color: var(--text-secondary);
+}
+.ec-gd-preface {
+    margin: 12px 0 0; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--surface-2);
+}
+.ec-gd-preface > summary { cursor: pointer; font-size: 11px; font-weight: 700; color: var(--text-secondary); }
+.ec-gd-preface[open] > summary { margin-bottom: 8px; }
+.ec-gd-preface .ec-gm-doc-p { font-size: 11px; }
+.ec-gd-preface .ec-gm-table { min-width: 340px; }
+@media (max-width: 600px) {
+    .ec-gd-cards { grid-template-columns: 1fr; }
+    .ec-gd-crumb-b { max-width: 140px; font-size: 10.5px; }
+    .ec-gd-subnav .tab-btn { font-size: 12px; padding: 7px 8px; }
+    .ec-gd-detail-title { font-size: 14px; }
+    .ec-gd-card { padding: 10px 11px; }
+}
+
+/* v20261111b：语法讲义逐页编辑（一次只编辑当前末级讲义页） */
+.ec-gd-detail-hd {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 8px; flex-wrap: wrap; margin: 0 0 9px;
+}
+.ec-gd-detail-hd .ec-gd-detail-title { flex: 1 1 auto; min-width: 0; margin: 0; }
+.ec-gd-edited {
+    display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 7px;
+    font-size: 10px; font-weight: 700; color: var(--primary-dark);
+    background: var(--primary-light); vertical-align: middle; white-space: nowrap;
+}
+.ec-gm-doc-p.is-mine {
+    margin: 8px 0; padding: 8px 10px; border-radius: 8px;
+    background: rgba(201,164,232,.16); border-left: 3px solid #c9a4e8; color: var(--text);
+}
+[data-theme="dark"] .ec-gm-doc-p.is-mine { background: rgba(201,164,232,.14); }
+.ec-gde-tip {
+    margin: 2px 0 10px; padding: 8px 10px; border-radius: 10px;
+    background: var(--primary-light); color: var(--primary-dark);
+    font-size: 11.5px; font-weight: 600; line-height: 1.7;
+}
+.ec-gde-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.ec-gde-title-row > span { flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--text-secondary); }
+.ec-gde-title-row .input { flex: 1 1 220px; min-width: 0; }
+.ec-gde-blk {
+    margin: 9px 0; padding: 8px 10px 10px; border: 1px solid var(--border);
+    border-radius: 12px; background: var(--surface-2); min-width: 0;
+}
+.ec-gde-hd {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 7px;
+    font-size: 11px; font-weight: 700; color: var(--text-secondary);
+}
+.ec-gde-no {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; flex: 0 0 auto;
+    background: var(--primary-light); color: var(--primary-dark); font-size: 10px;
+}
+.ec-gde-ops { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; }
+.ec-gde-mini {
+    border: 1px solid var(--border); border-radius: 7px; background: var(--surface);
+    color: var(--text); font-family: inherit; font-size: 10.5px; padding: 4px 8px;
+    cursor: pointer; white-space: nowrap; transition: border-color .15s ease;
+}
+.ec-gde-mini:hover { border-color: var(--primary); }
+.ec-gde-kind, .ec-gde-text {
+    display: block; width: 100%; box-sizing: border-box; margin: 0 0 6px;
+    font-family: inherit; font-size: 12px;
+}
+.ec-gde-kind { padding: 6px 8px; }
+.ec-gde-text { padding: 7px 9px; min-height: 68px; line-height: 1.7; resize: vertical; }
+.ec-gde-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.ec-gde-table { width: 100%; min-width: 360px; border-collapse: collapse; table-layout: fixed; }
+.ec-gde-table td { padding: 3px; border: 1px solid var(--border); }
+.ec-gde-table textarea {
+    display: block; width: 100%; min-width: 90px; box-sizing: border-box;
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px;
+    font-family: inherit; font-size: 11px; line-height: 1.5; resize: vertical;
+    background: var(--surface); color: var(--text);
+}
+.ec-gde-row, .ec-gde-add, .ec-gde-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+.ec-gde-add > span { font-size: 11px; font-weight: 700; color: var(--text-secondary); }
+.ec-gde-bar {
+    position: sticky; bottom: 0; z-index: 2; margin: 12px 0 0; padding: 9px 0 4px;
+    background: var(--surface); border-top: 1px solid var(--border);
+}
+@media (max-width: 600px) {
+    .ec-gde-text, .ec-gde-table textarea { font-size: 16px; }
+    .ec-gde-table { min-width: 420px; }
+    .ec-gde-bar .btn { flex: 1 1 auto; }
+    .ec-gd-detail-hd .btn { flex: 0 0 auto; }
+}
