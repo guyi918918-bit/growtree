@@ -14,18 +14,18 @@ if (!TOKEN) { console.error('缺少 GH_PAT 环境变量'); process.exit(1); }
 // 不必每次重传（否则几十个 600~800KB blob 会拖慢推送并提高失败率）。
 const FILES = [
     'app.js', 'styles.css', 'index.html', 'sw.js', 'version.json',
-    'app.20261110e.js', 'styles.20261110e.css',
+    'app.20261110f.js', 'styles.20261110f.css',
     'vendor/lunar.1.7.8.js', 'vendor/supabase.2.119.0.js',
     'test-20261025c.cjs', 'push-via-api.cjs'
 ];
-// 历史哈希文件清理：只保留当前 20261110e 与线上上一版 20261110d（离线回退用），其余从远程 tree 删除。
+// 历史哈希文件清理：只保留当前 20261110f 与线上上一版 20261110e（离线回退用），其余从远程 tree 删除。
 // Git 历史仍完整保留，任何旧版本都能从旧 commit 找回；体积从约 96MB 降到约 2MB。
 const KEEP_HASHED = new Set([
-    'app.20261110e.js', 'styles.20261110e.css',
-    'app.20261110d.js', 'styles.20261110d.css'
+    'app.20261110f.js', 'styles.20261110f.css',
+    'app.20261110e.js', 'styles.20261110e.css'
 ]);
 
-const MESSAGE = "feat: 语法地图独立成顶层标签 + 看板入口化 + 双栏体验升级 v20261110e\n\n【用户反馈】语法地图原来埋在学习看板底部不够直观；要求移到主线任务旁边更显眼，\n并在内容不变的前提下整体提升 UI 与使用流畅度。\n\n【实现】\n1. 语法地图从「学习看板」独立为英语打卡的顶层标签「🧠 语法地图」，排在「📚 主线任务」之后；\n   老用户标签顺序做一次性迁移（ec-grammar 插到 ec-books 之后），保证「挨着主线任务」；\n   renderEngCheckPage 新增 ec-grammar 路由，tab 栏 HINTS 补全。\n2. 原学习看板改为清爽的「学习入口」仪表盘：面包屑 + 五张入口卡（主线任务/语法地图/\n   记忆巩固/查漏补缺/荣誉战绩），点卡片直达对应标签，看板不再空着。\n3. 语法地图卡片重构为双栏布局：左栏章节网格 + 树（宽屏独立滚动），右栏详情区（吸附视口）；\n   窄屏自动堆叠为单栏、章节网格 2 列，移动端体验更顺。\n4. 交互打磨（内容一字未改）：章节箭头由「▸/▾」改为始终 ▸、展开时旋转 90° 的平滑动画；\n   行 hover/选中加过渡；详情区入场淡入；首次进入默认选中第一张分支首节，右侧不再空白。\n5. 全套回归与浏览器复测（桌面 + 375px）通过，JS 零错误；旧版 20261110d 保留作离线回退。\n\n【版本链】APP_BUILD / index / version.json 升到 20261110e；SW growtree-shell-v158；\nKEEP_HASHED 保留当前 20261110e 与线上上一版 20261110d。";
+const MESSAGE = "feat: 英语打卡主 Tab 精简为 4 个 + 主线任务三级子导航 v20261110f\n\n【用户反馈】主 Tab 6 个（学习看板·主线任务·语法地图·记忆巩固·查漏补缺·荣誉战绩）太挤，\n要求把「记忆巩固」「查漏补缺」收进「主线任务」下面作为三级目录。\n\n【实现】\n1. EC_SUBTABS 缩到 3 个（主线任务 / 语法地图 / 荣誉战绩），加固定「学习看板」入口共 4 个主 Tab。\n2. 新增 EC_BOOKS_SUBTABS 与 ec-books-sub 命名空间（沿用 ec-review-sub / ec-wrong-sub 机制），\n   顺序固定：① 我的书单 ② 记忆巩固 ③ 查漏补缺；分别复用 ecRenderDrill /\n   ecRenderReview / ecRenderWrong，三个页面内容一字未改。\n3. ecGo、tab 事件委托、学习看板入口卡、成就 / 引导跳转全部做旧目标归一化，\n   旧链接依旧直达对应子页；从别的主 Tab 进「主线任务」默认选中「我的书单」。\n4. 老用户自动迁移：旧 currentSubTab.engcheck 停在 ec-review / ec-wrong / ec-quiz 时归到\n   主线任务对应子页；旧 tabCfg 若把这两个页面排第一，默认三级子页同步落过去，并解隐藏主线任务。\n5. ⚙️ 导航设置面板同步：只列 3 个可排序 / 显隐的主 Tab，主线任务因装着两个子页保持常驻（🔒），\n   面板补一句新结构说明；默认选中项、非法值兜底均为「我的书单」。\n6. 全套回归（983 通过 / 0 失败）与真实无头 Chrome 桌面 + 375px 复测通过，JS 错误 0、\n   无页面级横向溢出；旧版 20261110e 保留作离线回退。\n\n【版本链】APP_BUILD / index / version.json 升到 20261110f；SW growtree-shell-v159；\nKEEP_HASHED 保留当前 20261110f 与线上上一版 20261110e。";
 
 
 async function api(method, endpoint, body, attempt = 0) {

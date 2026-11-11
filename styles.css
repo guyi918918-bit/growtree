@@ -4366,6 +4366,13 @@ select.input {
 .ec-review-subnav .tab-bar { background: var(--surface-2); }
 .ec-review-subnav .tab-btn { font-size: 13px; padding: 7px 12px; border-radius: 999px; min-width: 0; flex: 1 0 auto; }
 .ec-review-subnav .tab-btn.active { box-shadow: 0 2px 8px rgba(107, 142, 94, 0.22); }
+/* v20261110f：主线任务三级子导航（我的书单 / 记忆巩固 / 查漏补缺）。
+   复用上面 ec-review-subnav 的全部布局与窄屏规则，只补一点视觉区分，避免和主 Tab 混淆。 */
+.ec-books-subnav { margin-bottom: 2px; }
+.ec-books-subnav .tab-btn.active { font-weight: 700; }
+@media (max-width: 600px) {
+    .ec-books-subnav .tab-btn { word-break: keep-all; }
+}
 
 /* 悦己享瘦模块（iframe 嵌入成长小树）——v20261025b 误删导致 iframe 高度塌陷只剩默认 150px，板块显示空白 */
 .yjxs-host { position: absolute; inset: 0; overflow: hidden; background: #fff; }

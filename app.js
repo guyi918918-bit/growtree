@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261110e';
+const APP_BUILD = '20261110f';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -5851,10 +5851,11 @@ const moduleRenderers = {
     },
 
     engcheck() {
-        // v20261106t：旧「刷题」子标签升级后直接落在新「查漏补缺」页
-        if (state.currentSubTab.engcheck === 'ec-quiz') state.currentSubTab.engcheck = 'ec-wrong';
         // 子标签顺序与显隐由用户在「⚙️ 子标签显示设置」弹窗里自定义（state.data.engcheck.tabCfg）
+        // 先跑配置：老 tabCfg 会把「当时默认打开页」映射到主线任务的三级子页
         const tabs = ecTabCfgVisible();
+        // v20261110f：老用户停在「记忆巩固 / 查漏补缺」时，自动归到「主线任务」对应三级子页
+        ecNormalizeEngTab();
         // v20261106y：学习驾驶舱独立成「📊 总览」一页，四个学习页顶部只留一条紧凑状态条
         const isHub = state.currentSubTab.engcheck === 'ec-hub';
         const tab = isHub ? 'ec-hub' : validSubTab('engcheck', tabs, tabs[0].id);
@@ -9015,7 +9016,18 @@ function initEvents() {
                 // render() 找不到这个模块，会回退到导航第一项（欢迎首页）→ 表现为「点子标签就跳首页 / 点不进去」。
                 const isRealModule = !!getModuleById(mod);
                 if (el.dataset.tab) {
-                    state.currentSubTab[mod] = el.dataset.tab;
+                    let tabId = el.dataset.tab;
+                    // v20261110f：旧版主 Tab「记忆巩固 / 查漏补缺」已收进主线任务，
+                    // 学习看板入口卡等老入口点进来时归一到对应三级子页，不会落到空页面。
+                    const st = state.currentSubTab || (state.currentSubTab = {});
+                    const legacySub = { 'ec-review': 'review', 'ec-wrong': 'wrong', 'ec-quiz': 'wrong' };
+                    if (mod === 'engcheck' && legacySub[tabId]) {
+                        st['ec-books-sub'] = legacySub[tabId];
+                        tabId = 'ec-books';
+                    } else if (mod === 'engcheck' && tabId === 'ec-books' && st.engcheck !== 'ec-books') {
+                        st['ec-books-sub'] = 'books'; // 从别的主 Tab 进来默认选中「我的书单」
+                    }
+                    state.currentSubTab[mod] = tabId;
                     if (isRealModule && state.currentModule !== mod) state.currentModule = mod;
                     if (el.dataset.subtab) {
                         state.currentSubTab[mod + '_' + el.dataset.tab] = el.dataset.subtab;
@@ -10543,15 +10555,53 @@ const EC_ACHIEVEMENTS = [
     { id: 'explorer', cat: 'fun', icon: '🧭', name: '四站探险家', desc: '四个板块都留下足迹' }
 ];
 
-// 英语打卡的 4 个子标签（顺序 / 显隐可自定义，配置存在 d.tabCfg）
-// v20261106z：换成更轻松好玩的名字；tabCfg 只存 id，老数据无需迁移就会自动用新名字
+// 英语打卡的主 Tab（顺序 / 显隐可自定义，配置存在 d.tabCfg）
+// v20261110f：「记忆巩固」「查漏补缺」收进「主线任务」的三级子导航，主 Tab 缩到 3 个，
+// 加上固定的「📊 学习看板」入口一共 4 个，窄屏不再挤。tabCfg 只存 id，老数据自动迁移。
 const EC_SUBTABS = [
     { id: 'ec-books', name: '主线任务', icon: '📚' },
     { id: 'ec-grammar', name: '语法地图', icon: '🧠' },
-    { id: 'ec-review', name: '记忆巩固', icon: '⏰' },
-    { id: 'ec-wrong', name: '查漏补缺', icon: '📕' },
     { id: 'ec-achieve', name: '荣誉战绩', icon: '🏆' }
 ];
+// 主线任务下的三级目录：顺序固定为 ① 我的书单 ② 记忆巩固 ③ 查漏补缺。
+// 命名空间沿用 ec-review-sub / ec-wrong-sub 的做法：data-module="ec-books-sub" 不是真实模块 id，
+// 点子导航只改 currentSubTab，不会把 currentModule 写成不存在的模块（避免跳回欢迎首页）。
+const EC_BOOKS_SUBTABS = [
+    { id: 'books', name: '我的书单', icon: '📚' },
+    { id: 'review', name: '记忆巩固', icon: '⏰' },
+    { id: 'wrong', name: '查漏补缺', icon: '📕' }
+];
+// 老主 Tab / 更旧的刷题页 → 主线任务三级子页（老用户自动迁移与旧跳转入口共用）
+const EC_LEGACY_SUB = { 'ec-review': 'review', 'ec-wrong': 'wrong', 'ec-quiz': 'wrong' };
+// 当前三级选中项，非法值 / 缺省一律回到「我的书单」（默认选中项）
+function ecBooksSubGet() {
+    const raw = state.currentSubTab && state.currentSubTab['ec-books-sub'];
+    return EC_BOOKS_SUBTABS.some(t => t.id === raw) ? raw : 'books';
+}
+function ecBooksSubHTML(cur) {
+    return `<div class="card ec-review-subnav ec-books-subnav"><div class="tab-bar">${EC_BOOKS_SUBTABS.map(t => `<button class="tab-btn ${cur === t.id ? 'active' : ''}" data-action="tab" data-module="ec-books-sub" data-tab="${t.id}" data-ec-main="1" title="主线任务 › ${t.name}">${t.icon} ${t.name}</button>`).join('')}</div></div>`;
+}
+// 三个子页直接复用原有渲染函数，内容一字不改
+function ecBooksPageHTML() {
+    const cur = ecBooksSubGet();
+    let body;
+    if (cur === 'review') body = ecRenderReview();
+    else if (cur === 'wrong') body = ecRenderWrong();
+    else body = ecRenderDrill();
+    return ecBooksSubHTML(cur) + body;
+}
+// 老用户自动迁移：之前停在「记忆巩固 / 查漏补缺」的自动归到主线任务对应子页
+function ecNormalizeEngTab() {
+    const st = state.currentSubTab || (state.currentSubTab = {});
+    if (state.currentSubTab.engcheck === 'ec-quiz') state.currentSubTab.engcheck = 'ec-wrong';
+    const t = st.engcheck;
+    if (t && EC_LEGACY_SUB[t]) {
+        st.engcheck = 'ec-books';
+        st['ec-books-sub'] = EC_LEGACY_SUB[t];
+    }
+    if (!EC_BOOKS_SUBTABS.some(x => x.id === st['ec-books-sub'])) st['ec-books-sub'] = 'books';
+    return st.engcheck;
+}
 // 子标签配置：order=[id...]（未列出的按默认顺序追加）；hidden=[id...]；at=最后修改时间（跨设备取新）
 function ecTabCfgGet() {
     const d = ecData();
@@ -10563,6 +10613,15 @@ function ecTabCfgGet() {
     // v20261106t：刷题子标签由「查漏补缺」取代——沿用原排序位置，隐藏状态不迁移（新模块默认可见）
     if (c.order.includes('ec-quiz')) c.order = c.order.map(id => id === 'ec-quiz' ? 'ec-wrong' : id);
     if (c.hidden.includes('ec-quiz')) c.hidden = c.hidden.filter(id => id !== 'ec-quiz');
+    // v20261110f：老配置若把「记忆巩固 / 查漏补缺」排在第一（当时默认打开的页面），
+    // 就把默认三级子页设成对应的 review / wrong，并解隐藏主线任务，保证老用户不会落到空页。
+    // 下面按 EC_SUBTABS 过滤时会清掉这些旧 id，无需改写用户其余排序。
+    const firstVisible = c.order.find(id => !c.hidden.includes(id));
+    if (firstVisible && EC_LEGACY_SUB[firstVisible]) {
+        const st = state.currentSubTab || (state.currentSubTab = {});
+        if (!st['ec-books-sub']) st['ec-books-sub'] = EC_LEGACY_SUB[firstVisible];
+        if (c.hidden.includes('ec-books')) c.hidden = c.hidden.filter(id => id !== 'ec-books');
+    }
     // v20261110e：语法地图从「学习看板」独立成顶层标签，默认排在「主线任务」之后。
     // 老用户若已有自定义顺序、但里面还没有 ec-grammar，就在 ec-books 后插入，保证「挨着主线任务」。
     if (c.order.includes('ec-books') && !c.order.includes('ec-grammar')) {
@@ -10596,10 +10655,13 @@ function ecTabCfgTouch() {
 }
 // 勾选 = 显示 / 取消勾选 = 隐藏（数据不删，随时可再打开）
 function ecTabCfgToggleShow(id) {
-    const c = ecTabCfgTouch();
-    const visCount = ecTabCfgVisible().length;
+    const c = ecTabCfgGet();
     const hidden = c.hidden.includes(id);
+    // v20261110f：主线任务现在装着「记忆巩固 / 查漏补缺」两个子页，隐藏会让内容整块失联 → 常驻
+    if (!hidden && id === 'ec-books') { toast('「主线任务」里有记忆巩固 / 查漏补缺，不能隐藏哦'); return; }
+    const visCount = ecTabCfgVisible().length;
     if (!hidden && visCount <= 1) { toast('至少保留一个子标签显示'); return; }
+    ecTabCfgTouch();
     c.hidden = hidden ? c.hidden.filter(x => x !== id) : c.hidden.concat(id);
     // 刚隐藏掉当前所在标签 → 跳到第一个可见标签，避免停在空页面
     const st = state.currentSubTab || (state.currentSubTab = {});
@@ -10629,15 +10691,16 @@ function ecTabCfgHTML() {
     const visIds = ecTabCfgVisible().map(t => t.id);
     const rows = ecTabCfgAll().map(t => {
         const on = !c.hidden.includes(t.id);
+        const locked = t.id === 'ec-books'; // 装着两个子页，必须常驻
         const vi = visIds.indexOf(t.id);
         const upDis = !on || vi <= 0;
         const downDis = !on || vi < 0 || vi >= visIds.length - 1;
         return `
         <div class="ec-tabcfg-row${on ? '' : ' ec-tabcfg-off'}">
-            <label class="ec-tabcfg-name">
-                <input type="checkbox" ${on ? 'checked' : ''} data-action="ec-tabcfg-show" data-tab="${t.id}">
+            <label class="ec-tabcfg-name"${locked ? ' title="主线任务含记忆巩固 / 查漏补缺，保持常驻"' : ''}>
+                <input type="checkbox" ${on ? 'checked' : ''}${locked ? ' disabled' : ''} data-action="ec-tabcfg-show" data-tab="${t.id}">
                 <span class="ec-tabcfg-ico">${t.icon}</span>
-                <span>${t.name}</span>
+                <span>${t.name}${locked ? ' 🔒' : ''}</span>
             </label>
             <span class="ec-tabcfg-arrows">
                 <button class="ec-edit-btn" data-action="ec-tabcfg-up" data-tab="${t.id}" title="${on ? '上移' : '隐藏的标签不参与排序'}"${upDis ? ' disabled' : ''}>▲</button>
@@ -10650,7 +10713,7 @@ function ecTabCfgHTML() {
         <div class="ec-tabcfg-head">
             <span class="ec-tabcfg-title">⚙️ 子标签显示设置</span>
         </div>
-        <div class="ec-tabcfg-tip">勾选 = 显示；取消勾选 = 隐藏（数据不会删除，随时可再打开）　▲▼ = 调整标签排列顺序，<b>排第一的就是进英语打卡默认打开的页面</b></div>
+        <div class="ec-tabcfg-tip">勾选 = 显示；取消勾选 = 隐藏（数据不会删除，随时可再打开）　▲▼ = 调整标签排列顺序，<b>排第一的就是进英语打卡默认打开的页面</b><br>「记忆巩固」「查漏补缺」已收进「主线任务」的子导航（我的书单 / 记忆巩固 / 查漏补缺），顺序固定，不在这里隐藏或排序。</div>
         ${rows}
     </div>`;
 }
@@ -12463,7 +12526,8 @@ function ecWbStartLesson(lessonId) {
     state._wbFilterBookId = ''; state._wbFilterLessonId = '';
     const l = ecLessonById(lessonId);
     state.currentSubTab = state.currentSubTab || {};
-    state.currentSubTab.engcheck = 'ec-wrong';
+    state.currentSubTab.engcheck = 'ec-books';
+    state.currentSubTab['ec-books-sub'] = 'wrong';
     state.currentSubTab['ec-wrong-sub'] = 'books';
     state._wbBookId = l ? l.bookId : '';
     state._wbLessonId = lessonId;
@@ -12473,7 +12537,8 @@ function ecWbStartLesson(lessonId) {
 function ecWbGoLesson(lessonId) {
     const l = ecLessonById(lessonId);
     state.currentSubTab = state.currentSubTab || {};
-    state.currentSubTab.engcheck = 'ec-wrong';
+    state.currentSubTab.engcheck = 'ec-books';
+    state.currentSubTab['ec-books-sub'] = 'wrong';
     state.currentSubTab['ec-wrong-sub'] = 'books';
     state._wbBookId = l ? l.bookId : '';
     state._wbLessonId = lessonId;
@@ -12964,9 +13029,9 @@ function ecMergeWrong(a, b) {
 // ---------- 渲染 ----------
 function renderEngCheckPage(tab) {
     if (tab === 'ec-grammar') return ecGrammarCardHTML();
-    if (tab === 'ec-review') return ecRenderReview();
-    if (tab === 'ec-wrong') return ecRenderWrong();
     if (tab === 'ec-achieve') return ecRenderAchieve();
+    // v20261110f：主线任务带三个三级子页；旧主 Tab 也回落到同一页（内容仍用原渲染函数）
+    if (tab === 'ec-books' || tab === 'ec-review' || tab === 'ec-wrong' || tab === 'ec-quiz') return ecBooksPageHTML();
     return ecRenderDrill();
 }
 
@@ -13044,10 +13109,18 @@ function ecHubAdvice(c) {
 function ecGo(to, opts) {
     const o = opts || {};
     const st = state.currentSubTab || (state.currentSubTab = {});
-    st.engcheck = to;
     if (state._wbSession) state._wbSession = null;
+    // v20261110f：旧跳转目标统一归到「主线任务」的三级子页（渲染仍复用原函数，内容不变）
+    const legacy = EC_LEGACY_SUB[to];
+    if (legacy) {
+        st.engcheck = 'ec-books';
+        st['ec-books-sub'] = legacy;
+    } else {
+        st.engcheck = to;
+        if (to === 'ec-books') st['ec-books-sub'] = 'books';
+    }
     if (to === 'ec-review') st['ec-review-sub'] = o.sub || 'due';
-    if (to === 'ec-wrong') {
+    if (to === 'ec-wrong' || to === 'ec-quiz') {
         st['ec-wrong-sub'] = o.sub || 'due';
         state._wbFilterBookId = o.book || '';
         state._wbFilterLessonId = o.lesson || '';
@@ -13078,13 +13151,12 @@ function ecScrollTop() {
 // 主 Tab 栏：去掉数字待办徽标（99+ / 18 这类数字只会制造压力），保留好玩的悬停提示
 function ecMainTabsHTML(tabs, current, extraHTML) {
     const HINTS = {
-        'ec-books': '翻开新的一课，就是一次小冒险',
+        'ec-books': '我的书单 / 记忆巩固 / 查漏补缺，点进来再选',
         'ec-grammar': '点开就能看清语法全貌',
-        'ec-review': '和学过的课文打个招呼',
-        'ec-wrong': '把小坑变成小宝藏',
         'ec-achieve': '看看攒下的闪光时刻'
     };
-    // 「📊 学习看板」是固定入口，不参与子标签的隐藏 / 排序设置
+    // v20261110f：主 Tab 只保留「学习看板（固定入口）+ 主线任务 / 语法地图 / 荣誉战绩」共 4 个；
+    // 「📊 学习看板」不参与子标签的隐藏 / 排序设置。
     const hubBtn = `<button class="tab-btn ec-hub-tab ${current === 'ec-hub' ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1" title="学习看板：只放收获和鼓励">📊 <span class="ec-tab-label">学习看板</span></button>`;
     return `<div class="tab-bar ec-main-tabs">${hubBtn}${tabs.map(t => {
         return `<button class="tab-btn ${current === t.id ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="${t.id}" data-ec-main="1" title="${HINTS[t.id] || '点一下就来逛逛'}">${t.icon || ''} <span class="ec-tab-label">${t.name}</span></button>`;
@@ -14365,6 +14437,7 @@ function ecOpenRecite(lessonId) {
     if (!lesson) return;
     state.currentSubTab = state.currentSubTab || {};
     state.currentSubTab['engcheck'] = 'ec-books';
+    state.currentSubTab['ec-books-sub'] = 'books';
     state._ecBookId = lesson.bookId;
     state._ecLessonId = lessonId;
     state._ecEditBookId = null;
