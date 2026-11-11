@@ -2130,7 +2130,9 @@ console.log('—— z：去压力 / 改名 / 成就多元化 / 氛围升级 —�
         .replace(/const EC_GRAMMAR_EXTRA = \[[\s\S]*?\];/, '')
         .replace(/const EC_GM_NOTES = \{[\s\S]*?\};/, '')
         .replace(/const EC_GM_ALIASES = \{[\s\S]*?\};/, '')
-        .replace(/const EC_GM_HANDOUT = \{[\s\S]*?\};/, '');
+        .replace(/const EC_GM_HANDOUT = \{[\s\S]*?\};/, '')
+        .replace(/const EC_GD_DOC = \{[\s\S]*?\};\n/, '')
+        .replace(/const EC_GD_TERMS = \{[\s\S]*?\};\n/, '');
     ok('z：压力文案已从渲染层清除', !/待学任务|项待办|已逾期|尽快补|去完成|待解锁|🔗 板块联动/.test(APP_RENDER_ONLY));
 
     // 4. 需求 4/6：成就多元化 + 鼓励进看板 + 好玩氛围
@@ -2288,7 +2290,9 @@ console.log('—— v20261110a 改名 + 语法地图 ——');
     const RENDER = APP
         .replace(/const EC_GRAMMAR_SEED = \[[\s\S]*?\];/, '')
         .replace(/const EC_GM_ALIASES = \{[\s\S]*?\};/, '')
-        .replace(/const EC_GM_HANDOUT = \{[\s\S]*?\};/, '');
+        .replace(/const EC_GM_HANDOUT = \{[\s\S]*?\};/, '')
+        .replace(/const EC_GD_DOC = \{[\s\S]*?\};\n/, '')
+        .replace(/const EC_GD_TERMS = \{[\s\S]*?\};\n/, '');
 
     // ① 三个板块改名（旧数据迁移 + 显示层归一化 + 子 Tab 跟随板块设置）
     ok('b：默认分类三个新名字', /basic: '工作日打卡',\s*daily: '变美习惯',\s*other: '打败 BOSS'/.test(APP));
@@ -2347,16 +2351,18 @@ console.log('—— v20261110a 改名 + 语法地图 ——');
     ok('b：课文语法要点拆成可点标签', (noteHTML.match(/ec-gm-from-note/g) || []).length === 3 &&
         noteHTML.includes('data-q="be动词（am/is/are）"') && noteHTML.includes('ec-gm-note-wrap'));
     ok('b：标签内容做了 HTML 转义', GM.ecGmNoteHTML('<script>x</script>').includes('&lt;script&gt;'));
-    ok('b：导图卡片渲染 10 个分支 + 搜索 + 树 + 讲义规模', (() => {
+    ok('b：导图卡片渲染 4 大板块 + 逐层目录 + 搜索 + 讲义规模', (() => {
         const card = GM.ecGrammarCardHTML();
-        return (card.match(/data-action="ec-gm-branch"/g) || []).length === 10 &&
-            (card.match(/ec-gm-branch-t/g) || []).length === 10 &&
-            card.includes('id="ecGmQ"') && card.includes('ec-gm-tree') &&
-            card.includes('id="ecGmCard"') && card.includes('10 章 · 51 张对照表');
+        return (card.match(/data-action="ec-gd-part"/g) || []).length === 4 &&
+            ['词法', '句法', '时态', '其他'].every(t => card.includes(t)) &&
+            card.includes('id="ecGmQ"') && card.includes('ec-gd-cards') &&
+            card.includes('id="ecGmCard"') && card.includes('4 大板块 · 32 章 · 38 张对照表');
     })());
-    ok('c：首次进入默认展开主干两级（不再只看到一行）', (() => {
-        const fresh = makeGM(); fresh.ecGrammarCardHTML();
-        return Object.keys(fresh.state._gmOpen || {}).length >= 2;
+    ok('c：首次进入只显示词法目录（不铺开全部内容）', (() => {
+        const fresh = makeGM(); const card = fresh.ecGrammarCardHTML();
+        return (card.match(/data-action="ec-gd-ch"/g) || []).length === 12 &&
+            !card.includes('data-action="ec-gd-sec"') && !card.includes('ec-gd-detail-title') &&
+            !card.includes('<details class="ec-gd-preface" open');
     })());
 
     // ⑤ 与课文联动：导图 → 课文、课文 → 导图
@@ -2379,9 +2385,9 @@ console.log('—— v20261110a 改名 + 语法地图 ——');
     GM.state._gmQuery = 'be动词';
     ok('b：搜索结果可跳节点', GM.ecGrammarCardHTML().includes('data-action="ec-gm-reveal"'));
     GM.state._gmQuery = '';
-    GM.state._gmSel = beNode.id;
-    ok('b：选中节点显示「去课文」按钮', GM.ecGrammarCardHTML().includes('data-action="ec-gm-open-lesson"'));
-    GM.state._gmSel = null;
+    GM.state._gdCh = 'gd_p1_c3'; GM.state._gdSec = '';
+    ok('b：末级讲义显示「去课文」按钮', GM.ecGrammarCardHTML().includes('data-action="ec-gm-open-lesson"'));
+    GM.state._gdCh = ''; GM.state._gdSec = '';
 
     // ⑥ 可编辑：增 / 删 / 改名 / Markdown 导入导出 / 恢复
     const beforeAdd = GM.ecGmData().nodes.length;
@@ -2571,10 +2577,18 @@ console.log('—— v20261110d 系统讲义 / 表格 / 迁移 ——');
     ok('d：课文旧说法仍能联动到新章节', G.ecGmFindNode('双否') && G.ecGmFindNode('10种词性') && G.ecGmFindNode('倒装'));
     G.state._gmView = 'outline';
     const ol = G.ecGrammarCardHTML();
-    ok('d：全览 10 个可展开章节分节', (ol.match(/<details class="ec-gm-ol-sec/g) || []).length === 10 &&
-        (ol.match(/data-action="ec-gm-goto"/g) || []).length >= 73);
-    ok('d：卡头与脚注说明讲义规模', ol.includes('10 章 · 51 张对照表') && ol.includes('《英语语法系统讲义》'));
-    ok('d：分支徽标按「节」计', ol.includes(' 节</small>'));
+    ok('d：逐层钻取只显示当前一层', (() => {
+        G.state._gdPart = 'gd_p1'; G.state._gdCh = 'gd_p1_c2'; G.state._gdSec = '';
+        const secPage = G.ecGrammarCardHTML();
+        G.state._gdSec = 'gd_p1_c2_s1';
+        const detail = G.ecGrammarCardHTML();
+        G.state._gdCh = ''; G.state._gdSec = '';
+        return (secPage.match(/data-action="ec-gd-sec"/g) || []).length === 4 &&
+            !secPage.includes('ec-gm-doc-hd') && !secPage.includes('ec-gd-detail-title') &&
+            detail.includes('ec-gm-table-wrap') && detail.includes('📖 系统讲义');
+    })());
+    ok('d：卡头与脚注说明讲义规模', ol.includes('4 大板块 · 32 章 · 38 张对照表') && ol.includes('《大白话英语语法》'));
+    ok('d：板块目录角标按「项」计', ol.includes('ec-gd-card-n') && ol.includes('这一格下面的内容'));
 
     // ⑤ 样式与版本链
     ok('d：CSS 讲义正文 / 表格 / 易错 / 折叠 / 第10章配色齐备',
@@ -2585,9 +2599,9 @@ console.log('—— v20261110d 系统讲义 / 表格 / 迁移 ——');
         /@media \(max-width: 600px\)[\s\S]*?\.ec-gm-table \{ min-width: 380px/.test(CSS) &&
         (CSS.match(/{/g) || []).length === (CSS.match(/}/g) || []).length);
     ok('d：表格窄屏横向滚动不裁内容', /\.ec-gm-table-wrap \{[^}]*overflow-x: auto/.test(CSS));
-    ok('d：版本链升到 20261110f / SW v159', BUILD === '20261110f' && VERD.includes(BUILD) &&
-        buildOK() && SWD.includes('growtree-shell-v159') && SWD.includes("'./app." + BUILD + ".js'"));
-    ok('d：推送清单保留当前 f + 线上上一版 e', PUSHD.includes("'app.20261110f.js'") && PUSHD.includes("'app.20261110e.js'"));
+    ok('d：版本链升到 20261111a / SW v160', BUILD === '20261111a' && VERD.includes(BUILD) &&
+        buildOK() && SWD.includes('growtree-shell-v160') && SWD.includes("'./app." + BUILD + ".js'"));
+    ok('d：推送清单保留当前 a + 线上上一版 f', PUSHD.includes("'app.20261111a.js'") && PUSHD.includes("'app.20261110f.js'"));
     const crypto2 = require('crypto');
     ['app.' + BUILD + '.js', 'styles.' + BUILD + '.css'].forEach((f, i) => {
         const src = fs.readFileSync(__dirname + '/' + (i ? 'styles.css' : 'app.js'));

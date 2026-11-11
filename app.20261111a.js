@@ -1,7 +1,7 @@
 // ==================== 顾一的成长小树 ====================
 
 // 当前构建版本号：每次发布升一档，用于「设置」里展示与自动更新检测对比
-const APP_BUILD = '20261110e';
+const APP_BUILD = '20261111a';
 
 // 打卡管理筛选/排序等 UI 偏好：放在独立 localStorage key，不进 state.data.settings，
 // 避免被 syncFromCloud 的 { ...state.data, ...cloudPayload } 整组 settings覆盖（之前会出现"选了又被改回去"的 bug）
@@ -5851,10 +5851,11 @@ const moduleRenderers = {
     },
 
     engcheck() {
-        // v20261106t：旧「刷题」子标签升级后直接落在新「查漏补缺」页
-        if (state.currentSubTab.engcheck === 'ec-quiz') state.currentSubTab.engcheck = 'ec-wrong';
         // 子标签顺序与显隐由用户在「⚙️ 子标签显示设置」弹窗里自定义（state.data.engcheck.tabCfg）
+        // 先跑配置：老 tabCfg 会把「当时默认打开页」映射到主线任务的三级子页
         const tabs = ecTabCfgVisible();
+        // v20261110f：老用户停在「记忆巩固 / 查漏补缺」时，自动归到「主线任务」对应三级子页
+        ecNormalizeEngTab();
         // v20261106y：学习驾驶舱独立成「📊 总览」一页，四个学习页顶部只留一条紧凑状态条
         const isHub = state.currentSubTab.engcheck === 'ec-hub';
         const tab = isHub ? 'ec-hub' : validSubTab('engcheck', tabs, tabs[0].id);
@@ -9015,7 +9016,18 @@ function initEvents() {
                 // render() 找不到这个模块，会回退到导航第一项（欢迎首页）→ 表现为「点子标签就跳首页 / 点不进去」。
                 const isRealModule = !!getModuleById(mod);
                 if (el.dataset.tab) {
-                    state.currentSubTab[mod] = el.dataset.tab;
+                    let tabId = el.dataset.tab;
+                    // v20261110f：旧版主 Tab「记忆巩固 / 查漏补缺」已收进主线任务，
+                    // 学习看板入口卡等老入口点进来时归一到对应三级子页，不会落到空页面。
+                    const st = state.currentSubTab || (state.currentSubTab = {});
+                    const legacySub = { 'ec-review': 'review', 'ec-wrong': 'wrong', 'ec-quiz': 'wrong' };
+                    if (mod === 'engcheck' && legacySub[tabId]) {
+                        st['ec-books-sub'] = legacySub[tabId];
+                        tabId = 'ec-books';
+                    } else if (mod === 'engcheck' && tabId === 'ec-books' && st.engcheck !== 'ec-books') {
+                        st['ec-books-sub'] = 'books'; // 从别的主 Tab 进来默认选中「我的书单」
+                    }
+                    state.currentSubTab[mod] = tabId;
                     if (isRealModule && state.currentModule !== mod) state.currentModule = mod;
                     if (el.dataset.subtab) {
                         state.currentSubTab[mod + '_' + el.dataset.tab] = el.dataset.subtab;
@@ -10543,15 +10555,53 @@ const EC_ACHIEVEMENTS = [
     { id: 'explorer', cat: 'fun', icon: '🧭', name: '四站探险家', desc: '四个板块都留下足迹' }
 ];
 
-// 英语打卡的 4 个子标签（顺序 / 显隐可自定义，配置存在 d.tabCfg）
-// v20261106z：换成更轻松好玩的名字；tabCfg 只存 id，老数据无需迁移就会自动用新名字
+// 英语打卡的主 Tab（顺序 / 显隐可自定义，配置存在 d.tabCfg）
+// v20261110f：「记忆巩固」「查漏补缺」收进「主线任务」的三级子导航，主 Tab 缩到 3 个，
+// 加上固定的「📊 学习看板」入口一共 4 个，窄屏不再挤。tabCfg 只存 id，老数据自动迁移。
 const EC_SUBTABS = [
     { id: 'ec-books', name: '主线任务', icon: '📚' },
     { id: 'ec-grammar', name: '语法地图', icon: '🧠' },
-    { id: 'ec-review', name: '记忆巩固', icon: '⏰' },
-    { id: 'ec-wrong', name: '查漏补缺', icon: '📕' },
     { id: 'ec-achieve', name: '荣誉战绩', icon: '🏆' }
 ];
+// 主线任务下的三级目录：顺序固定为 ① 我的书单 ② 记忆巩固 ③ 查漏补缺。
+// 命名空间沿用 ec-review-sub / ec-wrong-sub 的做法：data-module="ec-books-sub" 不是真实模块 id，
+// 点子导航只改 currentSubTab，不会把 currentModule 写成不存在的模块（避免跳回欢迎首页）。
+const EC_BOOKS_SUBTABS = [
+    { id: 'books', name: '我的书单', icon: '📚' },
+    { id: 'review', name: '记忆巩固', icon: '⏰' },
+    { id: 'wrong', name: '查漏补缺', icon: '📕' }
+];
+// 老主 Tab / 更旧的刷题页 → 主线任务三级子页（老用户自动迁移与旧跳转入口共用）
+const EC_LEGACY_SUB = { 'ec-review': 'review', 'ec-wrong': 'wrong', 'ec-quiz': 'wrong' };
+// 当前三级选中项，非法值 / 缺省一律回到「我的书单」（默认选中项）
+function ecBooksSubGet() {
+    const raw = state.currentSubTab && state.currentSubTab['ec-books-sub'];
+    return EC_BOOKS_SUBTABS.some(t => t.id === raw) ? raw : 'books';
+}
+function ecBooksSubHTML(cur) {
+    return `<div class="card ec-review-subnav ec-books-subnav"><div class="tab-bar">${EC_BOOKS_SUBTABS.map(t => `<button class="tab-btn ${cur === t.id ? 'active' : ''}" data-action="tab" data-module="ec-books-sub" data-tab="${t.id}" data-ec-main="1" title="主线任务 › ${t.name}">${t.icon} ${t.name}</button>`).join('')}</div></div>`;
+}
+// 三个子页直接复用原有渲染函数，内容一字不改
+function ecBooksPageHTML() {
+    const cur = ecBooksSubGet();
+    let body;
+    if (cur === 'review') body = ecRenderReview();
+    else if (cur === 'wrong') body = ecRenderWrong();
+    else body = ecRenderDrill();
+    return ecBooksSubHTML(cur) + body;
+}
+// 老用户自动迁移：之前停在「记忆巩固 / 查漏补缺」的自动归到主线任务对应子页
+function ecNormalizeEngTab() {
+    const st = state.currentSubTab || (state.currentSubTab = {});
+    if (state.currentSubTab.engcheck === 'ec-quiz') state.currentSubTab.engcheck = 'ec-wrong';
+    const t = st.engcheck;
+    if (t && EC_LEGACY_SUB[t]) {
+        st.engcheck = 'ec-books';
+        st['ec-books-sub'] = EC_LEGACY_SUB[t];
+    }
+    if (!EC_BOOKS_SUBTABS.some(x => x.id === st['ec-books-sub'])) st['ec-books-sub'] = 'books';
+    return st.engcheck;
+}
 // 子标签配置：order=[id...]（未列出的按默认顺序追加）；hidden=[id...]；at=最后修改时间（跨设备取新）
 function ecTabCfgGet() {
     const d = ecData();
@@ -10563,6 +10613,15 @@ function ecTabCfgGet() {
     // v20261106t：刷题子标签由「查漏补缺」取代——沿用原排序位置，隐藏状态不迁移（新模块默认可见）
     if (c.order.includes('ec-quiz')) c.order = c.order.map(id => id === 'ec-quiz' ? 'ec-wrong' : id);
     if (c.hidden.includes('ec-quiz')) c.hidden = c.hidden.filter(id => id !== 'ec-quiz');
+    // v20261110f：老配置若把「记忆巩固 / 查漏补缺」排在第一（当时默认打开的页面），
+    // 就把默认三级子页设成对应的 review / wrong，并解隐藏主线任务，保证老用户不会落到空页。
+    // 下面按 EC_SUBTABS 过滤时会清掉这些旧 id，无需改写用户其余排序。
+    const firstVisible = c.order.find(id => !c.hidden.includes(id));
+    if (firstVisible && EC_LEGACY_SUB[firstVisible]) {
+        const st = state.currentSubTab || (state.currentSubTab = {});
+        if (!st['ec-books-sub']) st['ec-books-sub'] = EC_LEGACY_SUB[firstVisible];
+        if (c.hidden.includes('ec-books')) c.hidden = c.hidden.filter(id => id !== 'ec-books');
+    }
     // v20261110e：语法地图从「学习看板」独立成顶层标签，默认排在「主线任务」之后。
     // 老用户若已有自定义顺序、但里面还没有 ec-grammar，就在 ec-books 后插入，保证「挨着主线任务」。
     if (c.order.includes('ec-books') && !c.order.includes('ec-grammar')) {
@@ -10596,10 +10655,13 @@ function ecTabCfgTouch() {
 }
 // 勾选 = 显示 / 取消勾选 = 隐藏（数据不删，随时可再打开）
 function ecTabCfgToggleShow(id) {
-    const c = ecTabCfgTouch();
-    const visCount = ecTabCfgVisible().length;
+    const c = ecTabCfgGet();
     const hidden = c.hidden.includes(id);
+    // v20261110f：主线任务现在装着「记忆巩固 / 查漏补缺」两个子页，隐藏会让内容整块失联 → 常驻
+    if (!hidden && id === 'ec-books') { toast('「主线任务」里有记忆巩固 / 查漏补缺，不能隐藏哦'); return; }
+    const visCount = ecTabCfgVisible().length;
     if (!hidden && visCount <= 1) { toast('至少保留一个子标签显示'); return; }
+    ecTabCfgTouch();
     c.hidden = hidden ? c.hidden.filter(x => x !== id) : c.hidden.concat(id);
     // 刚隐藏掉当前所在标签 → 跳到第一个可见标签，避免停在空页面
     const st = state.currentSubTab || (state.currentSubTab = {});
@@ -10629,15 +10691,16 @@ function ecTabCfgHTML() {
     const visIds = ecTabCfgVisible().map(t => t.id);
     const rows = ecTabCfgAll().map(t => {
         const on = !c.hidden.includes(t.id);
+        const locked = t.id === 'ec-books'; // 装着两个子页，必须常驻
         const vi = visIds.indexOf(t.id);
         const upDis = !on || vi <= 0;
         const downDis = !on || vi < 0 || vi >= visIds.length - 1;
         return `
         <div class="ec-tabcfg-row${on ? '' : ' ec-tabcfg-off'}">
-            <label class="ec-tabcfg-name">
-                <input type="checkbox" ${on ? 'checked' : ''} data-action="ec-tabcfg-show" data-tab="${t.id}">
+            <label class="ec-tabcfg-name"${locked ? ' title="主线任务含记忆巩固 / 查漏补缺，保持常驻"' : ''}>
+                <input type="checkbox" ${on ? 'checked' : ''}${locked ? ' disabled' : ''} data-action="ec-tabcfg-show" data-tab="${t.id}">
                 <span class="ec-tabcfg-ico">${t.icon}</span>
-                <span>${t.name}</span>
+                <span>${t.name}${locked ? ' 🔒' : ''}</span>
             </label>
             <span class="ec-tabcfg-arrows">
                 <button class="ec-edit-btn" data-action="ec-tabcfg-up" data-tab="${t.id}" title="${on ? '上移' : '隐藏的标签不参与排序'}"${upDis ? ' disabled' : ''}>▲</button>
@@ -10650,7 +10713,7 @@ function ecTabCfgHTML() {
         <div class="ec-tabcfg-head">
             <span class="ec-tabcfg-title">⚙️ 子标签显示设置</span>
         </div>
-        <div class="ec-tabcfg-tip">勾选 = 显示；取消勾选 = 隐藏（数据不会删除，随时可再打开）　▲▼ = 调整标签排列顺序，<b>排第一的就是进英语打卡默认打开的页面</b></div>
+        <div class="ec-tabcfg-tip">勾选 = 显示；取消勾选 = 隐藏（数据不会删除，随时可再打开）　▲▼ = 调整标签排列顺序，<b>排第一的就是进英语打卡默认打开的页面</b><br>「记忆巩固」「查漏补缺」已收进「主线任务」的子导航（我的书单 / 记忆巩固 / 查漏补缺），顺序固定，不在这里隐藏或排序。</div>
         ${rows}
     </div>`;
 }
@@ -12463,7 +12526,8 @@ function ecWbStartLesson(lessonId) {
     state._wbFilterBookId = ''; state._wbFilterLessonId = '';
     const l = ecLessonById(lessonId);
     state.currentSubTab = state.currentSubTab || {};
-    state.currentSubTab.engcheck = 'ec-wrong';
+    state.currentSubTab.engcheck = 'ec-books';
+    state.currentSubTab['ec-books-sub'] = 'wrong';
     state.currentSubTab['ec-wrong-sub'] = 'books';
     state._wbBookId = l ? l.bookId : '';
     state._wbLessonId = lessonId;
@@ -12473,7 +12537,8 @@ function ecWbStartLesson(lessonId) {
 function ecWbGoLesson(lessonId) {
     const l = ecLessonById(lessonId);
     state.currentSubTab = state.currentSubTab || {};
-    state.currentSubTab.engcheck = 'ec-wrong';
+    state.currentSubTab.engcheck = 'ec-books';
+    state.currentSubTab['ec-books-sub'] = 'wrong';
     state.currentSubTab['ec-wrong-sub'] = 'books';
     state._wbBookId = l ? l.bookId : '';
     state._wbLessonId = lessonId;
@@ -12964,9 +13029,9 @@ function ecMergeWrong(a, b) {
 // ---------- 渲染 ----------
 function renderEngCheckPage(tab) {
     if (tab === 'ec-grammar') return ecGrammarCardHTML();
-    if (tab === 'ec-review') return ecRenderReview();
-    if (tab === 'ec-wrong') return ecRenderWrong();
     if (tab === 'ec-achieve') return ecRenderAchieve();
+    // v20261110f：主线任务带三个三级子页；旧主 Tab 也回落到同一页（内容仍用原渲染函数）
+    if (tab === 'ec-books' || tab === 'ec-review' || tab === 'ec-wrong' || tab === 'ec-quiz') return ecBooksPageHTML();
     return ecRenderDrill();
 }
 
@@ -13044,10 +13109,18 @@ function ecHubAdvice(c) {
 function ecGo(to, opts) {
     const o = opts || {};
     const st = state.currentSubTab || (state.currentSubTab = {});
-    st.engcheck = to;
     if (state._wbSession) state._wbSession = null;
+    // v20261110f：旧跳转目标统一归到「主线任务」的三级子页（渲染仍复用原函数，内容不变）
+    const legacy = EC_LEGACY_SUB[to];
+    if (legacy) {
+        st.engcheck = 'ec-books';
+        st['ec-books-sub'] = legacy;
+    } else {
+        st.engcheck = to;
+        if (to === 'ec-books') st['ec-books-sub'] = 'books';
+    }
     if (to === 'ec-review') st['ec-review-sub'] = o.sub || 'due';
-    if (to === 'ec-wrong') {
+    if (to === 'ec-wrong' || to === 'ec-quiz') {
         st['ec-wrong-sub'] = o.sub || 'due';
         state._wbFilterBookId = o.book || '';
         state._wbFilterLessonId = o.lesson || '';
@@ -13078,13 +13151,12 @@ function ecScrollTop() {
 // 主 Tab 栏：去掉数字待办徽标（99+ / 18 这类数字只会制造压力），保留好玩的悬停提示
 function ecMainTabsHTML(tabs, current, extraHTML) {
     const HINTS = {
-        'ec-books': '翻开新的一课，就是一次小冒险',
+        'ec-books': '我的书单 / 记忆巩固 / 查漏补缺，点进来再选',
         'ec-grammar': '点开就能看清语法全貌',
-        'ec-review': '和学过的课文打个招呼',
-        'ec-wrong': '把小坑变成小宝藏',
         'ec-achieve': '看看攒下的闪光时刻'
     };
-    // 「📊 学习看板」是固定入口，不参与子标签的隐藏 / 排序设置
+    // v20261110f：主 Tab 只保留「学习看板（固定入口）+ 主线任务 / 语法地图 / 荣誉战绩」共 4 个；
+    // 「📊 学习看板」不参与子标签的隐藏 / 排序设置。
     const hubBtn = `<button class="tab-btn ec-hub-tab ${current === 'ec-hub' ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="ec-hub" data-ec-main="1" title="学习看板：只放收获和鼓励">📊 <span class="ec-tab-label">学习看板</span></button>`;
     return `<div class="tab-bar ec-main-tabs">${hubBtn}${tabs.map(t => {
         return `<button class="tab-btn ${current === t.id ? 'active' : ''}" data-action="tab" data-module="engcheck" data-tab="${t.id}" data-ec-main="1" title="${HINTS[t.id] || '点一下就来逛逛'}">${t.icon || ''} <span class="ec-tab-label">${t.name}</span></button>`;
@@ -13227,6 +13299,13 @@ function ecLinkCardHTML(current) {
         <div class="ec-link-grid">${items.map(x => `<button class="ec-link-item" data-action="ec-go" data-to="${x.to}" data-sub="${x.sub}"><span class="ec-link-ico">${x.icon}</span><span class="ec-link-text">${x.text}</span><span class="ec-link-go">›</span></button>`).join('')}</div>
     </div>`;
 }
+// ==================== v20261111a：《大白话英语语法》全文编译 · 只读数据源 ====================
+// 来源：用户提供的《大白话英语语法.docx》(400 个内容块 / 38 张对照表)，编译期生成，不进 state、不占云同步体积。
+// 结构：4 大板块 → 章 → 小节；一次只渲染当前一层，点进去才看下一层，末级才展开讲义与对照表。
+const EC_GD_DOC = {"title":"大白话英语语法","subtitle":"小朋友也能看懂的语法入门书","preface":[{"k":"p","v":"大白话英语语法"},{"k":"p","v":"小朋友也能看懂的语法入门书"},{"k":"p","v":"词法 · 句法 · 时态 · 特殊补充"},{"k":"p","v":"写在前面：这本书怎么用"},{"k":"p","v":"学语法听起来很难，其实它只做一件事——帮我们把单词拼成一句通顺的话。这本书把所有知识分成了四大块："},{"k":"t","v":[["部分","讲什么","一句话理解"],["第一部分 词法","单词的种类和变化","先认识每个单词是干什么的"],["第二部分 句法","怎么把单词拼成句子","再学会把单词搭成一句话"],["第三部分 时态","动作在什么时候发生","过去、现在、将来分清楚"],["第四部分 特殊补充","一些特别的说法和规则","遇到特殊情况不慌张"]]},{"k":"p","v":"书里的难词都换成了大白话，正规的名字放在括号里，比如“表示东西的词（名词）”。例句用的都是最简单的词，读一遍就能懂。"}],"parts":[{"id":"gd_p1","name":"词法","icon":"🔤","sub":"认识每一类单词","intro":[{"k":"p","v":"词法就是研究“单词”的。我们先看看英语里一共有哪十类单词，再一类一类地认识它们。"}],"chapters":[{"id":"gd_p1_c1","t":"一、十类单词先见个面","blocks":[{"k":"t","v":[["单词类别（大白话）","正规名字","它是干什么的","例子"],["表示人或东西的词","名词 noun","给人和东西起名字","cat 猫, book 书, water 水"],["表示动作的词","动词 verb","说清楚在做什么","run 跑, eat 吃, go 去"],["形容“什么样”的词","形容词 adjective","说东西长什么样","red 红的, big 大的"],["形容“怎么做”的词","副词 adverb","说动作是怎么做的","fast 快地, well 好地"],["名词前面的小帽子","冠词 article","说明是一个还是那个","a, an, the"],["用来代替的词","代词 pronoun","避免重复说同一个词","I 我, you 你, he 他"],["数数和排顺序的词","数词 numeral","说几个、第几","one 一, two 二, first 第一"],["表示位置关系的小词","介词 preposition","说清楚在哪里、什么关系","in 在里, on 在上, at 在"],["粘东西的胶水词","连词 conjunction","把词和句子连起来","and 和, but 但是"],["表达情绪的词","感叹词 interjection","表示惊讶、高兴等","oh 哦, wow 哇"]]}],"sections":[]},{"id":"gd_p1_c2","t":"二、表示人或东西的词（名词）","blocks":[],"sections":[{"id":"gd_p1_c2_s1","t":"1. 能数的和不能数的","blocks":[{"k":"p","v":"有些东西能一个一个数，比如苹果、书本，这叫“能数的（可数名词）”；有些东西没法直接数，比如水、牛奶，这叫“不能数的（不可数名词）”。"},{"k":"t","v":[["类别","怎么判断","例子","怎么说数量"],["能数的","能说“一个、两个”，有单复数","apple 苹果, book 书, cat 猫","a book 一本书 / two books 两本书 / many books 很多书"],["不能数的","不能直接数，也没有复数","water 水, milk 牛奶, money 钱","some water 一些水 / a cup of water 一杯水 / much water 很多水"]]},{"k":"p","v":"【小提示】water（水）、milk（牛奶）这种不能数，不能说“two waters”，要说“two cups of water（两杯水）”。news（新闻）、information（信息）在英语里也不能数哦。","c":"tip"}]},{"id":"gd_p1_c2_s2","t":"2. 一个变多个：复数怎么变","blocks":[{"k":"p","v":"表示“一个”用单数，表示“多个”要把单词变个样子，这叫“复数”。大多数单词后面直接加 s 就可以了。"},{"k":"t","v":[["规则","怎么变","例子"],["一般情况","直接加 s","book—books 书, cat—cats 猫, pen—pens 笔"],["以 s、x、ch、sh 结尾","加 es","bus—buses 公交车, box—boxes 盒子, watch—watches 手表"],["辅音字母加 y 结尾","变 y 为 i 再加 es","baby—babies 宝宝, family—families 家庭"],["元音字母加 y 结尾","直接加 s","boy—boys 男孩, day—days 日子"],["以 o 结尾（多数）","加 es","tomato—tomatoes 西红柿, potato—potatoes 土豆"],["以 o 结尾（外来词）","只加 s","photo—photos 照片, piano—pianos 钢琴, zoo—zoos 动物园"],["以 f 或 fe 结尾（多数）","变 v 再加 es","knife—knives 刀, leaf—leaves 叶子, half—halves 一半"],["不按规矩变的","要一个个记住","man—men 男人, foot—feet 脚, child—children 孩子, mouse—mice 老鼠"],["单复数长得一样","形式不变","sheep 绵羊, deer 鹿, fish 鱼"]]}]},{"id":"gd_p1_c2_s3","t":"3. “谁的”：所有格","blocks":[{"k":"p","v":"想说“这是某人的东西”，就要用“谁的”（所有格）。最常见的办法是在名字后面加 ’s。"},{"k":"t","v":[["办法","怎么用","例子"],["加 ’s","人或动物的名字后面","Tim's dog 蒂姆的狗, the cat's milk 猫的牛奶"],["只加 ’","已经是复数、以 s 结尾时","the students' books 学生们的书"],["用 of","没有生命的东西","the door of the room 房间的门"],["两个一起用","表示“其中之一”","a friend of my father's 我爸爸的一个朋友"]]},{"k":"p","v":"【小提示】中文说“我家的门”，英语要倒过来说 the door of my house，不能说 my house’s door。","c":"tip"}]},{"id":"gd_p1_c2_s4","t":"4. 名词的两大分类和“集合”现象","blocks":[{"k":"p","v":"名词还可以分成两大类：普通名词（一类东西，比如 rabbit 兔子，世界上有很多只）和专有名词（专门的名字，要大写，比如 China 中国、Papa Rabbit 兔老爹）。"},{"k":"p","v":"· This is a large team. 这是一个大团队。（把团队看成一个整体，用单数）","c":"eg"},{"k":"p","v":"· The team are working together. 团队成员在互相合作。（指成员们，用复数）","c":"eg"},{"k":"p","v":"【大白话】同样一个 team，看成“一个整体”就用 is，看成“一群人”就用 are。furniture 家具、water 水这种“一堆东西的总称”，不能直接加 s，要数就得说 a piece of furniture 一件家具、a glass of water 一杯水。","c":"plain"},{"k":"p","v":"【注意】专有名词有时也能数：There are three Michaels in my class. 我们班有三个叫 Michael 的同学。这里数的是“三个叫这个名字的人”，不是名字本身。","c":"warn"}]}]},{"id":"gd_p1_c3","t":"三、名词前面的小帽子（冠词）","blocks":[{"k":"p","v":"冠词就像戴在名词前面的小帽子，用来说明这个东西是“随便一个”，还是“确定的那一个”。英语里一共就三个小帽子：a、an、the。"},{"k":"t","v":[["小帽子","什么时候用","例子"],["a","后面单词以辅音的音开头，表示“一个”","a book 一本书, a dog 一只狗, a cat 一只猫"],["an","后面单词以元音的音开头，表示“一个”","an apple 一个苹果, an egg 一个蛋, an hour 一小时"],["the","特指确定的那一个，或再次提到","the book 那本书, the sun 太阳, the girl 那个女孩"],["不戴帽子","泛指一类、复数或名字前","Dogs run. 狗会跑, I like water. 我喜欢水"]]},{"k":"p","v":"【小提示】用 a 还是 an，看的是“读音”不是“拼写”。hour（小时）开头的 h 不发音，所以要说 an hour；university（大学）开头读 /j/，要说 a university。","c":"tip"},{"k":"p","v":"【注意】用 a 还是 an，看发音、不看字母：an hour 一小时（h 不发音）；a university 一所大学（开头读 /j/，是辅音音素）。","c":"warn"},{"k":"p","v":"【大白话】第一次提到、泛指“某一个”用 a/an；双方都知道、再次提到的“那个”用 the；复数泛指一类东西时干脆什么都不加。比如 I saw a rabbit. The rabbit ran fast. 我看到一只兔子，那只兔子跑得很快。","c":"plain"},{"k":"p","v":"· The rich should help the poor. 富人应该帮助穷人。（the + 形容词 rich/poor 表示“富人/穷人”这一类人）","c":"eg"},{"k":"p","v":"· I like playing the piano. 我喜欢弹钢琴。（乐器前一般加 the）","c":"eg"}],"sections":[]},{"id":"gd_p1_c4","t":"四、用来代替的词（代词）","blocks":[],"sections":[{"id":"gd_p1_c4_s1","t":"1. 人称代词：说“谁”","blocks":[{"k":"p","v":"老是重复同一个名字很啰嗦，比如“Tim likes Tim’s dog”，这时就用代词来代替，说成“He likes his dog（他喜欢他的狗）”。"},{"k":"t","v":[["中文","做主语（谁）","做宾语（对象）","……的","……的（单独用）","……自己"],["我","I","me","my","mine","myself"],["你","you","you","your","yours","yourself"],["他","he","him","his","his","himself"],["她","she","her","her","hers","herself"],["它","it","it","its","its","itself"],["我们","we","us","our","ours","ourselves"],["你们","you","you","your","yours","yourselves"],["他们","they","them","their","theirs","themselves"]]},{"k":"p","v":"· I like her.  我喜欢她。（I 做主语，her 做宾语）","c":"eg"},{"k":"p","v":"· This is my book.  这是我的书。（my 后面要跟名词）","c":"eg"},{"k":"p","v":"· This book is mine.  这本书是我的。（mine 单独用，后面不跟名词）","c":"eg"}]},{"id":"gd_p1_c4_s2","t":"2. 其他常用代词","blocks":[{"k":"t","v":[["类别","词","例子"],["指这个、那个","this 这个, that 那个, these 这些, those 那些","This is a cat. 这是一只猫。"],["表示“自己”","myself, yourself, himself …","I did it myself. 我自己做的。"],["互相","each other 互相","They help each other. 他们互相帮助。"],["问“谁、什么”","who 谁, what 什么, which 哪个","Who is he? 他是谁？"],["不指明的","some 一些, any 任何, every 每个, no 没有","Every dog can run. 每只狗都会跑。"]]},{"k":"p","v":"【大白话】同一个人，放在主语位置用主格，放在动词后面当宾语用宾格。比如 I saw him. 我看见他；He saw me. 他看见我。“我”在主语是 I，在宾语变成 me。","c":"plain"},{"k":"p","v":"· The rabbit washed himself. 兔子把自己洗干净了。（himself 反身代词，做宾语）","c":"eg"},{"k":"p","v":"· The rabbit washed the carrots himself. 兔子自己洗了胡萝卜。（himself 强调“亲自”，做状语）","c":"eg"},{"k":"p","v":"· We should help each other. 我们应该互相帮助。（each other 相互代词）","c":"eg"}]}]},{"id":"gd_p1_c5","t":"五、数数和排顺序的词（数词）","blocks":[],"sections":[{"id":"gd_p1_c5_s1","t":"1. 基数词：表示“几个”","blocks":[{"k":"p","v":"用来数数的词叫基数词，比如 one、two、three。注意：hundred（百）、thousand（千）前面有具体数字时，不加 s。"},{"k":"p","v":"· one cat 一只猫","c":"eg"},{"k":"p","v":"· two apples 两个苹果","c":"eg"},{"k":"p","v":"· three books 三本书","c":"eg"},{"k":"p","v":"· two hundred dogs 两百只狗（hundred 不加 s）","c":"eg"},{"k":"p","v":"· hundreds of cats 成百上千只猫（没有具体数字时加 s 和 of）","c":"eg"}]},{"id":"gd_p1_c5_s2","t":"2. 序数词：表示“第几”","blocks":[{"k":"p","v":"用来排顺序的词叫序数词，大多数在基数词后面加 th，但前三个要单独记。"},{"k":"t","v":[["基数词（几个）","序数词（第几）","基数词","序数词"],["one 一","first 第一","two 二","second 第二"],["three 三","third 第三","four 四","fourth 第四"],["five 五","fifth 第五","eight 八","eighth 第八"],["nine 九","ninth 第九","twelve 十二","twelfth 第十二"],["twenty 二十","twentieth 第二十","twenty-one 二十一","twenty-first 第二十一"]]},{"k":"p","v":"· the first day 第一天","c":"eg"},{"k":"p","v":"· the second boy 第二个男孩","c":"eg"},{"k":"p","v":"· May 1st 五月一日","c":"eg"}]}]},{"id":"gd_p1_c6","t":"六、形容“什么样”的词（形容词）","blocks":[],"sections":[{"id":"gd_p1_c6_s1","t":"1. “更”和“最”：比较级和最高级","blocks":[{"k":"p","v":"形容词用来说明人或东西“是什么样子”，比如颜色、大小、高矮，通常放在名词前面。"},{"k":"p","v":"· a red apple 一个红苹果","c":"eg"},{"k":"p","v":"· a big dog 一只大狗","c":"eg"},{"k":"p","v":"· a tall boy 一个高个子男孩","c":"eg"},{"k":"p","v":"· The cat is cute. 这只猫很可爱。（放在 is 后面也可以）","c":"eg"},{"k":"p","v":"两个人或东西比一比，用“更……（比较级）”；在一群里面排第一，用“最……（最高级）”。短单词一般加 er、est。"},{"k":"t","v":[["规则","原级","比较级（更）","最高级（最）"],["一般加 er、est","tall 高的","taller 更高","tallest 最高"],["以 e 结尾加 r、st","nice 好的","nicer 更好","nicest 最好"],["重读闭音节双写","big 大的","bigger 更大","biggest 最大"],["辅音加 y，变 i","happy 开心的","happier 更开心","happiest 最开心"],["长单词前面加","beautiful 美丽的","more beautiful 更美","most beautiful 最美"],["不按规矩变","good 好的","better 更好","best 最好"],["不按规矩变","bad 坏的","worse 更坏","worst 最坏"],["不按规矩变","many 多的","more 更多","most 最多"]]}]},{"id":"gd_p1_c6_s2","t":"2. 常用比较句型","blocks":[{"k":"t","v":[["句型（大白话）","例子"],["和……一样","He is as tall as me. 他和我一样高。"],["比……更","The cat is bigger than the dog. 猫比狗大。"],["在……里最","She is the tallest in the class. 她是班里最高的。"],["越来越……","It is getting hotter and hotter. 天越来越热。"],["越……越……","The more you read, the more you know. 你读得越多，知道得越多。"]]},{"k":"p","v":"【小提示】比较级前面不能再加 more，不能说 more taller，要说 much taller（高得多）。","c":"tip"},{"k":"p","v":"【大白话】好几个形容词一起用时有顺序口诀：限定 → 大小 → 形状 → 新旧 → 颜色 → 产地 → 材料 → 用途。比如 a small old red box 一个小的、旧的、红色的盒子。","c":"plain"},{"k":"p","v":"· a little white rabbit 一只小白兔（按“大小 → 颜色”排，不能说 a white little rabbit）","c":"eg"},{"k":"p","v":"【注意】以 a 开头的 alive 活着的、asleep 睡着的、alone 孤单的，通常只放在 is 后面做表语，不放在名词前：The rabbit is asleep. 兔子睡着了；要说“睡着的兔子”得换词 a sleeping rabbit。","c":"warn"},{"k":"p","v":"· Carrots make rabbits happy. 胡萝卜让兔子开心。（happy 补充说明宾语 rabbits，做宾语补语）","c":"eg"},{"k":"p","v":"【大白话】两者比一比用比较级（更……），三个或以上比出“最”用最高级（最……）。不规则的要单独记：good 好 → better 更好 → best 最好；bad 坏 → worse 更坏 → worst 最坏。","c":"plain"}]}]},{"id":"gd_p1_c7","t":"七、形容“怎么做”的词（副词）","blocks":[{"k":"p","v":"副词用来说明动作“是怎么做的”，比如跑得快、说得好。很多副词是在形容词后面加 ly 变来的。"},{"k":"p","v":"· run fast 跑得快","c":"eg"},{"k":"p","v":"· read carefully 仔细地读","c":"eg"},{"k":"p","v":"· sing well 唱得好","c":"eg"},{"k":"p","v":"· He reads quickly. 他读得很快。","c":"eg"},{"k":"t","v":[["类别","常用词","例子"],["什么时候","now 现在, today 今天, often 经常, always 总是, never 从不","I often run. 我经常跑步。"],["在哪里","here 这里, there 那里, home 家","Come here. 到这里来。"],["怎么做","fast 快地, slowly 慢地, well 好地, hard 努力地","He works hard. 他努力工作。"],["到什么程度","very 很, too 太, quite 相当","very good 很好"]]},{"k":"p","v":"【小提示】hard 是“努力地”，hardly 却是“几乎不”，两个词意思完全不同：He works hard. 他努力工作。/ I can hardly see. 我几乎看不见。","c":"tip"},{"k":"p","v":"【大白话】形容词修饰名词，说“什么样的东西”；副词修饰动词，说“动作怎么做”。比如 a quick cat 一只敏捷的猫（quick 形容猫）；The cat runs quickly. 猫跑得快（quickly 形容跑）。","c":"plain"},{"k":"p","v":"· The rabbit ate quickly. 兔子快速地吃。（quickly 修饰动词 ate，做状语）","c":"eg"}],"sections":[]},{"id":"gd_p1_c8","t":"八、表示动作的词（动词）——句子的心脏","blocks":[],"sections":[{"id":"gd_p1_c8_s1","t":"1. 动词分几类","blocks":[{"k":"p","v":"动词是一句话里最重要的词，它说清楚“在做什么”。一个句子没有动词，就站不起来。"},{"k":"t","v":[["类别（大白话）","正规名字","说明","例子"],["有实在意思、能单独用","实义动词","表示具体动作","run 跑, eat 吃, see 看见"],["要带对象的","及物动词","后面必须跟动作的对象","I like cats. 我喜欢猫。"],["不带对象的","不及物动词","后面不跟对象","Birds fly. 鸟飞。"],["划等号的","系动词","把后面的意思给前面的主语","He is tall. 他很高。"],["来帮忙的","助动词","帮助构成时态、否定、疑问","do, be, have, will"],["表示“能、可以、必须”","情态动词","说能力、许可、推测等","can, may, must, should"]]},{"k":"p","v":"【小提示】系动词就像在主语和后面的词之间划等号：He is a boy. 他 = 一个男孩。常见的还有 look（看起来）、sound（听起来）、feel（摸起来）、taste（尝起来）。","c":"tip"}]},{"id":"gd_p1_c8_s2","t":"2. 情态动词：能、可以、必须","blocks":[{"k":"p","v":"情态动词不能单独用，后面要跟动词原形，用来说“会不会、能不能、该不该”。"},{"k":"t","v":[["词","意思","例子"],["can","能、会（有能力）","I can swim. 我会游泳。"],["may","可以、可能","May I come in? 我可以进来吗？"],["must","必须、一定","You must go. 你必须走。"],["should","应该","You should sleep. 你应该睡觉。"],["will","愿意、将要","I will help you. 我会帮你。"],["have to","不得不","I have to go. 我得走了。"],["had better","最好","You'd better run. 你最好跑。"]]},{"k":"p","v":"【小提示】must 的否定 mustn’t 是“禁止、不准”，不是“不必”。想说“不必”，要用 needn’t 或 don’t have to：You needn’t run. 你不必跑。","c":"tip"},{"k":"p","v":"· The light is on. The rabbit must be at home. 灯亮着，兔子一定在家。（must 表示很有把握的推测）","c":"eg"},{"k":"p","v":"【注意】表示“一定不在”不能说 mustn’t，要用 can’t：The light isn’t on. The rabbit can’t be at home. 灯没亮，兔子不可能在家。","c":"warn"},{"k":"p","v":"· He may be at home. 他可能在家。（不太确定）/ He might be at home. 他也许在家。（更不确定，might 比 may 可能性更小）","c":"eg"},{"k":"p","v":"· Can I borrow your book? 我能借你的书吗？用 Could I… 会更礼貌、更委婉。","c":"eg"}]},{"id":"gd_p1_c8_s3","t":"3. 动词的五种样子","blocks":[{"k":"p","v":"同一个动词会根据用法变样子，一共有五种常见形式。"},{"k":"t","v":[["形式","怎么变","用在哪里","例子（go）"],["原形","词典里的样子","一般现在时、命令、情态动词后","go"],["第三人称单数","一般现在时加 s 或 es","主语是 he、she、it 时","goes"],["现在分词","加 ing","进行时","going"],["过去式","规则加 ed，不规则要记","一般过去时","went"],["过去分词","规则加 ed，不规则要记","完成时、被动语态","gone"]]},{"k":"p","v":"【小提示】加 ing 的小规则：以不发音的 e 结尾要去 e，write—writing；末尾只有一个辅音字母要双写，run—running，sit—sitting。","c":"tip"}]},{"id":"gd_p1_c8_s4","t":"4. 不当“主动词”的动词：非谓语动词","blocks":[{"k":"p","v":"一句话里只能有一个主动词（谓语），如果还想再说一个动作，就得把它变成“非谓语”的样子。就像一座山只能有一个大王，其他的动词都要换个身份。"},{"k":"t","v":[["形式","长什么样","表示什么","例子"],["不定式","to + 动词原形","要去做、为了做","I want to go. 我想去。"],["动名词","动词加 ing","当名词用，指一件事","Running is fun. 跑步很有趣。"],["现在分词","动词加 ing","主动、正在进行","a sleeping dog 一只睡着的狗"],["过去分词","加 ed 或不规则","被动、已经完成","a broken cup 一个打碎的杯子"]]},{"k":"p","v":"· I like to eat apples. 我喜欢吃苹果。（to eat 是不定式）","c":"eg"},{"k":"p","v":"· She is good at swimming. 她擅长游泳。（介词后用动名词）","c":"eg"},{"k":"p","v":"· The boy came to help me. 男孩来帮我。（to help 表示目的）","c":"eg"},{"k":"p","v":"【小提示】有些词后面要跟不定式，有些要跟 ing。比如 stop to do 是“停下来去做另一件事”，stop doing 是“停止正在做的事”。","c":"tip"},{"k":"p","v":"【大白话】非谓语动词就是“不当大王、改当别的角色”的动词：to do 表示“要去做”，doing 当名词用表示“做这件事”，done 表示“被动或已经做完”。它们都不能再表示时态。","c":"plain"},{"k":"p","v":"· a sleeping dog 一只睡着的狗（现在分词，主动）/ a broken cup 一个打碎的杯子（过去分词，被动）","c":"eg"},{"k":"p","v":"· The rabbit could have gone home earlier, but he didn’t finish work. 兔子本可以早点回家，但他没干完活。（could have done 表示本可以做却没做）","c":"eg"}]}]},{"id":"gd_p1_c9","t":"九、表示位置关系的小词（介词）","blocks":[{"k":"p","v":"介词放在名词前面，用来说明时间、地点和关系，比如“在里面、在上面、在几点”。它不能单独用，后面一定要跟名词。"},{"k":"p","v":"in、on、at 三个最常用"},{"k":"t","v":[["介词","表示时间","表示地点","例子"],["in","年、月、季节、上午下午","大地方、在里面","in May 在五月, in the room 在房间里, in the morning 在早上"],["on","具体某一天、星期","在平面上","on Monday 在周一, on the desk 在书桌上"],["at","具体几点钟","小地点、具体位置","at seven 在七点, at home 在家, at the door 在门口"]]},{"k":"p","v":"· The cat is in the box. 猫在盒子里。","c":"eg"},{"k":"p","v":"· The book is on the desk. 书在书桌上。","c":"eg"},{"k":"p","v":"· I get up at seven. 我七点起床。","c":"eg"},{"k":"p","v":"【小提示】on the wall 是“在墙面上”（比如一幅画），in the wall 是“嵌在墙里”（比如一扇窗）。","c":"tip"},{"k":"p","v":"【注意】学介词最忌讳拿中文硬套：in two days 是“两天后”不是“两天里”；on the left 是“在左边”；angry with me 是“生我的气”。要记搭配，不要逐字翻译。","c":"warn"},{"k":"p","v":"· before 8 o’clock 在八点前 / after 8 o’clock 在八点后 / at 8 o’clock 在八点","c":"eg"}],"sections":[]},{"id":"gd_p1_c10","t":"十、粘东西的胶水词（连词）","blocks":[{"k":"p","v":"连词像胶水，把词和词、句子和句子连起来，它自己不充当句子成分。"},{"k":"t","v":[["类别","词","例子"],["并列连词","and 和, but 但是, or 或者, so 所以","I have a cat and a dog. 我有一只猫和一只狗。"],["成对的连词","both...and 两者都, either...or 要么, neither...nor 都不","Both he and I are here. 我和他都在。"],["引导从句的","because 因为, if 如果, when 当, although 虽然","I stay home because it rains. 因为下雨我待在家。"]]},{"k":"p","v":"【小提示】because（因为）和 so（所以）不能一起用，although（虽然）和 but（但是）也不能一起用，一句话里只能留一个。","c":"tip"}],"sections":[]},{"id":"gd_p1_c11","t":"十一、表达情绪的词（感叹词）","blocks":[{"k":"p","v":"感叹词用来表达说话时的情绪，常常独立放在句子前面，用逗号隔开。"},{"k":"t","v":[["词","表达什么","例子"],["oh","惊讶、明白了","Oh, I see. 哦，我明白了。"],["wow","赞叹","Wow, so big! 哇，好大！"],["ouch","疼","Ouch, it hurts! 哎哟，好疼！"],["hey","打招呼、提醒","Hey, wait! 嘿，等等！"],["well","犹豫、转折","Well, let's go. 嗯，我们走吧。"]]}],"sections":[]},{"id":"gd_p1_c12","t":"十二、单词是怎么造出来的（构词法）","blocks":[{"k":"p","v":"英语单词就像搭积木，也像汉字有偏旁部首。在词的前面或后面加上固定的小零件，就能变出新词。"},{"k":"t","v":[["零件","放在哪里","作用","例子"],["前缀","词的前面","大多改变意思","happy 开心 → unhappy 不开心"],["前缀","词的前面","表示否定","like 喜欢 → dislike 不喜欢"],["后缀","词的后面","大多改变词性","quick 快的 → quickly 快地"],["后缀","词的后面","把动词变成“做……的人”","teach 教 → teacher 老师"],["后缀","词的后面","表示“能被……的”","eat 吃 → edible 能吃的"]]},{"k":"p","v":"【小提示】常见的否定前缀：in-（invisible 看不见的）、im-（impossible 不可能的）、un-（unhappy 不开心的）、il-（illegal 非法的）。","c":"tip"}],"sections":[]}]},{"id":"gd_p2","name":"句法","icon":"🧩","sub":"把单词拼成句子","intro":[{"k":"p","v":"词法认识了单词，句法就来学习怎么把这些单词搭成一句通顺的话。再长的句子，都是由最简单的“小句子”拼起来的。"}],"chapters":[{"id":"gd_p2_c1","t":"一、句子最基本的样子","blocks":[{"k":"p","v":"把一句话拆到不能再拆，它其实只说两件事：“谁”和“怎么样”。也就是“主语 + 谓语”。"},{"k":"p","v":"· Dogs run. 狗跑。（Dogs 是谁，run 是做什么）","c":"eg"},{"k":"p","v":"· The cat sleeps. 猫睡觉。","c":"eg"},{"k":"p","v":"句子的心脏是动词，而且一个简单句里只能有一个主动词。"}],"sections":[]},{"id":"gd_p2_c2","t":"二、五种基本句型","blocks":[{"k":"p","v":"英语里所有的句子，归纳起来只有五种基本骨架。区别就在于动词后面需要几个伙伴，才能把意思说完整。"},{"k":"t","v":[["句型（大白话）","骨架","特点","例子"],["谁 + 做什么","主语 + 动词","动词后面不带对象","Birds fly. 鸟飞。"],["谁 + 做什么 + 对象","主语 + 动词 + 宾语","动作有对象","I like cats. 我喜欢猫。"],["谁 + 是 + 什么样","主语 + 系动词 + 表语","给主语划等号","He is tall. 他很高。"],["谁 + 给 + 人 + 东西","主语 + 动词 + 人 + 物","有两个对象","Give me the book. 给我那本书。"],["谁 + 让 + 对象 + 怎么样","主语 + 动词 + 宾语 + 补语","补充说明对象","We made him happy. 我们让他开心。"]]},{"k":"p","v":"【小提示】怎么分清“两个对象”和“对象+补语”？能改成 to/for 的是两个对象：Give me the book = Give the book to me。“对象+补语”之间有“是、成为”的意思，不能改：We made him happy 意思是“我们使他开心”。","c":"tip"},{"k":"p","v":"【大白话】五大句型其实就是看动词需要几个伙伴：Papa rabbit sleeps. 兔老爹睡觉（不要伙伴）；Papa rabbit likes you. 喜欢你（一个对象）；Papa rabbit teaches you English. 教你英语（两个对象）；Papa rabbit considers you smart. 认为你聪明（对象+补语）；Papa rabbit is tall. 是高的（系动词+表语）。","c":"plain"}],"sections":[]},{"id":"gd_p2_c3","t":"三、哪里有什么：There be 句型","blocks":[{"k":"p","v":"想说“某个地方有某个东西”，用 There be 开头。be 动词用 is 还是 are，看后面的东西是一个还是多个。"},{"k":"p","v":"· There is a book on the desk. 书桌上有一本书。","c":"eg"},{"k":"p","v":"· There are two cats in the room. 房间里有两只猫。","c":"eg"},{"k":"p","v":"· There is some water in the cup. 杯子里有一些水。","c":"eg"},{"k":"p","v":"【小提示】There be 说的是“存在”，have 说的是“拥有”，不能说 There have。否定说 There isn’t / There aren’t，提问把 be 提到前面：Is there a dog? 有狗吗？","c":"tip"}],"sections":[]},{"id":"gd_p2_c4","t":"四、句子按用途分四类","blocks":[],"sections":[{"id":"gd_p2_c4_s1","t":"1. 陈述句：说一件事","blocks":[{"k":"p","v":"用来说明事实或看法，按正常语序说就可以。否定在 be 动词、助动词或情态动词后加 not，普通动词要请 do 来帮忙。"},{"k":"p","v":"· He is a boy. 他是一个男孩。","c":"eg"},{"k":"p","v":"· He is not a girl. 他不是女孩。","c":"eg"},{"k":"p","v":"· I like apples. 我喜欢苹果。","c":"eg"},{"k":"p","v":"· I don't like milk. 我不喜欢牛奶。","c":"eg"}]},{"id":"gd_p2_c4_s2","t":"2. 疑问句：提问题","blocks":[{"k":"t","v":[["类型","怎么构成","例子"],["一般疑问句","把 be、助动词、情态动词提到主语前","Is he a doctor? 他是医生吗？/ Do you like cats? 你喜欢猫吗？"],["特殊疑问句","疑问词 + 一般疑问句","Where do you live? 你住哪里？/ What is this? 这是什么？"],["选择疑问句","用 or 给出选项","Tea or milk? 茶还是牛奶？"],["反意疑问句","后面加一个小尾巴","He is tall, isn’t he? 他很高，不是吗？"]]},{"k":"p","v":"【小提示】反意疑问句的小尾巴，前面肯定后面就否定，前面否定后面就肯定：She likes dogs, doesn’t she? 她喜欢狗，不是吗？","c":"tip"}]},{"id":"gd_p2_c4_s3","t":"3. 祈使句：下命令、提请求","blocks":[{"k":"p","v":"祈使句直接用动词原形开头，主语“你”通常省略。否定在最前面加 Don’t。"},{"k":"p","v":"· Come in, please. 请进。","c":"eg"},{"k":"p","v":"· Sit down. 坐下。","c":"eg"},{"k":"p","v":"· Don't run. 别跑。","c":"eg"},{"k":"p","v":"· Let's go. 我们走吧。","c":"eg"}]},{"id":"gd_p2_c4_s4","t":"4. 感叹句：抒发感情","blocks":[{"k":"p","v":"感叹句用 What 或 How 开头，表示“多么……啊”。What 后面跟名词，How 后面跟形容词或副词。"},{"k":"p","v":"· What a big dog! 多么大的一只狗啊！","c":"eg"},{"k":"p","v":"· What nice apples! 多好的苹果啊！","c":"eg"},{"k":"p","v":"· How fast he runs! 他跑得多快啊！","c":"eg"},{"k":"p","v":"· How cute the cat is! 这只猫多可爱啊！","c":"eg"},{"k":"p","v":"【小提示】weather（天气）、news（新闻）不能数，不能说 What a fine weather，要说 What fine weather（多好的天气）。","c":"tip"}]}]},{"id":"gd_p2_c5","t":"五、句子里的九种成分","blocks":[{"k":"p","v":"搭句子就像搭积木，每一块都有自己的名字和作用。下面这张表把九种成分一次讲清楚。"},{"k":"t","v":[["成分（大白话）","正规名字","作用","例子"],["说的“谁/什么”","主语","句子的主角","The dog runs. 狗跑。"],["“做什么”","谓语","主角的动作","The dog runs. 狗跑。"],["动作的对象","宾语","动作落到谁身上","I see the cat. 我看见猫。"],["划等号后的说明","表语","说明主语是什么样","He is happy. 他很开心。"],["形容名词的","定语","……的","a red apple 红苹果"],["形容动作的","状语","……地、何时、何地","run fast 跑得快"],["补充说明对象","宾语补足语","让对象意思完整","We made him happy. 我们让他开心。"],["再说一遍","同位语","换个说法解释前面","My friend Tom is here. 我的朋友汤姆在这儿。"],["两个对象","双宾语","一个指人一个指物","He gave me a book. 他给我一本书。"]]},{"k":"p","v":"【小提示】句子成分和词性不是一一对应的。比如做主语的可以是名词、代词，也可以是动词变的动名词；但谓语只能由动词来当。","c":"tip"}],"sections":[]},{"id":"gd_p2_c6","t":"六、句子里套小句子：从句","blocks":[],"sections":[{"id":"gd_p2_c6_s1","t":"1. 当名词用的从句","blocks":[{"k":"p","v":"有时候一个成分太复杂，一个词说不清楚，就用一个完整的小句子来充当，这个小句子就叫“从句”。装着从句的大句子叫“主句”。从句按它充当的成分，分三大类。"},{"k":"t","v":[["大类（大白话）","正规名字","它在主句里做什么","常见引导词"],["当名词用的小句子","名词性从句","做主语、宾语、表语、同位语","that, if, whether, what, who, when, where, how"],["形容名词的小句子","定语从句","放在名词后面形容它","who, whom, whose, which, that, when, where, why"],["形容动作的小句子","状语从句","说明时间、原因、条件等","when, because, if, although, so that"]]},{"k":"p","v":"· I know that he is right. 我知道他是对的。（宾语从句）","c":"eg"},{"k":"p","v":"· What he said is true. 他说的是真的。（主语从句）","c":"eg"},{"k":"p","v":"· The truth is that he is a boy. 事实是他是个男孩。（表语从句）","c":"eg"},{"k":"p","v":"【小提示】从句里要用正常的陈述语序，不能用提问的倒装。不能说 I don’t know where is he，要说 I don’t know where he is（我不知道他在哪里）。","c":"tip"}]},{"id":"gd_p2_c6_s2","t":"2. 形容名词的从句（定语从句）","blocks":[{"k":"p","v":"中文说“我买的苹果”，形容词放在名词前面；英语要把这个小句子放到名词后面，中间用一个“关系词”连起来。被修饰的名词叫“先行词”。"},{"k":"p","v":"· The book is on the desk. I bought it. → The book that I bought is on the desk. 我买的那本书在书桌上。","c":"eg"},{"k":"p","v":"· The man is my dad. He has a dog. → The man who has a dog is my dad. 那个有狗的男人是我爸爸。","c":"eg"},{"k":"p","v":"· This is the house where I live. 这是我住的房子。","c":"eg"},{"k":"p","v":"· I remember the day when we met. 我记得我们相遇的那天。","c":"eg"},{"k":"t","v":[["先行词是","关系词","在从句里做什么"],["人","who / that","做主语"],["人","whom / that","做宾语（可省略）"],["人或物","whose","表示“谁的”"],["物","which / that","做主语或宾语"],["时间","when","表示时间"],["地点","where","表示地点"],["原因","why","表示原因"]]},{"k":"p","v":"【小提示】先行词是 all、everything、nothing，或者被最高级、the only 修饰时，关系词只能用 that。带逗号的非限定从句，不能用 that，要用 which 或 who。","c":"tip"},{"k":"p","v":"【大白话】带逗号的从句是“补充说明”，不是“限定范围”。比如 I have a head, which is round. 我有一个头，它是圆的（我只有一个头）；不带逗号 I have a head which is round. 会让人以为我有好几个头，其中一个是圆的。","c":"plain"},{"k":"p","v":"· The rabbit is eating a carrot that I bought. 兔子在吃我买的胡萝卜。（that 在从句里做 bought 的宾语）","c":"eg"},{"k":"p","v":"· This was the place where the rabbit ate the carrot. 这就是兔子吃胡萝卜的地方。","c":"eg"},{"k":"p","v":"【注意】which 还可以指代整件事：The rabbit ate the carrot, which was not surprising. 兔子吃了胡萝卜，这事并不奇怪。","c":"warn"}]},{"id":"gd_p2_c6_s3","t":"3. 形容动作的从句（状语从句）","blocks":[{"k":"p","v":"状语从句用来说明动作发生的时间、地点、原因、条件、目的等，相当于一个拉长了的副词。"},{"k":"t","v":[["类型","常用连词","例子"],["时间","when 当, before 之前, after 之后, until 直到, as soon as 一……就","I will call you when I get home. 我到家就给你打电话。"],["原因","because 因为, since 既然","I stay home because it rains. 因为下雨我待在家。"],["条件","if 如果, unless 除非","If it rains, we will stay home. 如果下雨我们就待在家。"],["让步","although 虽然, though 尽管","Although he is small, he runs fast. 他虽然小但跑得快。"],["目的","so that 以便","I run so that I can catch the bus. 我跑步以便赶上公交车。"],["结果","so...that 太……以至于","He runs so fast that I can’t catch him. 他跑得太快我追不上。"]]},{"k":"p","v":"【小提示】“主将从现”：主句说将来用 will，if、when 引导的从句要用一般现在时表示将来。不能说 If it will rain，要说 If it rains。","c":"tip"}]}]},{"id":"gd_p2_c7","t":"七、“被”字句：被动语态","blocks":[{"k":"p","v":"如果我们想强调动作的承受者，或者不知道是谁做的，就用“被”字句（被动语态）。它的样子是“be + 过去分词”，原来的做事者前面加 by。"},{"k":"p","v":"· The cat ate the fish. 猫吃了鱼。→ The fish was eaten by the cat. 鱼被猫吃了。","c":"eg"},{"k":"p","v":"· The room is cleaned every day. 房间每天都被打扫。","c":"eg"},{"k":"p","v":"· The book was written by him. 这本书是他写的。","c":"eg"},{"k":"t","v":[["时态","被动的样子","例子"],["一般现在","am/is/are + 过去分词","The dog is fed every day. 狗每天被喂食。"],["一般过去","was/were + 过去分词","The cup was broken. 杯子被打碎了。"],["一般将来","will be + 过去分词","The house will be sold. 房子会被卖掉。"],["现在完成","have/has been + 过去分词","The work has been done. 工作已经被做完。"],["情态动词","情态 + be + 过去分词","It can be done. 这能被做到。"]]},{"k":"p","v":"【小提示】happen（发生）、take place（发生）、belong to（属于）这些词没有被动语态。短语动词变被动时，后面的介词不能丢：The baby was looked after. 宝宝被照顾着。","c":"tip"},{"k":"p","v":"【大白话】主动句强调“谁做的”，被动句强调“谁被怎么样了”。主动 The rabbit ate the carrot. 兔子吃了胡萝卜；被动 The carrot was eaten by the rabbit. 胡萝卜被兔子吃了。不知道谁做的，或不想提谁做的，就用被动。","c":"plain"},{"k":"p","v":"· The carrot was eaten by the rabbit. 胡萝卜被兔子吃了。（by 后面是真正做事的）","c":"eg"},{"k":"p","v":"· English is spoken here. 这里说英语。（不知道具体是谁说，用被动最自然）","c":"eg"}],"sections":[]}]},{"id":"gd_p3","name":"时态","icon":"⏰","sub":"动作在什么时候发生","intro":[{"k":"p","v":"动词会根据“时间”和“状态”改变样子，这就是时态。看懂时态，就知道一个动作是正在做、已经做完，还是将要做。"}],"chapters":[{"id":"gd_p3_c1","t":"一、什么是时态","blocks":[{"k":"p","v":"时态 = 时间 + 状态。时间有四种：现在、过去、将来、过去将来；状态也有四种：一般、进行、完成、完成进行。它们自由组合，理论上一共 16 种。"},{"k":"t","v":[["四种状态","表示什么","大白话"],["一般","不特别说明，默认的样子","平时就这样"],["进行","动作正在进行中","正在做"],["完成","动作已经做完了","已经做好了"],["完成进行","做了一部分，还在继续做","做了一阵还在做"]]}],"sections":[]},{"id":"gd_p3_c2","t":"二、最常用的时态逐个讲","blocks":[],"sections":[{"id":"gd_p3_c2_s1","t":"1. 一般现在时：平时的习惯和事实","blocks":[{"k":"p","v":"表示经常做的事、不变的事实，或者时间表。主语是 he、she、it 时，动词要加 s。"},{"k":"p","v":"· I like apples. 我喜欢苹果。","c":"eg"},{"k":"p","v":"· He likes cats. 他喜欢猫。（he 后面加 s）","c":"eg"},{"k":"p","v":"· The sun rises in the east. 太阳从东方升起。（不变的事实）","c":"eg"},{"k":"p","v":"· I get up at seven every day. 我每天七点起床。（习惯）","c":"eg"},{"k":"p","v":"【小提示】一般现在时不是“正在做”。I eat apples 是“我（平时）吃苹果”，不是“我正在吃苹果”。正在做要用现在进行时。","c":"tip"},{"k":"p","v":"【大白话】一般现在时最常见三种情况：① 说事实（没有时间限制）；② 说习惯、重复的动作；③ 说按时间表预计发生的事。这里的“一般”就是“默认、没特别指出”的意思。","c":"plain"},{"k":"p","v":"· I eat carrots. 我吃胡萝卜。（事实：我是吃胡萝卜的）","c":"eg"},{"k":"p","v":"· The earth revolves around the sun. 地球绕着太阳转。（客观事实）","c":"eg"},{"k":"p","v":"· I play basketball. 我打篮球。（我有这个习惯）","c":"eg"},{"k":"p","v":"· The bus leaves at 8 PM tonight. 公交车今晚八点发车。（时间表上的安排）","c":"eg"}]},{"id":"gd_p3_c2_s2","t":"2. 现在进行时：现在正在做","blocks":[{"k":"p","v":"表示此刻正在进行的动作，样子是“am/is/are + 动词 ing”。"},{"k":"p","v":"· I am reading now. 我现在正在读书。","c":"eg"},{"k":"p","v":"· She is running. 她正在跑步。","c":"eg"},{"k":"p","v":"· The dogs are playing. 狗正在玩耍。","c":"eg"},{"k":"p","v":"· Look! The cat is sleeping. 看！猫正在睡觉。","c":"eg"},{"k":"p","v":"· I am eating a carrot. 我正在吃胡萝卜。（现在正处在吃的过程中）","c":"eg"},{"k":"p","v":"· You are watching my video. 你正在看我的视频。","c":"eg"},{"k":"p","v":"· I am thinking of you. 我正在想你。","c":"eg"}]},{"id":"gd_p3_c2_s3","t":"3. 一般过去时：过去发生的事","blocks":[{"k":"p","v":"表示过去某个时间发生、已经结束的动作，动词要用过去式，规则的加 ed，不规则的要记。"},{"k":"p","v":"· I played yesterday. 我昨天玩了。","c":"eg"},{"k":"p","v":"· He went home. 他回家了。（go 的过去式是 went）","c":"eg"},{"k":"p","v":"· She saw a dog. 她看见了一只狗。","c":"eg"},{"k":"p","v":"· I met him last week. 我上周遇见了他。","c":"eg"},{"k":"p","v":"【小提示】过去式和过去分词不一样。过去式可以单独做谓语（He went home），过去分词不能单独用，只能跟在 have 或 be 后面（have gone / be done）。","c":"tip"},{"k":"p","v":"· The rabbit ate a carrot. 兔子吃了胡萝卜。（只知道过去某个时刻吃了，具体什么时候不清楚）","c":"eg"},{"k":"p","v":"【注意】说过去的习惯不能只靠过去式，I played basketball. 看不出是不是习惯；要用 used to：I used to play basketball. 我以前常打篮球。","c":"warn"},{"k":"p","v":"【大白话】一般过去时重点在“过去到底有没有发生”，说的是过去的事实；现在完成时重点在“过去的事对现在的影响”。比如 I went to Shanghai. 我去了上海（多半已经回来了，当面说）；I have gone to Shanghai. 我已经去了上海（人不在这儿）。","c":"plain"}]},{"id":"gd_p3_c2_s4","t":"4. 过去进行时：那时正在做","blocks":[{"k":"p","v":"表示过去某个时刻正在进行的动作，样子是“was/were + 动词 ing”，常和 when（当……时）一起用。"},{"k":"p","v":"· I was reading when he came. 他来时我正在读书。","c":"eg"},{"k":"p","v":"· They were playing at five yesterday. 昨天五点他们正在玩。","c":"eg"},{"k":"p","v":"· The rabbit was eating a carrot. 兔子当时正在吃胡萝卜。（强调过去某个时刻动作在进行中）","c":"eg"},{"k":"p","v":"· You were watching my video. 你当时正在看我的视频。","c":"eg"}]},{"id":"gd_p3_c2_s5","t":"5. 一般将来时：以后要做","blocks":[{"k":"p","v":"表示将来要发生的事，样子是“will + 动词原形”。也可以用 be going to 表示打算做。"},{"k":"p","v":"· I will help you tomorrow. 我明天会帮你。","c":"eg"},{"k":"p","v":"· It will rain tomorrow. 明天会下雨。","c":"eg"},{"k":"p","v":"· I am going to read a book. 我打算读一本书。","c":"eg"},{"k":"p","v":"· The bus will leave at eight. 公交车八点会开。","c":"eg"},{"k":"p","v":"【大白话】英语有好几种说法表示将来：① 一般现在时 The bus leaves at 8. ② be going to 打算 I am going to eat. ③ be about to 马上 I am about to eat. ④ will 将会。","c":"plain"},{"k":"p","v":"· The sun will rise again tomorrow. 太阳明天还会照常升起。（很确定会发生）","c":"eg"},{"k":"p","v":"· I am about to eat a carrot. 我马上就要吃胡萝卜了。（about to 表示很快就要发生）","c":"eg"},{"k":"p","v":"【注意】will 表示说话者很确定；如果不太确定，就不能只用一般将来时，要借助情态动词 might、may 等表示“可能”。","c":"warn"}]},{"id":"gd_p3_c2_s6","t":"6. 现在完成时：到现在已经做了","blocks":[{"k":"p","v":"表示过去做的事对现在有影响，或者从过去一直持续到现在，样子是“have/has + 过去分词”，常和 for（持续多久）、since（自从）一起用。"},{"k":"p","v":"· I have lost my key. 我把钥匙弄丢了。（现在还没找到）","c":"eg"},{"k":"p","v":"· He has lived here for ten years. 他在这里住了十年了。","c":"eg"},{"k":"p","v":"· She has just eaten. 她刚吃过。","c":"eg"},{"k":"p","v":"· I have seen that dog before. 我以前见过那只狗。","c":"eg"},{"k":"p","v":"【小提示】现在完成时不能和明确的过去时间（比如 yesterday、in 2020）一起用。不能说 I have seen him yesterday，要说 I saw him yesterday。","c":"tip"},{"k":"p","v":"· I have eaten a carrot. 我吃过一根胡萝卜了。（已经吃了，所以现在不饿——对现在的影响）","c":"eg"},{"k":"p","v":"· I have seen a carrot. 我见过胡萝卜。（不用再跟我解释什么是胡萝卜）","c":"eg"},{"k":"p","v":"· You have watched my video. 你到现在已经看过我的视频了。","c":"eg"},{"k":"p","v":"【大白话】现在完成进行时 have been doing 表示“做了一阵，还要继续做”：I have been eating carrots. 我已经吃了一些胡萝卜，还会接着吃。它强调动作持续了一段时间。","c":"plain"}]},{"id":"gd_p3_c2_s7","t":"7. 过去完成时：过去的过去","blocks":[{"k":"p","v":"表示在过去某个时间点之前就已经做完的事，样子是“had + 过去分词”。"},{"k":"p","v":"· When I arrived, he had left. 我到时他已经走了。","c":"eg"},{"k":"p","v":"· She had finished the work before five. 她五点前就把工作做完了。","c":"eg"},{"k":"p","v":"· I had eaten 5 carrots for lunch, so I wasn’t hungry in the afternoon. 我午饭吃了五根胡萝卜，所以下午一点都不饿。（B 对 A 的影响）","c":"eg"},{"k":"p","v":"· He tried to find me, but I had already gone to Shanghai. 他想找我，但我已经去上海了。","c":"eg"},{"k":"p","v":"【大白话】过去完成进行时 had been doing 表示“在过去某点之前已经做了一阵，之后还要继续”：The rabbit had been eating a carrot. 兔子在那之前已经吃了一阵胡萝卜。","c":"plain"}]},{"id":"gd_p3_c2_s8","t":"8. 其他时态简单了解","blocks":[{"k":"t","v":[["时态","样子","例子"],["现在完成进行时","have/has been + ing","I have been reading since eight. 我从八点起一直在读书。"],["将来进行时","will be + ing","I will be sleeping at ten. 十点时我会在睡觉。"],["将来完成时","will have + 过去分词","I will have finished by Monday. 我周一前会做完。"],["一般过去将来时","would + 原形","I said I would go. 我说过我会去。"]]},{"k":"p","v":"· I will be eating a carrot from 1 PM to 3 PM. 我下午一点到三点会在吃胡萝卜。（将来进行时，比一般将来时更笃定）","c":"eg"},{"k":"p","v":"· I will have finished the video by 4 PM. 我下午四点前会做完视频。（将来完成时，四点就能发布了）","c":"eg"},{"k":"p","v":"· I said I would eat a carrot for lunch. 我说过我午饭会吃一根胡萝卜。（过去将来时，would 是 will 的过去式）","c":"eg"},{"k":"p","v":"【大白话】笃定程度可以这样排：一般将来时 < 将来进行时 < 将来完成时。将来完成时说得好像事情已经发生了一样，最有把握。","c":"plain"}]}]},{"id":"gd_p3_c3","t":"三、16 种时态构成总表","blocks":[{"k":"p","v":"下面这张表把 16 种时态的样子列全。先记住最常用的几种，其余的按规律推导就可以，不用死记。"},{"k":"t","v":[["时间","一般","进行","完成","完成进行"],["现在","do / does","am/is/are doing","have/has done","have/has been doing"],["过去","did","was/were doing","had done","had been doing"],["将来","will do","will be doing","will have done","will have been doing"],["过去将来","would do","would be doing","would have done","would have been doing"]]},{"k":"p","v":"【小提示】记住三条拼装规律就不会乱：进行时用 be + ing；完成时用 have + 过去分词；完成进行时用 have been + ing。do 在这里代表任意动词。","c":"tip"}],"sections":[]}]},{"id":"gd_p4","name":"其他","icon":"✨","sub":"其他特殊补充","intro":[{"k":"p","v":"前面学的是基本规则，这一部分收集一些特别的说法和容易出错的地方。遇到特殊情况，翻翻这里就不慌了。"}],"chapters":[{"id":"gd_p4_c1","t":"一、说“假如”：虚拟语气","blocks":[{"k":"p","v":"当我们说的是脑子里的想象、和现实相反的事，动词就要“往过去退一步”：明明说现在，却用过去式；明明说过去，却用过去完成时。"},{"k":"t","v":[["和什么相反","if 小句子","主句","例子"],["现在","用过去式，be 用 were","would + 原形","If I were you, I would go. 如果我是你，我就去。"],["过去","had + 过去分词","would have + 过去分词","If I had known, I would have told you. 我要是早知道就告诉你了。"],["将来（可能性很小）","should + 原形","would + 原形","If it should rain, we would stay home. 万一下雨我们就待在家。"]]},{"k":"p","v":"· I wish I were taller. 我希望我更高一点。（其实没那么高）","c":"eg"},{"k":"p","v":"· I wish I had studied harder. 我真希望当时更努力学习。","c":"eg"},{"k":"p","v":"· It is time we went home. 我们该回家了。","c":"eg"},{"k":"p","v":"【小提示】虚拟语气里 be 动词不管什么人称都用 were，不能说 If I was you，要说 If I were you。","c":"tip"},{"k":"p","v":"【大白话】虚拟就是“说梦话”：和现在相反，动词退到过去式（If I were a rabbit… 要是我是一只兔子）；和过去相反，用 had done（If I had known… 我要是早知道）。记住一个诀窍：越不可能的事，动词越往“过去”退。","c":"plain"},{"k":"p","v":"· If I were a rabbit, I would eat carrots every day. 要是我是兔子，我就天天吃胡萝卜。","c":"eg"}],"sections":[]},{"id":"gd_p4_c2","t":"二、特别突出某部分：强调句","blocks":[{"k":"p","v":"想强调句子里的某一块，可以用“It is/was + 要强调的部分 + that + 其余部分”。要强调动词，则在前面加 do/does/did。"},{"k":"p","v":"· I met him yesterday. 我昨天遇见了他。","c":"eg"},{"k":"p","v":"· It was yesterday that I met him. 我是在昨天遇见他的。（强调时间）","c":"eg"},{"k":"p","v":"· It was him that I met yesterday. 我昨天遇见的是他。（强调人）","c":"eg"},{"k":"p","v":"· I do like cats. 我确实喜欢猫。（强调动词）","c":"eg"},{"k":"p","v":"· She did come. 她确实来了。","c":"eg"},{"k":"p","v":"【小提示】判断是不是强调句有个小办法：把 It is/was 和 that 去掉，剩下的词还能组成完整句子，就是强调句。","c":"tip"}],"sections":[]},{"id":"gd_p4_c3","t":"三、把顺序倒过来：倒装句","blocks":[{"k":"p","v":"正常语序是主语在前、动词在后。为了强调，有时把动词或助动词提到主语前面，这叫倒装。"},{"k":"t","v":[["类型","什么时候用","例子"],["全部倒装","here、there、out、in 等放句首","Here comes the bus. 公交车来了。/ Out ran the dog. 狗跑了出去。"],["部分倒装","否定词 never、seldom 放句首","Never have I seen it. 我从没见过它。"],["部分倒装","only 放句首","Only then did I know. 直到那时我才知道。"],["部分倒装","表示“也、也不”","I like it. — So do I. 我喜欢。——我也是。"]]},{"k":"p","v":"【小提示】主语是 he、she、it 这种代词时，全部倒装要退回正常语序，不能说 Here comes he，要说 Here he comes（他来了）。","c":"tip"},{"k":"p","v":"【大白话】倒装就是“把话倒着说”来引起注意：Here comes the bus. 公交车来了（正常 The bus comes here）。否定词放句首时也要倒装：Never have I seen it. 我从没见过。","c":"plain"}],"sections":[]},{"id":"gd_p4_c4","t":"四、怎么说“不”：否定","blocks":[{"k":"p","v":"be 动词、助动词、情态动词后面直接加 not；普通动词要请 do/does/did 来帮忙，后面的动词回到原形。"},{"k":"t","v":[["句子类型","怎么否定","例子"],["有 be 动词","be + not","He is not here. 他不在这儿。"],["有助动词/情态动词","助动词 + not","I have not eaten. 我还没吃。/ You must not run. 你不准跑。"],["普通动词","do/does/did + not + 原形","I don't like milk. 我不喜欢牛奶。/ She doesn't run. 她不跑步。"],["祈使句","Don't + 原形","Don't be late. 别迟到。"]]},{"k":"p","v":"部分否定和全部否定"},{"k":"p","v":"· Not all dogs are big. 不是所有狗都很大。（部分否定，还有小狗）","c":"eg"},{"k":"p","v":"· None of them came. 他们一个都没来。（全部否定）","c":"eg"},{"k":"p","v":"· We cannot live without water. 没有水我们就活不了。（双重否定表示肯定）","c":"eg"},{"k":"p","v":"【小提示】“否定转移”：I think、I believe 后面的否定，习惯放到前面。I don’t think he is right 的意思是“我认为他不对”，不是“我不认为他对”。","c":"tip"}],"sections":[]},{"id":"gd_p4_c5","t":"五、能省就省：省略","blocks":[{"k":"p","v":"为了说话简洁，重复的部分常常省略，只要意思清楚就行。"},{"k":"p","v":"· (You) Come in, please. 请进。（省略主语“你”）","c":"eg"},{"k":"p","v":"· What did you eat? — (I ate) An apple. 你吃了什么？——（我吃了）一个苹果。","c":"eg"},{"k":"p","v":"· I like cats and (I like) dogs. 我喜欢猫和狗。","c":"eg"},{"k":"p","v":"· When (he was) young, he ran fast. 他小时候跑得快。","c":"eg"}],"sections":[]},{"id":"gd_p4_c6","t":"六、主语和动词要配对：主谓一致","blocks":[{"k":"p","v":"主语是一个，动词用单数形式；主语是多个，动词用复数形式。这叫“主谓一致”。"},{"k":"t","v":[["情况","动词用","例子"],["单数或不能数的主语","单数","Water is good. 水很好。/ The dog runs. 狗跑。"],["复数主语","复数","The dogs run. 狗跑。"],["and 连接两个不同的","复数","Tom and Mary are here. 汤姆和玛丽在这儿。"],["and 连接同一个人","单数","The writer and teacher is here. 那位作家兼老师在这儿。"],["everyone、each、every","单数","Everyone is here. 每个人都在。"],["either...or、neither...nor","就近","Either you or he is right. 要么你对要么他对。"],["with、as well as、except","看前面真正的主语","The teacher, as well as the boys, is here. 老师和男孩们都在。"]]},{"k":"p","v":"【小提示】时间、金钱、距离看成一个整体时用单数：Ten years is a long time. 十年是很长一段时间。family 强调整体用单数，强调成员用复数。","c":"tip"},{"k":"p","v":"【大白话】主谓一致就是“主语是几个，动词就配几个”：一个主语用单数（The dog runs），多个用复数（The dogs run）。either...or、neither...nor 时，动词跟离它最近的主语走。","c":"plain"}],"sections":[]},{"id":"gd_p4_c7","t":"七、表示“多少”：不定量表达","blocks":[{"k":"p","v":"这组词表示“一些、很多、几乎没有”，难点是分清修饰能数的还是不能数的，以及带不带 a 意思不一样。"},{"k":"t","v":[["词","修饰","意思","例子"],["many","能数的复数","很多","many books 很多书"],["much","不能数的","很多","much water 很多水"],["a few","能数的复数","有几个（肯定）","a few cats 有几只猫"],["few","能数的复数","几乎没有（否定）","few cats 没几只猫"],["a little","不能数的","有一点（肯定）","a little milk 有一点牛奶"],["little","不能数的","几乎没有（否定）","little milk 没多少牛奶"],["some","都可以","一些（肯定句）","some apples 一些苹果"],["any","都可以","一些、任何（否定、疑问）","I don't have any. 我一点也没有。"],["a lot of","都可以","很多","a lot of dogs 很多狗"],["both / either / neither","两个","都 / 任一 / 都不","both boys 两个男孩都"]]},{"k":"p","v":"【小提示】带 a 是“还有一些”（a few、a little），不带 a 是“几乎没有”（few、little）。疑问句里想得到肯定回答，用 some：Would you like some tea? 要喝点茶吗？","c":"tip"},{"k":"p","v":"【注意】Would you like some tea? 想喝点茶吗？希望对方答应、客气邀请的问句里也用 some，不用 any。","c":"warn"},{"k":"p","v":"【大白话】记“量”的小诀窍：能数的用 many、a few、few；不能数的用 much、a little、little。带 a 表示“还有”，不带 a 表示“几乎没有”。","c":"plain"}],"sections":[]},{"id":"gd_p4_c8","t":"八、标点符号","blocks":[{"k":"t","v":[["标点","名字","主要作用","例子"],[",","逗号","断句、列举、停顿","cats, dogs, and birds 猫、狗和鸟"],[".","句号","陈述句结束、缩写","I run. 我跑步。"],["?","问号","提问结束","Who is he? 他是谁？"],["!","感叹号","抒发强烈感情","How big! 好大啊！"],[";","分号","连接相关的并列句","I run; he walks. 我跑步，他走路。"],[":","冒号","引出列举或解释","I have two: a cat and a dog. 我有两个：一只猫和一只狗。"],["\"","引号","引用说的话","He said, \"Hi.\" 他说：“嗨。”"],["-","连字符","连接复合词","twenty-one 二十一"]]},{"k":"p","v":"【小提示】逗号能救命：Let’s eat, Grandpa. 我们吃饭吧，爷爷。少了逗号变成 Let’s eat Grandpa. 我们把爷爷吃了。所以停顿要写清楚。","c":"tip"}],"sections":[]},{"id":"gd_p4_c9","t":"九、常用不规则动词表","blocks":[{"k":"p","v":"不规则动词的过去式和过去分词不按规矩变，要一组一组记。下面是最常用的一些，按“原形—过去式—过去分词”排列。"},{"k":"t","v":[["原形","过去式","过去分词","意思"],["be","was / were","been","是"],["begin","began","begun","开始"],["break","broke","broken","打破"],["bring","brought","brought","带来"],["buy","bought","bought","买"],["catch","caught","caught","抓住"],["come","came","come","来"],["do","did","done","做"],["drink","drank","drunk","喝"],["eat","ate","eaten","吃"],["find","found","found","找到"],["get","got","got","得到"],["give","gave","given","给"],["go","went","gone","去"],["have","had","had","有"],["hear","heard","heard","听见"],["know","knew","known","知道"],["leave","left","left","离开"],["make","made","made","做"],["meet","met","met","遇见"],["run","ran","run","跑"],["say","said","said","说"],["see","saw","seen","看见"],["sing","sang","sung","唱"],["sit","sat","sat","坐"],["sleep","slept","slept","睡"],["speak","spoke","spoken","说"],["swim","swam","swum","游泳"],["take","took","taken","拿"],["teach","taught","taught","教"],["tell","told","told","告诉"],["think","thought","thought","想"],["write","wrote","written","写"]]}],"sections":[]},{"id":"gd_p4_c10","t":"十、高频易错点对照","blocks":[{"k":"p","v":"把最容易出错的地方集中列在这里，左边是错误写法，右边是正确写法和原因，复习时对照着看。"},{"k":"t","v":[["错误写法","正确写法","原因"],["two informations","two pieces of information","information 不能数"],["a apple","an apple","apple 以元音开头，用 an"],["He go home.","He goes home.","he 后面动词加 s"],["He goed home.","He went home.","go 是不规则动词"],["He don’t like it.","He doesn't like it.","he 用 doesn’t"],["There have some books.","There are some books.","存在用 There be"],["more taller","much taller","比较级不能再加 more"],["I like swim.","I like swimming / to swim.","like 后面用 ing 或 to do"],["good at swim","good at swimming","介词后面用动名词"],["I am interesting in it.","I am interested in it.","形容人用 interested"],["If I was you","If I were you","虚拟语气 be 用 were"],["The book was wrote.","The book was written.","被动用过去分词"],["I don’t know where is he.","I don't know where he is.","从句用陈述语序"],["If it will rain, I stay.","If it rains, I will stay.","主将从现"],["Although..., but...","Although... （去掉 but）","although 和 but 不能连用"],["Because..., so...","Because... （去掉 so）","because 和 so 不能连用"],["What a fine weather!","What fine weather!","weather 不能数，不加 a"],["listen the music","listen to the music","listen 后面要加 to"]]},{"k":"p","v":"—— 全文完 ——"}],"sections":[]}]}],"stats":{"parts":4,"chapters":32,"sections":29,"tables":38,"cells":1012}};
+// 课文里的术语说法 → 新文档节点（大白话标题和课本说法不同，靠这张表对齐）
+const EC_GD_TERMS = {"be动词":"gd_p1_c8_s1","amisare":"gd_p1_c8_s1","系动词":"gd_p1_c8_s1","一般疑问句":"gd_p2_c4_s2","yesno回答":"gd_p2_c4_s2","疑问句":"gd_p2_c4_s2","特殊疑问句":"gd_p2_c4_s2","选择疑问句":"gd_p2_c4_s2","反意疑问句":"gd_p2_c4_s2","what引导":"gd_p2_c4_s2","wh疑问":"gd_p2_c4_s2","不定冠词":"gd_p1_c3","定冠词":"gd_p1_c3","零冠词":"gd_p1_c3","aan":"gd_p1_c3","aanthe":"gd_p1_c3","冠词":"gd_p1_c3","可数名词":"gd_p1_c2_s1","不可数名词":"gd_p1_c2_s1","名词复数":"gd_p1_c2_s2","复数":"gd_p1_c2_s2","所有格":"gd_p1_c2_s3","名词所有格":"gd_p1_c2_s3","主谓一致":"gd_p4_c6","人称代词":"gd_p1_c4_s1","主格":"gd_p1_c4_s1","宾格":"gd_p1_c4_s1","物主代词":"gd_p1_c4_s2","反身代词":"gd_p1_c4_s2","基数词":"gd_p1_c5_s1","序数词":"gd_p1_c5_s2","比较级":"gd_p1_c6_s1","最高级":"gd_p1_c6_s1","形容词顺序":"gd_p1_c6_s2","副词":"gd_p1_c7","情态动词":"gd_p1_c8_s2","非谓语动词":"gd_p1_c8_s4","不定式":"gd_p1_c8_s4","动名词":"gd_p1_c8_s4","分词":"gd_p1_c8_s4","介词":"gd_p1_c9","inonat":"gd_p1_c9","连词":"gd_p1_c10","感叹词":"gd_p1_c11","构词法":"gd_p1_c12","五种基本句型":"gd_p2_c2","基本句型":"gd_p2_c2","主谓宾":"gd_p2_c2","主系表":"gd_p2_c2","therebe":"gd_p2_c3","陈述句":"gd_p2_c4_s1","祈使句":"gd_p2_c4_s3","感叹句":"gd_p2_c4_s4","句子成分":"gd_p2_c5","主语":"gd_p2_c5","谓语":"gd_p2_c5","宾语":"gd_p2_c5","定语":"gd_p2_c5","状语":"gd_p2_c5","补语":"gd_p2_c5","名词性从句":"gd_p2_c6_s1","宾语从句":"gd_p2_c6_s1","主语从句":"gd_p2_c6_s1","表语从句":"gd_p2_c6_s1","定语从句":"gd_p2_c6_s2","关系代词":"gd_p2_c6_s2","状语从句":"gd_p2_c6_s3","复合句":"gd_p2_c6","被动语态":"gd_p2_c7","be+过去分词":"gd_p2_c7","一般现在时":"gd_p3_c2_s1","present simple":"gd_p3_c2_s1","现在进行时":"gd_p3_c2_s2","be+doing":"gd_p3_c2_s2","一般过去时":"gd_p3_c2_s3","past simple":"gd_p3_c2_s3","过去进行时":"gd_p3_c2_s4","一般将来时":"gd_p3_c2_s5","will+动词原形":"gd_p3_c2_s5","现在完成时":"gd_p3_c2_s6","havehas+过去分词":"gd_p3_c2_s6","过去完成时":"gd_p3_c2_s7","16种时态":"gd_p3_c3","十六种时态":"gd_p3_c3","虚拟语气":"gd_p4_c1","itiswas":"gd_p4_c1","强调句":"gd_p4_c2","倒装":"gd_p4_c3","否定":"gd_p4_c4","双否":"gd_p4_c4","双重否定":"gd_p4_c4","省略":"gd_p4_c5","不定量表达":"gd_p4_c7","someany":"gd_p4_c7","标点符号":"gd_p4_c8","不规则动词":"gd_p4_c9","易错点":"gd_p4_c10"};
+
 // ==================== v20261110a：可编辑英语语法地图 + 课文双向联动 ====================
 // 数据源：用户整理的《英语语法.md》（9 大分支 / 552 个节点），编译成嵌套数组作为初始框架。
 // 存储：state.data.engcheck.grammar = { root, nodes:[{id,pid,t,o,alias,links,at}], tombs, seeded, at }
@@ -13714,89 +13793,159 @@ function ecGmDetailHTML(sel, matchMap, edit, desc) {
         }).join('') + '</div>' : '') +
         '</div>';
 }
+// ---------- v20261111a：语法地图 · 4 大板块 + 逐层钻取 ----------
+// 规则：一次只显示当前一层。板块 → 目录（章）→ 分支（小节）→ 末级详情（讲义 + 对照表 + 课文）。
+// 内容全部取自《大白话英语语法.docx》编译出的 EC_GD_DOC；课文联动沿用 ecGmLessonIndex / ecGmNorm，
+// 大白话标题与课本术语说法不同，靠 EC_GD_TERMS 对齐，保持「课文 ↔ 语法点」双向可达。
+const EC_GD_PCLS = { tip: 'is-tip', warn: 'is-warn', plain: 'is-plain', eg: 'is-eg' };
+function ecGdCurPartId() {
+    const raw = state._gdPart;
+    return EC_GD_DOC.parts.some(p => p.id === raw) ? raw : EC_GD_DOC.parts[0].id;
+}
+function ecGdPart(id) { return EC_GD_DOC.parts.find(p => p.id === id) || EC_GD_DOC.parts[0]; }
+function ecGdChapter(part, id) { return (part.chapters || []).find(c => c.id === id) || null; }
+function ecGdSection(ch, id) { return (ch && ch.sections || []).find(s => s.id === id) || null; }
+// 当前层：part（板块目录） / sections（章的分支） / detail（末级讲义）
+function ecGdView() {
+    const part = ecGdPart(ecGdCurPartId());
+    const ch = ecGdChapter(part, state._gdCh);
+    const sec = ch ? ecGdSection(ch, state._gdSec) : null;
+    const level = !ch ? 'part' : (ch.sections.length && !sec ? 'sections' : 'detail');
+    return { part, ch, sec, level, node: sec || ch || null,
+        cards: level === 'part' ? part.chapters : (level === 'sections' ? ch.sections : []) };
+}
+function ecGdCrumbHTML(v) {
+    const cs = [{ t: '英语语法', lv: 'root' }, { t: v.part.name, lv: 'part' }];
+    if (v.ch) cs.push({ t: v.ch.t, lv: 'ch' });
+    if (v.sec) cs.push({ t: v.sec.t, lv: 'sec' });
+    return '<div class="ec-gd-crumb">' + cs.map((c, i) =>
+        (i ? '<span class="ec-gd-sep">›</span>' : '') +
+        '<button class="ec-gd-crumb-b' + (i === cs.length - 1 ? ' is-cur' : '') + '" data-action="ec-gd-crumb" data-lv="' + c.lv + '">' + escapeHtml(c.t) + '</button>'
+    ).join('') + '</div>';
+}
+function ecGdCardsHTML(v) {
+    const list = v.cards || [], isPart = v.level === 'part';
+    const total = list.reduce((a, x) => a + (isPart ? (x.sections && x.sections.length ? x.sections.length : 1) : 1), 0);
+    return '<div class="ec-gd-cards-hd">' + (isPart ? '📚 这一格下面的内容' : '🌿 这一格下面的内容') +
+        '<span>' + list.length + ' 项' + (isPart ? ' · 共 ' + total + ' 个知识点' : '') + '</span></div>' +
+        '<div class="ec-gd-cards">' + list.map((x, i) =>
+            '<button class="ec-gd-card c' + (i % 9) + '" data-action="ec-gd-' + (isPart ? 'ch' : 'sec') + '" data-id="' + ecGmAttr(x.id) + '">' +
+            '<span class="ec-gd-card-t">' + escapeHtml(x.t) + '</span>' +
+            '<span class="ec-gd-card-n">' + (isPart && x.sections && x.sections.length ? x.sections.length + ' 项' : '') + ' ›</span></button>'
+        ).join('') + '</div>';
+}
+function ecGdBlockHTML(b) {
+    if (!b) return '';
+    if (b.k === 't') return ecGmTableHTML(b.v);
+    return '<p class="ec-gm-doc-p ' + (EC_GD_PCLS[b.c] || '') + '">' + escapeHtml(b.v == null ? '' : b.v) + '</p>';
+}
+// 节点匹配关键词：标题去序号 + 括号里的正规名 + 术语表反查
+function ecGdKeys(node) {
+    if (!node) return [];
+    const t = String(node.t || ''), keys = [];
+    const core = ecGmNorm(t.replace(/^[一二三四五六七八九十]+、\s*/, '').replace(/^\d+[.．]\s*/, ''));
+    if (core.length >= 2) keys.push(core);
+    (t.match(/[（(][^）)]+[）)]/g) || []).forEach(x => {
+        const v = ecGmNorm(x);
+        if (v.length >= 2) keys.push(v);
+    });
+    Object.keys(EC_GD_TERMS).forEach(k => { if (EC_GD_TERMS[k] === node.id) keys.push(ecGmNorm(k)); });
+    return keys.filter((v, i, a) => v && v.length >= 2 && a.indexOf(v) === i);
+}
+function ecGdLessons(node) {
+    const idx = ecGmLessonIndex(), keys = ecGdKeys(node);
+    return idx.filter(x => keys.some(k => x.norm.indexOf(k) >= 0));
+}
+function ecGdDetailHTML(v) {
+    const node = v.node;
+    if (!node) return '<div class="ec-gm-empty">点一个知识点就能看到它的讲义 📖</div>';
+    const blocks = node.blocks || [];
+    const tables = blocks.filter(b => b.k === 't').length;
+    const lessons = ecGdLessons(node);
+    return '<div class="ec-gd-detail">' +
+        '<div class="ec-gd-detail-title">🧩 ' + escapeHtml(node.t) + '</div>' +
+        '<div class="ec-gm-detail-hint">' + (lessons.length ? '📚 这些课文里出现过它，点一下就回到课文' : '这一节还没有关联课文，去课文里点语法小字也能跳过来') + '</div>' +
+        (lessons.length ? '<div class="ec-gm-lessons">' + lessons.slice(0, 24).map(x =>
+            '<button class="ec-gm-lesson" data-action="ec-gm-open-lesson" data-id="' + ecGmAttr(x.id) + '">' +
+            '<span>📖 ' + escapeHtml(x.name) + '</span><small>' + escapeHtml(x.book) + ' ›</small></button>'
+        ).join('') + '</div>' : '') +
+        '<div class="ec-gm-doc-hd">📖 系统讲义 · 1 小节 / ' + tables + ' 张对照表</div>' +
+        '<div class="ec-gm-doc-body">' + blocks.map(ecGdBlockHTML).join('') + '</div>' +
+        '</div>';
+}
+function ecGdAllNodes() {
+    const out = [];
+    EC_GD_DOC.parts.forEach(p => p.chapters.forEach(c => {
+        const nodes = c.sections.length ? c.sections : [c];
+        nodes.forEach(n => out.push({ part: p, ch: c, node: n }));
+    }));
+    return out;
+}
+function ecGdSearch(q) {
+    const nq = ecGmNorm(q);
+    if (!nq) return [];
+    return ecGdAllNodes().filter(h => {
+        if (ecGmNorm(h.node.t).indexOf(nq) >= 0) return true;
+        if (ecGdKeys(h.node).some(k => k.indexOf(nq) >= 0 || nq.indexOf(k) >= 0)) return true;
+        const body = (h.node.blocks || []).map(b => b.k === 't' ? (b.v || []).map(r => (r || []).join('')).join('') : (b.v || '')).join('');
+        return nq.length >= 2 && ecGmNorm(body).indexOf(nq) >= 0;
+    }).slice(0, 24);
+}
+function ecGdSearchHTML(q) {
+    if (!q) return '';
+    const hits = ecGdSearch(q);
+    if (!hits.length) return '<div class="ec-gm-search-res">「' + escapeHtml(q) + '」还没收进这本大白话语法书里，先看看四大板块吧 🌱</div>';
+    return '<div class="ec-gm-search-res">找到 ' + hits.length + ' 处，点一下直接看这一节：</div>' +
+        '<div class="ec-gm-res-chips">' + hits.map(h =>
+            '<button class="ec-gm-res" data-action="ec-gm-reveal" data-id="' + ecGmAttr(h.node.id) + '">' +
+            escapeHtml(h.part.name + ' › ' + h.node.t.replace(/^\d+[.．]\s*/, '')) + '</button>'
+        ).join('') + '</div>';
+}
+// 按 id 定位并落到那一层（搜索结果 / 课文语法小字都走这里）
+function ecGdReveal(id) {
+    const hit = ecGdAllNodes().find(h => h.node.id === id);
+    if (!hit) return false;
+    state._gdPart = hit.part.id;
+    state._gdCh = hit.ch.id;
+    state._gdSec = (hit.ch.sections.length && hit.node !== hit.ch) ? hit.node.id : '';
+    state._gmQuery = '';
+    return true;
+}
+// 课文说法 → 新文档节点（术语优先，标题/正文兜底）
+function ecGdFindByTerm(term) {
+    const q = ecGmNorm(term);
+    if (!q) return null;
+    const best = Object.keys(EC_GD_TERMS).map(k => ({ n: ecGmNorm(k), id: EC_GD_TERMS[k] }))
+        .filter(x => x.n && (x.n === q || (x.n.length >= 3 && q.indexOf(x.n) >= 0) || (q.length >= 3 && x.n.indexOf(q) >= 0)))
+        .sort((a, b) => b.n.length - a.n.length)[0];
+    if (best) return best.id;
+    const hits = ecGdSearch(term);
+    return hits.length ? hits[0].node.id : null;
+}
+function ecGdPrefaceHTML() {
+    return '<details class="ec-gd-preface"><summary>💡 写在前面：这本书怎么用（点开看四大板块总览）</summary>' +
+        EC_GD_DOC.preface.map(ecGdBlockHTML).join('') + '</details>';
+}
 function ecGrammarCardHTML() {
-    const g = ecGmData();
-    const branches = ecGmChildren();
-    const matchMap = ecGmMatchMap();
-    const edit = !!state._gmEditMode;
+    const v = ecGdView();
     const q = state._gmQuery || '';
-    const open = state._gmOpen || (state._gmOpen = {});
-    const branch = state._gmBranch || (branches[0] ? branches[0].id : '');
-    // 选中节点：优先用已选；未选时默认落在第一张分支的首节，让右侧详情区一进来就有内容（不写回 state，避免改动用户选择）
-    let sel = state._gmSel ? ecGmNode(state._gmSel) : null;
-    if (!sel && branches.length) {
-        const firstSec = ecGmChildren(branches[0].id)[0];
-        sel = firstSec || branches[0];
-    }
-    const adding = state._gmAdding || '';
-    const desc = ecGmDescMap();
-    const view = state._gmView === 'outline' ? 'outline' : 'tree';
-    // 首次进来默认展开主干两级，避免「只看到一行、以为内容没了」
-    if (!Object.keys(open).length) {
-        open[branch] = true;
-        ecGmChildren(branch).forEach(k => { if (ecGmChildren(k.id).length) open[k.id] = true; });
-    }
-    const renderNode = (n, depth) => {
-        const kids = ecGmChildren(n.id);
-        const isOpen = !!open[n.id];
-        const cnt = (matchMap.get(n.id) || []).length;
-        const c = ecGmColorIdx(n);
-        return '<div class="ec-gm-node">' +
-            '<div class="ec-gm-row c' + c + (sel && sel.id === n.id ? ' is-sel' : '') + '" style="--gm-depth:' + Math.min(depth, 5) + '" data-action="ec-gm-node" data-id="' + ecGmAttr(n.id) + '">' +
-            '<span class="ec-gm-arrow' + (kids.length ? (isOpen ? ' open' : '') : ' leaf') + '">' + (kids.length ? '▸' : '·') + '</span>' +
-            '<span class="ec-gm-title">' + escapeHtml(n.t) + '</span>' +
-            (cnt ? '<span class="ec-gm-badge" title="相关课文">📖 ' + cnt + '</span>' : '') +
-            (edit ? '<span class="ec-gm-ops">' +
-                '<button class="ec-gm-op" data-action="ec-gm-add-form" data-id="' + ecGmAttr(n.id) + '" title="加子节点">＋</button>' +
-                '<button class="ec-gm-op" data-action="ec-gm-edit" data-id="' + ecGmAttr(n.id) + '" title="编辑">✏️</button>' +
-                '<button class="ec-gm-op" data-action="ec-gm-del" data-id="' + ecGmAttr(n.id) + '" title="删除">🗑️</button>' +
-                '</span>' : '') +
-            '</div>' +
-            (isOpen && kids.length ? '<div class="ec-gm-kids">' + kids.map(k => renderNode(k, depth + 1)).join('') + '</div>' : '') +
-            '</div>';
-    };
-    const branchNode = ecGmNode(branch);
-    const tree = branchNode ? renderNode(branchNode, 0) : '<div class="ec-gm-empty">还没有分支，去导入一份 Markdown 吧 🌱</div>';
-    return '<div class="card ec-gm-card" id="ecGmCard">' +
-        '<div class="card-header">' +
-        '<div class="card-title">🧠 英语语法地图 <span class="ec-gm-sub">' + EC_GM_HANDOUT_STATS.chapters + ' 章 · ' + EC_GM_HANDOUT_STATS.tables + ' 张对照表</span></div>' +
-        '<div class="ec-gm-head-btns">' +
-        '<button class="btn btn-sm ' + (edit ? 'btn-primary' : 'btn-secondary') + '" data-action="ec-gm-mode">' + (edit ? '✓ 完成编辑' : '✏️ 编辑框架') + '</button>' +
-        '</div></div>' +
+    const nav = '<div class="card ec-review-subnav ec-books-subnav ec-gd-subnav"><div class="tab-bar">' +
+        EC_GD_DOC.parts.map(p => '<button class="tab-btn ' + (p.id === v.part.id ? 'active' : '') +
+            '" data-action="ec-gd-part" data-id="' + ecGmAttr(p.id) + '" title="' + ecGmAttr(p.sub) + '">' +
+            p.icon + ' ' + escapeHtml(p.name) + '</button>').join('') + '</div></div>';
+    return nav + '<div class="card ec-gd-wrap" id="ecGmCard">' +
+        '<div class="card-header"><div class="card-title">🧠 ' + escapeHtml(EC_GD_DOC.title) +
+        '<span class="ec-gm-sub">' + EC_GD_DOC.stats.parts + ' 大板块 · ' + EC_GD_DOC.stats.chapters + ' 章 · ' + EC_GD_DOC.stats.tables + ' 张对照表</span></div></div>' +
         '<div class="ec-gm-search-row">' +
-        '<input type="text" class="input" id="ecGmQ" placeholder="搜语法点，如 be动词" value="' + ecGmAttr(q) + '">' +
+        '<input type="text" class="input" id="ecGmQ" placeholder="搜大白话语法点，如 可数名词" value="' + ecGmAttr(q) + '">' +
         '<button class="btn btn-sm btn-secondary" data-action="ec-gm-search">🔍 找一找</button>' +
-        (q ? '<button class="btn btn-sm btn-secondary" data-action="ec-gm-clear-q">清空</button>' : '') +
-        '</div>' +
-        ecGmSearchHTML(q) +
-        '<div class="ec-gm-layout">' +
-            '<div class="ec-gm-nav">' +
-                '<div class="ec-gm-branches">' + branches.map((b, i) =>
-                    '<button class="ec-gm-branch c' + (i % 9) + (branch === b.id ? ' on' : '') + '" data-action="ec-gm-branch" data-id="' + ecGmAttr(b.id) + '">' +
-                    '<span class="ec-gm-branch-ico">' + EC_GM_ICONS[i % EC_GM_ICONS.length] + '</span>' +
-                    '<span class="ec-gm-branch-t">' + escapeHtml(b.t) + '<small>' + (desc.get(b.id) || 0) + ' 节</small></span></button>'
-                ).join('') + '</div>' +
-                (view === 'tree' ? '<div class="ec-gm-view-row">' +
-                    '<button class="btn btn-sm btn-secondary" data-action="ec-gm-expand">🌳 展开本分支</button>' +
-                    '<button class="btn btn-sm btn-secondary" data-action="ec-gm-collapse">收起</button>' +
-                    '<button class="btn btn-sm btn-secondary" data-action="ec-gm-view">📜 一次看完整体系</button>' +
-                    '</div>' : '') +
-                (edit ? '<div class="ec-gm-tools-row">' +
-                    '<button class="btn btn-sm btn-secondary" data-action="ec-gm-import">📥 导入 Markdown</button>' +
-                    '<button class="btn btn-sm btn-secondary" data-action="ec-gm-export">📤 导出备份</button>' +
-                    '<button class="btn btn-sm btn-danger" data-action="ec-gm-reset">↺ 恢复初始框架</button>' +
-                    '</div>' : '') +
-                (adding ? '<div class="ec-gm-add-row"><span>在「' + escapeHtml((ecGmNode(adding) || {}).t || '') + '」下添加：</span>' +
-                    '<input type="text" class="input" id="ecGmNewTitle" maxlength="60" placeholder="新语法点名称，如 Yes/No 回答">' +
-                    '<button class="btn btn-sm btn-primary" data-action="ec-gm-add-save" data-id="' + ecGmAttr(adding) + '">添加</button>' +
-                    '<button class="btn btn-sm btn-secondary" data-action="ec-gm-add-cancel">取消</button></div>' : '') +
-                (view === 'outline' ? ecGmOutlineHTML(desc) : '<div class="ec-gm-tree">' + tree + '</div>') +
-            '</div>' +
-            '<div class="ec-gm-detailpane">' +
-                ecGmDetailHTML(sel, matchMap, edit, desc) +
-                '<div class="ec-gm-foot">💡 框架按《英语语法系统讲义》整理：10 章 / ' + EC_GM_HANDOUT_STATS.tables + ' 张对照表，点任意一节就能看到规则、判断依据、例句和易错提醒，表格原样保留方便对比。课文里的语法小字也能点过来。</div>' +
-            '</div>' +
-        '</div>' +
+        (q ? '<button class="btn btn-sm btn-secondary" data-action="ec-gm-clear-q">清空</button>' : '') + '</div>' +
+        ecGdSearchHTML(q) +
+        '<div class="ec-gd-body">' + ecGdCrumbHTML(v) +
+        (v.level === 'detail' ? ecGdDetailHTML(v) : ecGdCardsHTML(v)) + '</div>' +
+        ecGdPrefaceHTML() +
+        '<div class="ec-gm-foot">💡 内容按《大白话英语语法》整理：4 大板块 / ' + EC_GD_DOC.stats.chapters +
+        ' 章 / ' + EC_GD_DOC.stats.tables + ' 张对照表。一次只看一层，点哪一节就出哪一节；课文里的语法小字也能点过来。</div>' +
         '</div>';
 }
 
@@ -13999,16 +14148,15 @@ function ecGmCreate(q) {
 function ecGmFromNote(q) {
     const term = String(q || '').trim();
     state.currentSubTab = state.currentSubTab || {};
-    state.currentSubTab.engcheck = 'ec-hub';
+    state.currentSubTab.engcheck = 'ec-grammar';
     state._wbSession = null;
     state._gmQuery = '';
-    const hit = ecGmFindNode(term);
-    if (hit) {
-        ecGmReveal(hit.id);
-        toast('🧠 找到啦：' + hit.t);
+    const id = ecGdFindByTerm(term);
+    if (id && ecGdReveal(id)) {
+        const hit = ecGdAllNodes().find(h => h.node.id === id);
+        toast('🧠 找到啦：' + (hit ? hit.node.t : term));
     } else {
-        state._gmQuery = term;
-        state._gmSel = null;
+        state._gmQuery = term; // 没对上就带进搜索框，仍可自己翻目录
     }
     render();
     setTimeout(() => { const c = document.getElementById('ecGmCard'); if (c && c.scrollIntoView) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
@@ -14365,6 +14513,7 @@ function ecOpenRecite(lessonId) {
     if (!lesson) return;
     state.currentSubTab = state.currentSubTab || {};
     state.currentSubTab['engcheck'] = 'ec-books';
+    state.currentSubTab['ec-books-sub'] = 'books';
     state._ecBookId = lesson.bookId;
     state._ecLessonId = lessonId;
     state._ecEditBookId = null;
@@ -14933,6 +15082,25 @@ document.addEventListener('click', async e => {
     if (action === 'ec-wb-move-up') { ecWbMoveItem(el.dataset.id, 'up'); return; }
     if (action === 'ec-wb-move-down') { ecWbMoveItem(el.dataset.id, 'down'); return; }
     // v20261110a：英语语法地图（可编辑框架 + 课文双向联动）
+    // v20261111a：语法地图 4 大板块 + 逐层钻取（一次只显示当前一层）
+    if (action === 'ec-gd-part') {
+        state._gdPart = el.dataset.id || ''; state._gdCh = ''; state._gdSec = ''; state._gmQuery = '';
+        render(); return;
+    }
+    if (action === 'ec-gd-ch') {
+        state._gdCh = el.dataset.id || ''; state._gdSec = ''; state._gmQuery = '';
+        render(); return;
+    }
+    if (action === 'ec-gd-sec') {
+        state._gdSec = el.dataset.id || ''; state._gmQuery = '';
+        render(); return;
+    }
+    if (action === 'ec-gd-crumb') {
+        const lv = el.dataset.lv || 'root';
+        if (lv === 'root' || lv === 'part') { state._gdCh = ''; state._gdSec = ''; }
+        else if (lv === 'ch') { state._gdSec = ''; }
+        render(); return;
+    }
     if (action === 'ec-gm-mode') { state._gmEditMode = !state._gmEditMode; render(); return; }
     if (action === 'ec-gm-view') { state._gmView = state._gmView === 'outline' ? 'tree' : 'outline'; render(); return; }
     if (action === 'ec-gm-all-open') {
@@ -14965,7 +15133,9 @@ document.addEventListener('click', async e => {
     }
     if (action === 'ec-gm-clear-q') { state._gmQuery = ''; render(); return; }
     if (action === 'ec-gm-reveal') {
-        ecGmReveal(el.dataset.id || ''); render();
+        const rid = el.dataset.id || '';
+        if (rid.indexOf('gd_') === 0) ecGdReveal(rid); else ecGmReveal(rid);
+        render();
         const gc = document.getElementById('ecGmCard');
         if (gc && gc.scrollIntoView) gc.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;

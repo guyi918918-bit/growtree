@@ -14,18 +14,18 @@ if (!TOKEN) { console.error('缺少 GH_PAT 环境变量'); process.exit(1); }
 // 不必每次重传（否则几十个 600~800KB blob 会拖慢推送并提高失败率）。
 const FILES = [
     'app.js', 'styles.css', 'index.html', 'sw.js', 'version.json',
-    'app.20261110f.js', 'styles.20261110f.css',
+    'app.20261111a.js', 'styles.20261111a.css',
     'vendor/lunar.1.7.8.js', 'vendor/supabase.2.119.0.js',
     'test-20261025c.cjs', 'push-via-api.cjs'
 ];
-// 历史哈希文件清理：只保留当前 20261110f 与线上上一版 20261110e（离线回退用），其余从远程 tree 删除。
+// 历史哈希文件清理：只保留当前 20261111a 与线上上一版 20261110f（离线回退用），其余从远程 tree 删除。
 // Git 历史仍完整保留，任何旧版本都能从旧 commit 找回；体积从约 96MB 降到约 2MB。
 const KEEP_HASHED = new Set([
-    'app.20261110f.js', 'styles.20261110f.css',
-    'app.20261110e.js', 'styles.20261110e.css'
+    'app.20261111a.js', 'styles.20261111a.css',
+    'app.20261110f.js', 'styles.20261110f.css'
 ]);
 
-const MESSAGE = "feat: 英语打卡主 Tab 精简为 4 个 + 主线任务三级子导航 v20261110f\n\n【用户反馈】主 Tab 6 个（学习看板·主线任务·语法地图·记忆巩固·查漏补缺·荣誉战绩）太挤，\n要求把「记忆巩固」「查漏补缺」收进「主线任务」下面作为三级目录。\n\n【实现】\n1. EC_SUBTABS 缩到 3 个（主线任务 / 语法地图 / 荣誉战绩），加固定「学习看板」入口共 4 个主 Tab。\n2. 新增 EC_BOOKS_SUBTABS 与 ec-books-sub 命名空间（沿用 ec-review-sub / ec-wrong-sub 机制），\n   顺序固定：① 我的书单 ② 记忆巩固 ③ 查漏补缺；分别复用 ecRenderDrill /\n   ecRenderReview / ecRenderWrong，三个页面内容一字未改。\n3. ecGo、tab 事件委托、学习看板入口卡、成就 / 引导跳转全部做旧目标归一化，\n   旧链接依旧直达对应子页；从别的主 Tab 进「主线任务」默认选中「我的书单」。\n4. 老用户自动迁移：旧 currentSubTab.engcheck 停在 ec-review / ec-wrong / ec-quiz 时归到\n   主线任务对应子页；旧 tabCfg 若把这两个页面排第一，默认三级子页同步落过去，并解隐藏主线任务。\n5. ⚙️ 导航设置面板同步：只列 3 个可排序 / 显隐的主 Tab，主线任务因装着两个子页保持常驻（🔒），\n   面板补一句新结构说明；默认选中项、非法值兜底均为「我的书单」。\n6. 全套回归（983 通过 / 0 失败）与真实无头 Chrome 桌面 + 375px 复测通过，JS 错误 0、\n   无页面级横向溢出；旧版 20261110e 保留作离线回退。\n\n【版本链】APP_BUILD / index / version.json 升到 20261110f；SW growtree-shell-v159；\nKEEP_HASHED 保留当前 20261110f 与线上上一版 20261110e。";
+const MESSAGE = "feat: 语法地图改为《大白话英语语法》4 大板块 + 逐层钻取 v20261111a\n\n【用户反馈】旧语法地图一屏同时铺开章节网格、体系树、正文详情，看起来太乱；要求以\n《大白话英语语法.docx》为唯一内容源，下设词法 / 句法 / 时态 / 其他 4 个板块，点哪一层\n就只出现哪一层（板块目录 → 知识点分支 → 末级讲义），并与课文保持联动。\n\n【实现】\n1. 把 docx 全文（400 个内容块 / 38 张对照表 / 1012 个单元格）编译成只读 EC_GD_DOC：\n   4 大板块 / 32 章 / 29 小节 / 53 个末级讲义页，段落与表格原样保留，不进 state、不占云同步。\n2. 语法地图主卡片重写：顶部 4 个子导航（复用 ec-books-subnav 样式），面包屑可逐级返回；\n   默认只显示当前板块目录，点章显示该章分支，点小节才展开讲义 + 对照表，绝不一次全铺开。\n3. 讲义段落按【小提示】/【注意】/【大白话】/例句四类色块呈现，表格沿用 ec-gm-table\n   原样渲染与窄屏横滑；「写在前面」收进默认折叠的 details，内容一字不丢。\n4. 课文联动保留双向：末级讲义列出相关课文（点一下回课文），课文里的语法小字点击后\n   经 EC_GD_TERMS 术语对齐直接落到对应讲义页；搜索也能命中标题、别名与讲义正文。\n5. 全套回归（983 通过 / 0 失败）与真实无头 Chrome 桌面 + 375px 复测通过，JS 错误 0、\n   无页面级横向溢出；旧版 20261110f 保留作离线回退。\n\n【版本链】APP_BUILD / index / version.json 升到 20261111a；SW growtree-shell-v160；\nKEEP_HASHED 保留当前 20261111a 与线上上一版 20261110f。";
 
 
 async function api(method, endpoint, body, attempt = 0) {
